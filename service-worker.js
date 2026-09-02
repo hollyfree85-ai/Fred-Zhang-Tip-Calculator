@@ -1,5 +1,5 @@
-const CACHE='juicy-tip-prod-v4-cleanjs';
-const ASSETS=['./','./index.html','./app.js?v=4','./firebase-config.js','./manifest.webmanifest','./icon-180.png','./icon-192.png','./icon-512.png','./hourly-v01.html'];
+const CACHE='juicy-tip-prod-v6-unified-signup';
+const ASSETS=['./','./index.html','./app.js?v=6','./firebase-config.js','./hourly-logic.js','./manifest.webmanifest','./icon-180.png','./icon-192.png','./icon-512.png','./hourly-v01.html'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));
 self.addEventListener('fetch',e=>{

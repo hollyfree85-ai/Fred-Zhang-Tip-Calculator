@@ -20,6 +20,9 @@ let eShift = "AM";
 let unsubs = [];
 let latestRows = [];
 let knownPending = new Set();
+let lastHourlyResult = null;
+const EMPLOYEE_ROSTER = Object.freeze(["Adrieanna Walker", "Aida Gonzales", "Alainna Montalvo", "Angela Grizzad", "Ariana Garner", "Ashley Garcia", "Brandi Copeland", "Caitlin Dillon", "Christina Gurley", "Dorothy Makovicka", "Fred Zhang", "Hannah Dempsey", "Jesus Ovalle-Munoz", "Libby Lane", "Megan Meadows", "Megan Sisk", "Mia Burress", "Sara Swift", "Sarah Kibler"]);
+
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, m => ({
@@ -30,8 +33,11 @@ function todayLocal(){
   const d=new Date(), z=n=>String(n).padStart(2,"0");
   return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
 }
+function slugFor(username){
+  return String(username).trim().toLowerCase().replace(/[^a-z0-9._-]/g,"");
+}
 function emailFor(username){
-  return `${String(username).trim().toLowerCase().replace(/[^a-z0-9._-]/g,"")}@juicytip.app`;
+  return `${slugFor(username)}@juicytip.app`;
 }
 // Firebase requires passwords >= 6 characters. Employees still type only their PIN.
 function employeeAuthPassword(pin){
@@ -45,6 +51,68 @@ window.setLoginMode = function(mode){
   $("employeeModeBtn").classList.toggle("on", mode === "employee");
   $("staffModeBtn").classList.toggle("on", mode === "staff");
   loginMsg("");
+};
+
+
+function populateRoster(){
+  const options=EMPLOYEE_ROSTER.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
+  ["employeeUsername","signupName","hEmployee"].forEach(id=>{
+    const el=$(id); if(el) el.innerHTML=options;
+  });
+}
+window.toggleSignup=function(show){
+  $("signupPanel").classList.toggle("hidden",!show);
+  loginMsg("");
+};
+
+window.employeeSignup=async function(){
+  const name=$("signupName").value;
+  const phone=$("signupPhone").value.trim();
+  const pin=$("signupPin").value.trim();
+  const pin2=$("signupPin2").value.trim();
+
+  if(!EMPLOYEE_ROSTER.includes(name)){ alert("Select your name from the employee list."); return; }
+  if(!/^\d{7,15}$/.test(phone.replace(/\D/g,""))){ alert("Enter a valid mobile phone number."); return; }
+  if(!/^\d{4}$/.test(pin)){ alert("PIN must be exactly 4 digits."); return; }
+  if(pin!==pin2){ alert("PINs do not match."); return; }
+
+  let secondaryApp=null;
+  try{
+    secondaryApp=initializeApp(FIREBASE_CONFIG,"employee-signup-"+Date.now());
+    const secondaryAuth=getAuth(secondaryApp);
+    const cred=await createUserWithEmailAndPassword(secondaryAuth,emailFor(name),employeeAuthPassword(pin));
+    const uid=cred.user.uid;
+    const profile={
+      username:slugFor(name),
+      displayName:name,
+      phone:phone.replace(/\D/g,""),
+      role:"employee",
+      active:false,
+      approvalStatus:"pending",
+      createdAt:serverTimestamp()
+    };
+    await setDoc(doc(db,"users",uid),profile);
+    await setDoc(doc(db,"signupRequests",uid),{
+      uid,
+      displayName:name,
+      username:slugFor(name),
+      phone:profile.phone,
+      status:"pending",
+      requestedAt:serverTimestamp()
+    });
+    await signOut(secondaryAuth);
+    toggleSignup(false);
+    $("signupPhone").value=""; $("signupPin").value=""; $("signupPin2").value="";
+    alert("Sign up sent. Please wait for Manager approval.");
+  }catch(e){
+    console.error("Employee signup:",e);
+    const msg=e.code==="auth/email-already-in-use"
+      ? "This employee is already registered. Use Employee Login or ask Manager."
+      : `Sign up failed: ${e.code || e.message}`;
+    alert(msg);
+  }finally{
+    if(secondaryApp) try{await deleteApp(secondaryApp)}catch(e){}
+  }
 };
 
 window.loginEmployee = async function(){
@@ -116,6 +184,10 @@ onAuthStateChanged(auth, async user=>{
     const profile=await loadProfile(user.uid);
     if(!profile){
       loginMsg("Account exists but no JUICY TIP profile was found.");
+      await signOut(auth); return;
+    }
+    if(profile.role==="employee" && profile.approvalStatus==="pending"){
+      loginMsg("Registration is waiting for Manager approval.");
       await signOut(auth); return;
     }
     if(profile.active===false){
@@ -276,6 +348,7 @@ function listenStaff(){
     $("backendStatus").className="notice danger";
   }));
 
+  listenApprovals();
   if(currentProfile.role==="owner"){
     listenUsers();
     listenHistory();
@@ -338,15 +411,86 @@ window.review=async function(id,status){
   }catch(e){ alert(`Update failed: ${e.code || e.message}`); }
 };
 
+
+function listenApprovals(){
+  const q=query(collection(db,"signupRequests"),where("status","==","pending"),limit(100));
+  unsubs.push(onSnapshot(q,snap=>{
+    const rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+    $("approvalBadge").textContent=rows.length;
+    $("approvalList").innerHTML=rows.length?rows.map(r=>`
+      <div class="approval-card">
+        <b>${esc(r.displayName)}</b>
+        <div class="small">Phone: ${esc(r.phone||"")} • Username: ${esc(r.username||"")}</div>
+        <div class="actions" style="margin-top:10px">
+          <button class="btn green" onclick="approveEmployee('${r.uid}')">Approve</button>
+          <button class="btn red" onclick="rejectEmployee('${r.uid}')">Reject</button>
+        </div>
+      </div>`).join(""):'<div class="notice good">No pending employee sign ups.</div>';
+  },e=>console.error("Approvals listener:",e)));
+}
+
+window.approveEmployee=async function(uid){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  try{
+    const uref=doc(db,"users",uid), rref=doc(db,"signupRequests",uid);
+    const us=await getDoc(uref);
+    if(!us.exists()){ alert("Employee profile not found."); return; }
+    const before=us.data();
+    await updateDoc(uref,{
+      active:true,
+      approvalStatus:"approved",
+      approvedBy:currentProfile.displayName||currentProfile.username,
+      approvedAt:serverTimestamp()
+    });
+    await updateDoc(rref,{
+      status:"approved",
+      reviewedBy:currentProfile.displayName||currentProfile.username,
+      reviewedAt:serverTimestamp()
+    });
+    await writeAudit("employee_signup_approved",uid,before.displayName||"",{before,after:{active:true,approvalStatus:"approved"}});
+  }catch(e){ alert(`Approve failed: ${e.code || e.message}`); }
+};
+
+window.rejectEmployee=async function(uid){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  if(!confirm("Reject this employee sign up?")) return;
+  try{
+    const uref=doc(db,"users",uid), rref=doc(db,"signupRequests",uid);
+    const us=await getDoc(uref);
+    const before=us.exists()?us.data():null;
+    if(us.exists()) await updateDoc(uref,{active:false,approvalStatus:"rejected"});
+    await updateDoc(rref,{
+      status:"rejected",
+      reviewedBy:currentProfile.displayName||currentProfile.username,
+      reviewedAt:serverTimestamp()
+    });
+    await writeAudit("employee_signup_rejected",uid,before?.displayName||"",{before});
+  }catch(e){ alert(`Reject failed: ${e.code || e.message}`); }
+};
+
 function listenUsers(){
   unsubs.push(onSnapshot(collection(db,"users"),snap=>{
     const a=snap.docs.map(d=>({uid:d.id,...d.data()}))
       .sort((a,b)=>(a.username||"").localeCompare(b.username||""));
-    $("userList").innerHTML=a.map(u=>`
-      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #edf0f4;padding:9px 0">
-        <div><b>${esc(u.displayName||u.username)}</b><div class="small">${esc(u.role)} • ${esc(u.username)}</div></div>
-        ${u.role==="owner"?"":`<button class="btn red" style="padding:7px 10px" onclick="disableUser('${u.uid}')">Disable</button>`}
-      </div>`).join("");
+    $("userList").innerHTML=a.map(u=>{
+      const active = u.active !== false;
+      const status = active
+        ? '<span class="status approved">ACTIVE</span>'
+        : '<span class="status rejected">DISABLED</span>';
+      const action = u.role==="owner" ? "" : (
+        active
+          ? `<button class="btn red" style="padding:7px 10px" onclick="setUserActive('${u.uid}',false)">Disable</button>`
+          : `<button class="btn green" style="padding:7px 10px" onclick="setUserActive('${u.uid}',true)">Enable</button>`
+      );
+      return `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:9px 0">
+        <div>
+          <b>${esc(u.displayName||u.username)}</b>
+          <div class="small">${esc(u.role)} • ${esc(u.username)} • ${status}</div>
+        </div>
+        ${action}
+      </div>`;
+    }).join("");
   },e=>console.error("Users listener:",e)));
 }
 
@@ -383,16 +527,29 @@ window.createUserByOwner=async function(){
   }
 };
 
-window.disableUser=async function(uid){
+window.setUserActive=async function(uid,active){
   if(currentProfile.role!=="owner") return;
-  if(!confirm("Disable this user?")) return;
+  const verb = active ? "enable" : "disable";
+  if(!confirm(`${verb.charAt(0).toUpperCase()+verb.slice(1)} this user?`)) return;
   try{
     const ref=doc(db,"users",uid);
     const s=await getDoc(ref);
-    const before=s.exists()?s.data():null;
-    await updateDoc(ref,{active:false});
-    await writeAudit("user_disable",uid,before?.displayName||before?.username||"",{before});
-  }catch(e){ alert(`Disable failed: ${e.code || e.message}`); }
+    if(!s.exists()){ alert("User profile not found."); return; }
+    const before=s.data();
+    await updateDoc(ref,{active:!!active});
+    try{
+      await writeAudit(active ? "user_enable" : "user_disable",uid,before?.displayName||before?.username||"",{
+        before,
+        after:{active:!!active}
+      });
+    }catch(auditErr){
+      console.warn("Status changed, audit log failed:",auditErr);
+    }
+    alert(`User ${active ? "enabled" : "disabled"} successfully.`);
+  }catch(e){
+    console.error("User status:",e);
+    alert(`User status failed: ${e.code || e.message}`);
+  }
 };
 
 window.openAddSubmission=function(){
@@ -502,6 +659,71 @@ window.requestNotify=async function(){
   alert("Notification permission: "+p);
 };
 
+
+function syncHourlyShift(){
+  const dbl=$("hShift").value==="DOUBLE";
+  $("hSingleClock").classList.toggle("hidden",dbl);
+  $("hDoubleClock").classList.toggle("hidden",!dbl);
+  $("hTotalAMWrap").classList.toggle("hidden",!dbl);
+}
+$("hShift").addEventListener("change",syncHourlyShift);
+
+window.calculateHourlyV01=function(){
+  const L=window.FredTipCalculatorLogic;
+  if(!L){ alert("Hourly Adjustment V01 calculation engine is unavailable."); return null; }
+  const shift=$("hShift").value;
+  const hours=shift==="DOUBLE" ? {
+    hourInAM:$("hAmIn").value,
+    hourOutAM:$("hAmOut").value,
+    hourInPM:$("hPmIn").value,
+    hourOutPM:$("hPmOut").value
+  } : {
+    hourIn:$("hIn").value,
+    hourOut:$("hOut").value
+  };
+  lastHourlyResult=L.calculateReport({
+    date:$("hDate").value,
+    employee:$("hEmployee").value,
+    position:$("hPosition").value,
+    shift,
+    busserAM:$("hBusserAM").value,
+    hours,
+    grandTotal:$("hGrandTotal").value,
+    totalAM:$("hTotalAM").value,
+    paidTip:$("hPaidTip").value,
+    cardFee:$("hCardFee").value,
+    cashTip:$("hCashTip").value,
+    meal:$("hMeal").value,
+    amBarSales:$("hAmBar").value==="yes",
+    pmBarSales:$("hPmBar").value==="yes"
+  });
+  const r=lastHourlyResult;
+  $("hrHours").textContent=r.totalHoursWork==null?"—":Number(r.totalHoursWork).toFixed(2);
+  $("hrMinimum").textContent="$"+Number(r.hourlyMinimum||0).toFixed(2);
+  $("hrAdjustment").textContent="$"+Number(r.adjustmentSalaryHourly||0).toFixed(2);
+  $("hrGrandTip").textContent="$"+Number(r.grandTotalTip||0).toFixed(2);
+  $("hrAfter").textContent="$"+Number(r.grandTotalAfterAdjustment||0).toFixed(2);
+  $("hrPaidOut").textContent="$"+Number(r.totalPaidOut||0).toFixed(2);
+  $("hourlyResult").classList.remove("hidden");
+  return r;
+};
+
+window.saveHourlyV01=async function(){
+  const r=calculateHourlyV01();
+  if(!r) return;
+  try{
+    const ref=doc(collection(db,"hourlyReports"));
+    await setDoc(ref,{
+      ...r,
+      createdAt:serverTimestamp(),
+      createdByUid:currentUser.uid,
+      createdBy:currentProfile.displayName||currentProfile.username
+    });
+    await writeAudit("hourly_v01_saved",ref.id,r.employee,{after:r});
+    alert("Hourly Adjustment V01 report saved.");
+  }catch(e){ alert(`Save failed: ${e.code || e.message}`); }
+};
+
 window.exportCSV=function(){
   const rows=[
     ["Date","Employee","Position","Shift","Break","Clock","Grand Total","Total AM","Meal","Cash Tip","Status","Reviewed By"],
@@ -518,4 +740,7 @@ window.exportCSV=function(){
 };
 
 $("eDate").value=todayLocal();
+$("hDate").value=todayLocal();
+populateRoster();
 refreshClockMode();
+syncHourlyShift();

@@ -38,6 +38,14 @@ input:focus,select:focus,textarea:focus{border-color:#64748b;box-shadow:0 0 0 3p
 .tablewrap{overflow:auto;border:1px solid var(--line);border-radius:14px}table{border-collapse:collapse;width:100%;min-width:980px}th,td{padding:10px 9px;border-bottom:1px solid #edf0f4;font-size:12px;text-align:left;white-space:nowrap}th{background:#f4f6f8}
 .bottom{position:fixed;left:0;right:0;bottom:0;z-index:25;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(244,246,248,.94);backdrop-filter:blur(14px);border-top:1px solid #dbe2ea}.bottom .inner{max-width:1200px;margin:auto;display:flex;gap:9px}.bottom .btn{flex:1}
 iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14px;background:white}
+
+.signup-box{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.inline-note{font-size:12px;color:var(--muted);line-height:1.4}
+.calc-result{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
+.calc-result .kpi{padding:12px}
+@media(max-width:760px){.calc-result{grid-template-columns:1fr 1fr}}
+.approval-card{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:#fff}
+.phone{font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -53,9 +61,32 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
       <button id="staffModeBtn" onclick="setLoginMode('staff')">Manager / Owner</button>
     </div>
     <div id="employeeLogin">
-      <label>Employee Username</label><input id="employeeUsername" autocomplete="username" placeholder="e.g. john">
-      <div style="height:10px"></div><label>4-digit PIN</label><input id="employeePin" inputmode="numeric" maxlength="8" type="password" placeholder="••••">
-      <div style="height:14px"></div><button class="btn gold" style="width:100%" onclick="loginEmployee()">Login as Employee</button>
+      <label>Employee Name</label>
+      <select id="employeeUsername"></select>
+      <div style="height:10px"></div>
+      <label>4-digit PIN</label>
+      <input id="employeePin" inputmode="numeric" maxlength="4" type="password" placeholder="••••">
+      <div style="height:14px"></div>
+      <button class="btn gold" style="width:100%" onclick="loginEmployee()">Login as Employee</button>
+
+      <div class="signup-box">
+        <div class="small" style="margin-bottom:8px"><b>First time?</b> Register yourself, then wait for Manager approval.</div>
+        <button class="btn light" style="width:100%" onclick="toggleSignup(true)">Employee Sign Up</button>
+        <div id="signupPanel" class="hidden" style="margin-top:12px">
+          <label>Name</label><select id="signupName"></select>
+          <div style="height:10px"></div>
+          <label>Mobile Phone</label><input id="signupPhone" class="phone" inputmode="tel" placeholder="2565551234">
+          <div style="height:10px"></div>
+          <label>Create 4-digit PIN</label><input id="signupPin" inputmode="numeric" maxlength="4" type="password" placeholder="••••">
+          <div style="height:10px"></div>
+          <label>Confirm PIN</label><input id="signupPin2" inputmode="numeric" maxlength="4" type="password" placeholder="••••">
+          <div style="height:12px"></div>
+          <div class="actions">
+            <button class="btn light" onclick="toggleSignup(false)">Cancel</button>
+            <button class="btn green" onclick="employeeSignup()">Send for Approval</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div id="staffLogin" class="hidden">
       <label>Username</label><input id="staffUsername" autocomplete="username">
@@ -136,7 +167,8 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 
     <div id="staffApp" class="hidden">
       <div class="tabs">
-        <button class="tab on" data-stab="pending">Pending <span id="pendingBadge" class="badge">0</span></button>
+        <button class="tab on" data-stab="pending">Pending Data <span id="pendingBadge" class="badge">0</span></button>
+        <button class="tab" data-stab="approvals">Employee Approvals <span id="approvalBadge" class="badge">0</span></button>
         <button class="tab" data-stab="report">Report</button>
         <button class="tab" data-stab="hourly">Hourly Adjustment V01</button>
         <button class="tab ownerOnly" data-stab="users">Users</button>
@@ -148,6 +180,14 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         <div class="card"><h2>Pending Employee Submissions</h2><div id="pendingList"></div></div>
       </section>
 
+      
+      <section id="approvals" class="staffPanel hidden">
+        <div class="card">
+          <h2>Pending Employee Sign Ups</h2>
+          <div id="approvalList"></div>
+        </div>
+      </section>
+
       <section id="report" class="staffPanel hidden">
         <div class="card">
           <div class="actions"><button class="btn green" onclick="openAddSubmission()">Add Submission</button><button class="btn light" onclick="exportCSV()">Export CSV</button><button class="btn light" onclick="window.print()">Print / PDF</button></div>
@@ -156,8 +196,60 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         </div>
       </section>
 
+      
       <section id="hourly" class="staffPanel hidden">
-        <div class="card"><h2>Hourly Adjustment V01</h2><div class="notice">Original recovered V01 manager engine is preserved below. Its calculation formulas are not rewritten.</div><div style="height:12px"></div><iframe src="hourly-v01.html"></iframe></div>
+        <div class="card">
+          <h2>Hourly Adjustment V01</h2>
+          <div class="notice good">Same V01 calculation engine, now integrated directly into JUICY TIP. No second login and no app-inside-app screen.</div>
+
+          <h3>Employee & Shift</h3>
+          <div class="grid3">
+            <div><label>Date</label><input id="hDate" type="date"></div>
+            <div><label>Employee</label><select id="hEmployee"></select></div>
+            <div><label>Position</label><select id="hPosition"><option>Server</option><option>Bartender</option></select></div>
+            <div><label>Shift</label><select id="hShift"><option>AM</option><option>PM</option><option>DOUBLE</option></select></div>
+            <div><label>Busser AM</label><select id="hBusserAM"><option value="WITH">With Busser</option><option value="WITHOUT">Without Busser</option></select></div>
+            <div><label>Meal ($)</label><input id="hMeal" type="number" step=".01" value="0"></div>
+          </div>
+
+          <h3>Clock</h3>
+          <div id="hSingleClock" class="grid">
+            <div><label>Clock In</label><input id="hIn" placeholder="10:30 AM"></div>
+            <div><label>Clock Out</label><input id="hOut" placeholder="4:00 PM"></div>
+          </div>
+          <div id="hDoubleClock" class="grid hidden">
+            <div><label>AM In</label><input id="hAmIn" placeholder="10:30 AM"></div>
+            <div><label>AM Out</label><input id="hAmOut" placeholder="4:00 PM"></div>
+            <div><label>PM In</label><input id="hPmIn" placeholder="4:30 PM"></div>
+            <div><label>PM Out</label><input id="hPmOut" placeholder="10:00 PM"></div>
+          </div>
+
+          <h3>User Report / Tips</h3>
+          <div class="grid3">
+            <div><label>Grand Total ($)</label><input id="hGrandTotal" type="number" step=".01" value="0"></div>
+            <div id="hTotalAMWrap" class="hidden"><label>Total AM ($)</label><input id="hTotalAM" type="number" step=".01" value="0"></div>
+            <div><label>Paid Tip ($)</label><input id="hPaidTip" type="number" step=".01" value="0"></div>
+            <div><label>Pay Card Tip Fee ($)</label><input id="hCardFee" type="number" step=".01" value="0"></div>
+            <div><label>Cash Tip ($)</label><input id="hCashTip" type="number" step=".01" value="0"></div>
+            <div><label>AM Bar Sales?</label><select id="hAmBar"><option value="no">No</option><option value="yes">Yes</option></select></div>
+            <div><label>PM Bar Sales?</label><select id="hPmBar"><option value="no">No</option><option value="yes">Yes</option></select></div>
+          </div>
+
+          <div style="height:14px"></div>
+          <div class="actions">
+            <button class="btn gold" onclick="calculateHourlyV01()">Calculate V01</button>
+            <button class="btn green" onclick="saveHourlyV01()">Save to Report</button>
+          </div>
+
+          <div id="hourlyResult" class="calc-result hidden">
+            <div class="kpi"><span>Total Hours</span><b id="hrHours">0.00</b></div>
+            <div class="kpi"><span>Hourly Minimum</span><b id="hrMinimum">$0.00</b></div>
+            <div class="kpi"><span>Adjustment</span><b id="hrAdjustment">$0.00</b></div>
+            <div class="kpi"><span>Grand Total Tip</span><b id="hrGrandTip">$0.00</b></div>
+            <div class="kpi"><span>After Adjustment</span><b id="hrAfter">$0.00</b></div>
+            <div class="kpi"><span>Total Paid Out</span><b id="hrPaidOut">$0.00</b></div>
+          </div>
+        </div>
       </section>
 
       <section id="users" class="staffPanel hidden">
@@ -236,7 +328,9 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 })();
 </script>
 
-<script type="module" src="app.js?v=4"></script>
+<script src="hourly-logic.js"></script>
+<script src="hourly-logic.js"></script>
+<script type="module" src="app.js?v=6"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
