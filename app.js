@@ -72,7 +72,8 @@ window.employeeSignup=async function(){
   const pin2=$("signupPin2").value.trim();
 
   if(!EMPLOYEE_ROSTER.includes(name)){ alert("Select your name from the employee list."); return; }
-  if(!/^\d{7,15}$/.test(phone.replace(/\D/g,""))){ alert("Enter a valid mobile phone number."); return; }
+  const phoneDigits=phone.replace(/\D/g,"");
+  if(!/^\d{7,15}$/.test(phoneDigits)){ alert("Enter a valid mobile phone number."); return; }
   if(!/^\d{4}$/.test(pin)){ alert("PIN must be exactly 4 digits."); return; }
   if(pin!==pin2){ alert("PINs do not match."); return; }
 
@@ -80,35 +81,54 @@ window.employeeSignup=async function(){
   try{
     secondaryApp=initializeApp(FIREBASE_CONFIG,"employee-signup-"+Date.now());
     const secondaryAuth=getAuth(secondaryApp);
-    const cred=await createUserWithEmailAndPassword(secondaryAuth,emailFor(name),employeeAuthPassword(pin));
+    const secondaryDb=getFirestore(secondaryApp);
+    const email=emailFor(name);
+    const authPassword=employeeAuthPassword(pin);
+
+    let cred;
+    try{
+      cred=await createUserWithEmailAndPassword(secondaryAuth,email,authPassword);
+    }catch(createErr){
+      if(createErr.code==="auth/email-already-in-use"){
+        cred=await signInWithEmailAndPassword(secondaryAuth,email,authPassword);
+      }else{
+        throw createErr;
+      }
+    }
+
     const uid=cred.user.uid;
     const profile={
       username:slugFor(name),
       displayName:name,
-      phone:phone.replace(/\D/g,""),
+      phone:phoneDigits,
       role:"employee",
       active:false,
       approvalStatus:"pending",
       createdAt:serverTimestamp()
     };
-    await setDoc(doc(db,"users",uid),profile);
-    await setDoc(doc(db,"signupRequests",uid),{
+
+    await setDoc(doc(secondaryDb,"users",uid),profile);
+    await setDoc(doc(secondaryDb,"signupRequests",uid),{
       uid,
       displayName:name,
       username:slugFor(name),
-      phone:profile.phone,
+      phone:phoneDigits,
       status:"pending",
       requestedAt:serverTimestamp()
     });
+
     await signOut(secondaryAuth);
     toggleSignup(false);
-    $("signupPhone").value=""; $("signupPin").value=""; $("signupPin2").value="";
+    $("signupPhone").value="";
+    $("signupPin").value="";
+    $("signupPin2").value="";
     alert("Sign up sent. Please wait for Manager approval.");
   }catch(e){
     console.error("Employee signup:",e);
-    const msg=e.code==="auth/email-already-in-use"
-      ? "This employee is already registered. Use Employee Login or ask Manager."
-      : `Sign up failed: ${e.code || e.message}`;
+    let msg=`Sign up failed: ${e.code || e.message}`;
+    if(e.code==="auth/wrong-password" || e.code==="auth/invalid-credential"){
+      msg="This employee account already exists with a different PIN. Ask Manager/Owner to remove or reset the old account.";
+    }
     alert(msg);
   }finally{
     if(secondaryApp) try{await deleteApp(secondaryApp)}catch(e){}
@@ -477,11 +497,13 @@ function listenUsers(){
       const status = active
         ? '<span class="status approved">ACTIVE</span>'
         : '<span class="status rejected">DISABLED</span>';
-      const action = u.role==="owner" ? "" : (
-        active
-          ? `<button class="btn red" style="padding:7px 10px" onclick="setUserActive('${u.uid}',false)">Disable</button>`
-          : `<button class="btn green" style="padding:7px 10px" onclick="setUserActive('${u.uid}',true)">Enable</button>`
-      );
+      const action = u.role==="owner" ? "" : `
+        <div class="actions" style="justify-content:flex-end">
+          ${active
+            ? `<button class="btn red" style="padding:7px 10px" onclick="setUserActive('${u.uid}',false)">Disable</button>`
+            : `<button class="btn green" style="padding:7px 10px" onclick="setUserActive('${u.uid}',true)">Enable</button>`}
+          <button class="btn red" style="padding:7px 10px;background:#7f1d1d;color:white" onclick="deleteAppUser('${u.uid}','${'${'}esc(u.username||u.displayName||"")${'}'}')">Delete</button>
+        </div>`;
       return `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:9px 0">
         <div>
@@ -493,6 +515,35 @@ function listenUsers(){
     }).join("");
   },e=>console.error("Users listener:",e)));
 }
+
+
+window.deleteAppUser=async function(uid,username){
+  if(currentProfile.role!=="owner") return;
+  if(!confirm(`Delete ${username || "this user"} from JUICY TIP?\n\nThis removes the app profile and access. The Firebase Authentication identity may still remain and can be removed manually in Firebase Console if you want to reuse the same username.`)) return;
+  try{
+    const ref=doc(db,"users",uid);
+    const s=await getDoc(ref);
+    const before=s.exists()?s.data():null;
+
+    // Remove optional signup request first.
+    try{
+      const sr=doc(db,"signupRequests",uid);
+      const ss=await getDoc(sr);
+      if(ss.exists()) await deleteDoc(sr);
+    }catch(e){ console.warn("signup request cleanup:",e); }
+
+    if(s.exists()) await deleteDoc(ref);
+
+    try{
+      await writeAudit("user_deleted_from_app",uid,before?.displayName||before?.username||username||"",{before});
+    }catch(e){ console.warn("audit log after delete:",e); }
+
+    alert("User removed from JUICY TIP.");
+  }catch(e){
+    console.error("Delete app user:",e);
+    alert(`Delete failed: ${e.code || e.message}`);
+  }
+};
 
 window.createUserByOwner=async function(){
   if(currentProfile.role!=="owner") return;
