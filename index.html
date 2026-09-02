@@ -219,7 +219,24 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 
 <div id="employeeBottom" class="bottom hidden"><div class="inner"><button class="btn light" onclick="clearEmployeeForm()">Clear</button><button class="btn gold" onclick="submitEmployee()">Submit to Manager</button></div></div>
 
-<script type="module" src="app.js"></script>
+
+<script>
+(function(){
+  window.setLoginMode = function(mode){
+    var emp=document.getElementById('employeeLogin');
+    var staff=document.getElementById('staffLogin');
+    var eb=document.getElementById('employeeModeBtn');
+    var sb=document.getElementById('staffModeBtn');
+    if(!emp||!staff||!eb||!sb) return;
+    emp.classList.toggle('hidden',mode!=='employee');
+    staff.classList.toggle('hidden',mode!=='staff');
+    eb.classList.toggle('on',mode==='employee');
+    sb.classList.toggle('on',mode==='staff');
+  };
+})();
+</script>
+
+<script type="module" src="app.js?v=3"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
