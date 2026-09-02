@@ -781,3 +781,13 @@ $("hDate").value=todayLocal();
 populateRoster();
 refreshClockMode();
 syncHourlyShift();
+
+// V9.2 employee input improvements
+function fz24(id){
+ const e=document.getElementById(id); if(!e)return;
+ e.addEventListener("input",()=>{let d=e.value.replace(/\D/g,"").slice(0,4);e.value=d.length>2?d.slice(0,2)+":"+d.slice(2):d;});
+}
+["eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut"].forEach(fz24);
+["eGrandTotal","eTotalAM","eMeal","eCash"].forEach(id=>{
+ const e=document.getElementById(id); if(e)e.addEventListener("focus",()=>{if(Number(e.value)===0)setTimeout(()=>e.select(),0);});
+});

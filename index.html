@@ -116,8 +116,8 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         </div>
         <h3>Clock In / Out</h3>
         <div id="singleClock" class="grid">
-          <div><label>Clock In</label><input id="eIn" type="time"></div>
-          <div><label>Clock Out</label><input id="eOut" type="time"></div>
+          <div><label>Clock In</label><input id="eIn" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock Out</label><input id="eOut" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
         </div>
 
         <div id="longDoubleOptions" class="hidden">
@@ -136,15 +136,15 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         </div>
 
         <div id="continuousClock" class="grid hidden">
-          <div><label>Clock In AM</label><input id="eContIn" type="time"></div>
-          <div><label>Clock Out PM</label><input id="eContOut" type="time"></div>
+          <div><label>Clock In AM</label><input id="eContIn" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock Out PM</label><input id="eContOut" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
         </div>
 
         <div id="doubleClock" class="grid hidden">
-          <div><label>Clock In AM</label><input id="eAmIn" type="time"></div>
-          <div><label>Clock Out AM</label><input id="eAmOut" type="time"></div>
-          <div><label>Clock In PM</label><input id="ePmIn" type="time"></div>
-          <div><label>Clock Out PM</label><input id="ePmOut" type="time"></div>
+          <div><label>Clock In AM</label><input id="eAmIn" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock Out AM</label><input id="eAmOut" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock In PM</label><input id="ePmIn" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock Out PM</label><input id="ePmOut" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
         </div>
 
         <h3>Tip Report</h3>
@@ -330,7 +330,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 
 <script src="hourly-logic.js"></script>
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=11"></script>
+<script type="module" src="app.js?v=12"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
