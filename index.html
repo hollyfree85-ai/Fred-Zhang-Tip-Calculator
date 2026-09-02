@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101a30">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Juicy Tip">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>JUICY TIP REPORT</title>
+<style>
+:root{--navy:#101a30;--navy2:#1b2946;--gold:#f59e0b;--bg:#f4f6f8;--card:#fff;--line:#dde3ea;--ink:#111827;--muted:#6b7280;--green:#0f9d58;--red:#d93025;--blue:#2563eb}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Arial,sans-serif}
+button,input,select,textarea{font:inherit}.hidden{display:none!important}
+.top{position:sticky;top:0;z-index:30;background:linear-gradient(135deg,var(--navy),var(--navy2));color:#fff;padding:calc(13px + env(safe-area-inset-top)) 16px 13px;box-shadow:0 4px 18px rgba(0,0,0,.15)}
+.toprow{max-width:1200px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.brand b{font-size:20px}.brand small{display:block;opacity:.75;margin-top:2px}
+.role{background:var(--gold);color:#111827;padding:6px 10px;border-radius:999px;font-size:11px;font-weight:900}
+.wrap{max-width:1200px;margin:auto;padding:16px;padding-bottom:calc(100px + env(safe-area-inset-bottom))}
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 8px 30px rgba(16,26,48,.07)}
+.card h2{margin:0 0 12px;font-size:18px}.card h3{font-size:14px;margin:16px 0 8px;color:#374151}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media(max-width:720px){.grid,.grid3{grid-template-columns:1fr}}
+label{display:block;font-size:12px;font-weight:800;color:#4b5563;margin:0 0 6px}
+input,select,textarea{width:100%;border:1px solid #cbd5e1;background:#fff;border-radius:12px;padding:12px;font-size:16px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#64748b;box-shadow:0 0 0 3px rgba(100,116,139,.12)}
+.btn{border:0;border-radius:12px;padding:12px 14px;font-weight:900;background:var(--navy);color:#fff;cursor:pointer}.btn.gold{background:var(--gold);color:#111827}.btn.green{background:var(--green)}.btn.light{background:#e8edf2;color:#172033}.btn.red{background:#fee2e2;color:#991b1b}.btn.blue{background:var(--blue)}
+.actions{display:flex;flex-wrap:wrap;gap:8px}.actions .btn{flex:1;min-width:120px}
+.login{max-width:520px;margin:30px auto}.logo{width:78px;height:78px;border-radius:22px;background:var(--gold);display:grid;place-items:center;font-weight:1000;font-size:28px;color:var(--navy);margin:0 auto 12px}
+.mode{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}.mode button{border:1px solid var(--line);background:#eef2f7;border-radius:12px;padding:11px;font-weight:900}.mode button.on{background:var(--navy);color:#fff}
+.tabs{display:flex;gap:8px;overflow:auto;margin-bottom:14px;padding-bottom:2px}.tab{white-space:nowrap;border:0;background:#e7ebf0;color:#374151;border-radius:999px;padding:9px 13px;font-weight:850}.tab.on{background:var(--navy);color:#fff}
+.shiftbox{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.shift{border:1px solid #cfd7e1;background:#fff;border-radius:12px;padding:11px 4px;font-weight:900}.shift.on{background:var(--navy);color:#fff}
+.notice{padding:10px 12px;border-radius:12px;background:#fff7df;border:1px solid #f3d17a;color:#7a5200;font-size:13px}.good{background:#e9f7ef;border-color:#bce6ca;color:#08673a}.danger{background:#fde8e8;border-color:#f4bcbc;color:#8e2020}
+.badge{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:var(--red);color:#fff;font-size:11px;font-weight:900}
+.small{font-size:12px;color:var(--muted)}.status{padding:4px 8px;border-radius:999px;font-weight:900;font-size:10px}.pending{background:#fff3cd;color:#856404}.approved{background:#dff3e6;color:#146c43}.rejected{background:#fde2e2;color:#9b1c1c}
+.tablewrap{overflow:auto;border:1px solid var(--line);border-radius:14px}table{border-collapse:collapse;width:100%;min-width:980px}th,td{padding:10px 9px;border-bottom:1px solid #edf0f4;font-size:12px;text-align:left;white-space:nowrap}th{background:#f4f6f8}
+.bottom{position:fixed;left:0;right:0;bottom:0;z-index:25;padding:10px 14px calc(10px + env(safe-area-inset-bottom));background:rgba(244,246,248,.94);backdrop-filter:blur(14px);border-top:1px solid #dbe2ea}.bottom .inner{max-width:1200px;margin:auto;display:flex;gap:9px}.bottom .btn{flex:1}
+iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14px;background:white}
+</style>
+</head>
+<body>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>JUICY TIP</b><small id="whoText"></small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+
+<div id="loginView" class="wrap">
+  <div class="login card">
+    <div class="logo">JT</div>
+    <h2 style="text-align:center;margin-bottom:4px">JUICY TIP REPORT</h2>
+    <div class="small" style="text-align:center;margin-bottom:18px">One App • Employee • Manager • Owner</div>
+    <div class="mode">
+      <button id="employeeModeBtn" class="on" onclick="setLoginMode('employee')">Employee</button>
+      <button id="staffModeBtn" onclick="setLoginMode('staff')">Manager / Owner</button>
+    </div>
+    <div id="employeeLogin">
+      <label>Employee Username</label><input id="employeeUsername" autocomplete="username" placeholder="e.g. john">
+      <div style="height:10px"></div><label>4-digit PIN</label><input id="employeePin" inputmode="numeric" maxlength="8" type="password" placeholder="••••">
+      <div style="height:14px"></div><button class="btn gold" style="width:100%" onclick="loginEmployee()">Login as Employee</button>
+    </div>
+    <div id="staffLogin" class="hidden">
+      <label>Username</label><input id="staffUsername" autocomplete="username">
+      <div style="height:10px"></div><label>Password</label><input id="staffPassword" type="password" autocomplete="current-password">
+      <div style="height:14px"></div><button class="btn gold" style="width:100%" onclick="loginStaff()">Login</button>
+    </div>
+    <div id="loginMessage" class="small" style="margin-top:12px"></div>
+  </div>
+</div>
+
+<div id="appView" class="hidden">
+  <div class="wrap">
+
+    <div id="employeeApp" class="hidden">
+      <div class="card">
+        <h2>My Shift Submission</h2>
+        <div class="grid">
+          <div><label>Date</label><input id="eDate" type="date"></div>
+          <div><label>Position</label><select id="ePosition"><option>Server</option><option>Bartender</option><option>Host</option><option>Cashier</option></select></div>
+        </div>
+        <h3>Shift</h3>
+        <div class="shiftbox">
+          <button class="shift on" data-eshift="AM">AM</button>
+          <button class="shift" data-eshift="PM">PM</button>
+          <button class="shift" data-eshift="DOUBLE">DOUBLE</button>
+          <button class="shift" data-eshift="LONG">LONG</button>
+        </div>
+        <h3>Clock In / Out</h3>
+        <div id="singleClock" class="grid">
+          <div><label>Clock In</label><input id="eIn" type="time"></div>
+          <div><label>Clock Out</label><input id="eOut" type="time"></div>
+        </div>
+
+        <div id="longDoubleOptions" class="hidden">
+          <div class="grid" style="margin-bottom:10px">
+            <div>
+              <label>Break Option</label>
+              <select id="eBreakMode">
+                <option value="without">Without Break</option>
+                <option value="with">With Break</option>
+              </select>
+            </div>
+            <div class="small" style="align-self:end;padding-bottom:12px">
+              Without Break = Clock In AM → Clock Out PM. With Break = AM In/Out + PM In/Out.
+            </div>
+          </div>
+        </div>
+
+        <div id="continuousClock" class="grid hidden">
+          <div><label>Clock In AM</label><input id="eContIn" type="time"></div>
+          <div><label>Clock Out PM</label><input id="eContOut" type="time"></div>
+        </div>
+
+        <div id="doubleClock" class="grid hidden">
+          <div><label>Clock In AM</label><input id="eAmIn" type="time"></div>
+          <div><label>Clock Out AM</label><input id="eAmOut" type="time"></div>
+          <div><label>Clock In PM</label><input id="ePmIn" type="time"></div>
+          <div><label>Clock Out PM</label><input id="ePmOut" type="time"></div>
+        </div>
+
+        <h3>Tip Report</h3>
+        <div class="grid">
+          <div><label>Grand Total ($)</label><input id="eGrandTotal" type="number" step=".01" min="0" value="0"></div>
+          <div id="totalAmWrap" class="hidden"><label>Total AM ($) — Double / Longshift</label><input id="eTotalAM" type="number" step=".01" min="0" value="0"></div>
+        </div>
+        <div class="small" style="margin-top:7px">User Report note: for <b>Total AM</b>, use the AM selection. For <b>Grand Total</b>, do not select AM/PM.</div>
+
+        <h3>Meal & Cash Tip</h3>
+        <div class="grid">
+          <div><label>Meal ($)</label><input id="eMeal" type="number" step=".01" min="0" value="0"></div>
+          <div><label>Cash Tip ($)</label><input id="eCash" type="number" step=".01" min="0" value="0"></div>
+        </div>
+        <div style="height:12px"></div>
+        <div class="notice good">Your submission is stored in the shared Firestore database and appears on Manager/Owner devices in realtime.</div>
+      </div>
+      <div class="card"><h2>My Recent Submissions</h2><div id="mySubmissions"></div></div>
+    </div>
+
+    <div id="staffApp" class="hidden">
+      <div class="tabs">
+        <button class="tab on" data-stab="pending">Pending <span id="pendingBadge" class="badge">0</span></button>
+        <button class="tab" data-stab="report">Report</button>
+        <button class="tab" data-stab="hourly">Hourly Adjustment V01</button>
+        <button class="tab ownerOnly" data-stab="users">Users</button>
+        <button class="tab ownerOnly" data-stab="history">History</button>
+        <button class="tab" data-stab="setup">Setup</button>
+      </div>
+
+      <section id="pending" class="staffPanel">
+        <div class="card"><h2>Pending Employee Submissions</h2><div id="pendingList"></div></div>
+      </section>
+
+      <section id="report" class="staffPanel hidden">
+        <div class="card">
+          <div class="actions"><button class="btn green" onclick="openAddSubmission()">Add Submission</button><button class="btn light" onclick="exportCSV()">Export CSV</button><button class="btn light" onclick="window.print()">Print / PDF</button></div>
+          <div style="height:12px"></div>
+          <div class="tablewrap"><table><thead><tr><th>Date</th><th>Employee</th><th>Position</th><th>Shift</th><th>Break</th><th>Clock</th><th>Grand Total</th><th>Total AM</th><th>Meal</th><th>Cash Tip</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr></thead><tbody id="reportBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="hourly" class="staffPanel hidden">
+        <div class="card"><h2>Hourly Adjustment V01</h2><div class="notice">Original recovered V01 manager engine is preserved below. Its calculation formulas are not rewritten.</div><div style="height:12px"></div><iframe src="hourly-v01.html"></iframe></div>
+      </section>
+
+      <section id="users" class="staffPanel hidden">
+        <div class="card">
+          <h2>User Management</h2>
+          <div class="grid3">
+            <div><label>Username</label><input id="uName" placeholder="john"></div>
+            <div><label>Role</label><select id="uRole"><option value="employee">Employee</option><option value="manager">Manager</option></select></div>
+            <div><label>PIN / Password</label><input id="uPass" placeholder="4-digit PIN or password"></div>
+          </div>
+          <div style="height:10px"></div><button class="btn green" onclick="createUserByOwner()">Create User</button>
+          <div id="userList" style="margin-top:12px"></div>
+        </div>
+      </section>
+
+
+      <section id="history" class="staffPanel hidden">
+        <div class="card">
+          <h2>Owner Change History</h2>
+          <div class="small" style="margin-bottom:10px">Every add, edit, approve, reject, and delete action is written to the audit log.</div>
+          <div class="tablewrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Role</th><th>Action</th><th>Employee</th><th>Submission ID</th><th>Details</th></tr></thead><tbody id="historyBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <section id="setup" class="staffPanel hidden">
+        <div class="card">
+          <h2>Realtime Status</h2>
+          <div id="backendStatus" class="notice"></div>
+          <div style="height:12px"></div>
+          <button class="btn blue" onclick="requestNotify()">Enable Notifications</button>
+          <div class="small" style="margin-top:10px">Manager notification works instantly while the web app is open. Background push can be added with Firebase Cloud Messaging later if needed.</div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+
+<div id="editModal" class="hidden" style="position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.45);padding:20px;overflow:auto">
+  <div class="card" style="max-width:700px;margin:30px auto">
+    <h2 id="editTitle">Edit Submission</h2>
+    <input id="mId" type="hidden">
+    <div class="grid">
+      <div><label>Employee Name</label><input id="mEmployee"></div>
+      <div><label>Date</label><input id="mDate" type="date"></div>
+      <div><label>Position</label><select id="mPosition"><option>Server</option><option>Bartender</option><option>Host</option><option>Cashier</option></select></div>
+      <div><label>Shift</label><select id="mShift"><option>AM</option><option>PM</option><option>DOUBLE</option><option>LONG</option></select></div>
+      <div><label>Break</label><select id="mBreakMode"><option value="none">N/A</option><option value="without">Without Break</option><option value="with">With Break</option></select></div>
+      <div><label>Clock</label><input id="mClock" placeholder="10:30–22:00"></div>
+      <div><label>Grand Total ($)</label><input id="mGrandTotal" type="number" step=".01"></div>
+      <div><label>Total AM ($)</label><input id="mTotalAM" type="number" step=".01"></div>
+      <div><label>Meal ($)</label><input id="mMeal" type="number" step=".01"></div>
+      <div><label>Cash Tip ($)</label><input id="mCash" type="number" step=".01"></div>
+    </div>
+    <div style="height:12px"></div>
+    <div class="actions"><button class="btn light" onclick="closeEditModal()">Cancel</button><button class="btn green" onclick="saveStaffSubmission()">Save</button></div>
+  </div>
+</div>
+
+<div id="employeeBottom" class="bottom hidden"><div class="inner"><button class="btn light" onclick="clearEmployeeForm()">Clear</button><button class="btn gold" onclick="submitEmployee()">Submit to Manager</button></div></div>
+
+<script type="module" src="app.js"></script>
+<script>
+if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
+</script>
+</body>
+</html>

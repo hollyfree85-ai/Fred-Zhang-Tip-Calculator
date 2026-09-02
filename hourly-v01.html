@@ -1,0 +1,1662 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+  <meta name="theme-color" content="#101a30">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Tip Calculator">
+  <title>Tip Calculator by Fred Zhang</title>
+  <style>
+    :root{
+      color-scheme:light;
+      --navy:#101a30;
+      --navy-2:#1a2945;
+      --blue:#2165e8;
+      --blue-dark:#154ebc;
+      --ink:#162033;
+      --muted:#66738a;
+      --line:#d7dfeb;
+      --paper:#fff;
+      --soft:#f3f6fa;
+      --green:#0b7a45;
+      --green-bg:#eaf9f1;
+      --red:#ae2530;
+      --red-bg:#fff0f1;
+      --shadow:0 12px 34px rgba(20,36,70,.12);
+      font-family:Arial,Helvetica,sans-serif;
+    }
+    *{box-sizing:border-box}
+    html{background:#eef2f8;scroll-behavior:smooth}
+    body{margin:0;min-height:100vh;background:linear-gradient(#f8faff,#eef2f8);color:var(--ink);font-size:18px}
+    body.signature-drawing{overflow:hidden;overscroll-behavior:none;touch-action:none}
+    button,input,select{font:inherit}
+    button{touch-action:manipulation}
+    [hidden]{display:none!important}
+    body.auth-locked{overflow:hidden;background:#081225}
+    .auth-shell{
+      position:fixed;inset:0 0 auto;z-index:500;display:grid;place-items:center;overflow:auto;
+      width:100%;height:100vh;height:var(--app-viewport-height,100dvh);min-height:0;
+      padding:calc(24px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom));
+      overscroll-behavior:contain;scroll-padding:18px;-webkit-overflow-scrolling:touch;
+      background:
+        radial-gradient(circle at 12% 18%,rgba(66,133,255,.38),transparent 31%),
+        radial-gradient(circle at 88% 82%,rgba(28,190,133,.24),transparent 34%),
+        linear-gradient(145deg,#081225,#13284a 58%,#0b1e36);color:#fff
+    }
+    .auth-shell:before,.auth-shell:after{content:'';position:fixed;border-radius:50%;filter:blur(2px);pointer-events:none;animation:authFloat 8s ease-in-out infinite}
+    .auth-shell:before{width:190px;height:190px;left:-72px;bottom:8%;background:rgba(38,106,235,.18)}
+    .auth-shell:after{width:145px;height:145px;right:-42px;top:12%;background:rgba(27,191,133,.15);animation-delay:-3.5s}
+    .auth-card{
+      position:relative;width:min(470px,100%);padding:31px 27px 27px;border:1px solid rgba(255,255,255,.2);border-radius:30px;
+      background:rgba(255,255,255,.97);box-shadow:0 28px 80px rgba(0,0,0,.35);color:var(--ink);animation:authEnter .55s cubic-bezier(.2,.8,.2,1) both
+    }
+    .auth-mark{display:grid;place-items:center;width:72px;height:72px;margin:0 auto 19px;border-radius:23px;background:linear-gradient(145deg,#2165e8,#0d3b98);box-shadow:0 13px 29px rgba(33,101,232,.34);color:#fff;font-size:27px;font-weight:900;letter-spacing:-1px}
+    .auth-title{margin:0;text-align:center;font-size:31px;line-height:1.12;letter-spacing:-.7px}
+    .auth-subtitle{margin:9px 0 26px;text-align:center;color:var(--muted);font-size:17px;line-height:1.45}
+    .auth-card .field{margin-bottom:18px}
+    .password-wrap{position:relative}
+    .password-wrap input{padding-right:86px}
+    .password-toggle{position:absolute;right:8px;top:8px;min-height:46px;padding:0 12px;border:0;border-radius:11px;background:#e8eef8;color:#224679;font-size:14px;font-weight:900}
+    .auth-error{min-height:0;margin:0 0 16px;padding:13px 14px;border:1px solid #efb5bb;border-radius:14px;background:#fff0f1;color:#a31e2a;font-size:16px;font-weight:800;line-height:1.35;animation:authShake .28s ease}
+    .auth-submit{width:100%;min-height:68px;border:0;border-radius:17px;background:linear-gradient(135deg,#2165e8,#124bb6);box-shadow:0 10px 23px rgba(33,101,232,.28);color:#fff;font-size:21px;font-weight:900}
+    .auth-security{margin:16px 0 0;text-align:center;color:#718097;font-size:14px;font-weight:700}
+    body.auth-locked.keyboard-open .auth-shell{
+      place-items:start center;height:var(--app-viewport-height,100dvh);
+      padding:8px 12px 12px;scroll-padding:8px
+    }
+    body.auth-locked.keyboard-open .auth-card{
+      width:min(470px,100%);margin:0 auto;padding:14px 18px 16px;border-radius:20px
+    }
+    body.auth-locked.keyboard-open .auth-mark,
+    body.auth-locked.keyboard-open .auth-subtitle,
+    body.auth-locked.keyboard-open .auth-security{display:none}
+    body.auth-locked.keyboard-open .auth-title{margin:0 0 11px;font-size:24px;text-align:left}
+    body.auth-locked.keyboard-open .auth-card .field{margin-bottom:10px}
+    body.auth-locked.keyboard-open .auth-card label{margin-bottom:5px;font-size:16px}
+    body.auth-locked.keyboard-open .auth-card input{min-height:54px;padding-top:10px;padding-bottom:10px}
+    body.auth-locked.keyboard-open .auth-submit{min-height:58px;font-size:19px}
+    body.auth-locked.keyboard-open .auth-error{margin-bottom:10px;padding:9px 11px;font-size:14px}
+    @keyframes authEnter{from{opacity:0;transform:translateY(22px) scale(.97)}to{opacity:1;transform:none}}
+    @keyframes authFloat{50%{transform:translateY(-22px) translateX(9px) scale(1.07)}}
+    @keyframes authShake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+    .topbar{
+      position:sticky;top:0;z-index:30;
+      display:flex;align-items:center;justify-content:space-between;gap:12px;
+      min-height:92px;padding:14px max(16px,env(safe-area-inset-right)) 14px max(16px,env(safe-area-inset-left));
+      color:#fff;background:var(--navy);box-shadow:0 3px 16px rgba(5,13,30,.25)
+    }
+    body.keyboard-open .topbar{position:relative}
+    .brand{min-width:0;font-size:25px;font-weight:900;line-height:1.05;letter-spacing:-.4px}
+    .brand small{display:block;margin-top:6px;color:#a9c6ff;font-size:16px;letter-spacing:.2px}
+    .top-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;flex-shrink:0}
+    .top-btn{
+      min-height:52px;padding:8px 13px;border:1px solid #52627c;border-radius:16px;
+      background:var(--navy-2);color:#fff;font-size:15px;font-weight:900;line-height:1.05
+    }
+    .top-btn.primary{border-color:#fff;background:#fff;color:var(--navy)}
+    .top-btn span{display:block;margin-top:3px;color:#b7c4d7;font-size:13px}
+    .top-btn.primary span{color:#5e6a7c}
+    .top-btn.logout{border-color:#7c8da8;background:transparent}
+    main{width:min(760px,100%);margin:0 auto;padding:22px 14px calc(38px + env(safe-area-inset-bottom))}
+    .view[hidden]{display:none!important}
+    .card{overflow:hidden;border:1px solid #dce4ef;border-radius:24px;background:var(--paper);box-shadow:var(--shadow)}
+    .step-head{padding:24px 22px 18px;border-bottom:1px solid var(--line);background:#fff}
+    .eyebrow{margin:0 0 8px;color:var(--blue);font-size:16px;font-weight:900;text-transform:uppercase;letter-spacing:.6px}
+    h1,h2,h3,p{margin-top:0}
+    h1{margin-bottom:8px;font-size:30px;line-height:1.13;letter-spacing:-.5px}
+    .step-help{margin:0;color:var(--muted);font-size:18px;line-height:1.45}
+    .progress{display:grid;grid-template-columns:repeat(7,1fr);gap:7px;margin-top:18px}
+    .progress i{display:block;height:7px;border-radius:99px;background:#dce4f0}
+    .progress i.done{background:var(--blue)}
+    .step-body{padding:22px}
+    .field{margin-bottom:22px}
+    .field:last-child{margin-bottom:0}
+    label,.label{display:block;margin:0 0 9px;color:#26334a;font-size:18px;font-weight:900}
+    .optional{color:var(--muted);font-size:15px;font-weight:700}
+    input,select{
+      width:100%;min-height:62px;padding:14px 16px;border:2px solid #cbd5e3;border-radius:15px;
+      background:#fff;color:var(--ink);font-size:20px;font-weight:700;outline:none
+    }
+    input:focus,select:focus{border-color:var(--blue);box-shadow:0 0 0 4px rgba(33,101,232,.12)}
+    input.time-input{font-variant-numeric:tabular-nums;letter-spacing:2px}
+    input.keyboard-target{scroll-margin-top:120px;scroll-margin-bottom:180px}
+    input.invalid,select.invalid{border-color:var(--red);background:#fff7f7;box-shadow:0 0 0 4px rgba(174,37,48,.10)}
+    input[readonly]{border-color:#d7e0eb;background:#f2f5f9;color:#526078}
+    input::placeholder{color:#98a3b4;font-weight:500}
+    .money-wrap{position:relative}
+    .money-wrap:before{content:'$';position:absolute;left:17px;top:50%;z-index:2;transform:translateY(-50%);color:#536078;font-size:20px;font-weight:900}
+    .money-wrap input{padding-left:36px;text-align:right}
+    .choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .choice-grid.one{grid-template-columns:1fr}
+    .choice{
+      position:relative;display:flex;align-items:center;justify-content:center;min-height:72px;padding:15px;
+      border:2px solid #cbd5e3;border-radius:17px;background:#fff;color:#26334a;text-align:center;font-size:19px;font-weight:900;cursor:pointer
+    }
+    .choice input{position:absolute;opacity:0;width:1px;height:1px}
+    .choice.active,.choice:has(input:checked){border-color:var(--blue);background:#edf4ff;color:#124fb8;box-shadow:inset 0 0 0 1px var(--blue)}
+    .check-card{
+      display:flex;align-items:center;gap:15px;min-height:78px;margin-bottom:14px;padding:15px 17px;
+      border:2px solid #cbd5e3;border-radius:17px;background:#fff;cursor:pointer
+    }
+    .check-card input{width:28px;height:28px;min-height:28px;accent-color:var(--blue);flex:0 0 auto}
+    .check-card strong{display:block;font-size:19px}
+    .check-card span{display:block;margin-top:4px;color:var(--muted);font-size:16px;font-weight:600}
+    .info{
+      margin:0 0 20px;padding:16px 17px;border:1px solid #bdd5ff;border-radius:16px;
+      background:#eff5ff;color:#183f83;font-size:17px;line-height:1.45
+    }
+    .info strong{font-size:18px}
+    .error{
+      margin:0 0 20px;padding:16px 17px;border:1px solid #edb8bd;border-radius:16px;
+      background:var(--red-bg);color:var(--red);font-size:17px;font-weight:800;line-height:1.45
+    }
+    .error strong{display:block;margin-bottom:7px;font-size:19px}
+    .error ul{margin:0;padding-left:23px}
+    .error li+li{margin-top:5px}
+    .two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:18px 0}
+    .metric{padding:16px;border:1px solid #d7e1ee;border-radius:17px;background:#f7f9fc}
+    .metric span{display:block;color:var(--muted);font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.3px}
+    .metric strong{display:block;margin-top:7px;font-size:23px;line-height:1.15}
+    .metric.wide{grid-column:1/-1}
+    .metric.good{border-color:#a4dfc0;background:var(--green-bg);color:var(--green)}
+    .divider{height:1px;margin:24px 0;background:var(--line)}
+    .nav{
+      position:sticky;bottom:12px;z-index:10;display:grid;grid-template-columns:minmax(115px,.72fr) minmax(170px,1.28fr);gap:12px;
+      margin:8px 12px 12px;padding:12px;border:1px solid #e2e8f1;border-radius:21px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(20,36,70,.15)
+    }
+    body.keyboard-open .nav{display:none!important}
+    body.keyboard-open main{padding-bottom:56vh}
+    body.keyboard-open main:after{content:'';display:block;height:42vh;pointer-events:none}
+    .btn{min-height:66px;padding:13px 16px;border:0;border-radius:17px;font-size:20px;font-weight:900;cursor:pointer}
+    .btn.primary{background:var(--blue);color:#fff}
+    .btn.primary:active{background:var(--blue-dark)}
+    .btn.secondary{background:#e9eef5;color:#293750}
+    .btn.danger{background:#fff0f1;color:var(--red);border:1px solid #efc4c7}
+    .btn.full{width:100%}
+    .btn.small{min-height:50px;padding:10px 14px;border-radius:14px;font-size:16px}
+    .receipt{padding:22px}
+    .receipt-title{text-align:center;margin-bottom:22px}
+    .receipt-title h2{margin-bottom:6px;font-size:28px}
+    .receipt-title p{margin:0;color:var(--muted);font-size:17px}
+    .receipt-section{margin:0 0 22px;padding:17px;border:1px solid #dbe3ed;border-radius:18px;background:#fff}
+    .receipt-section h3{margin:0 0 13px;color:var(--blue);font-size:17px;text-transform:uppercase;letter-spacing:.45px}
+    .row{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px dashed #dce3ec;font-size:17px}
+    .row:last-child{border-bottom:0}
+    .row span{color:#5c687b}
+    .row strong{text-align:right;overflow-wrap:anywhere}
+    .payout{
+      margin:22px 0;padding:23px 18px;border:3px solid #16945c;border-radius:21px;background:var(--green-bg);text-align:center;color:#075a34
+    }
+    .payout span{display:block;font-size:17px;font-weight:900;letter-spacing:.4px}
+    .payout strong{display:block;margin-top:7px;font-size:42px;line-height:1}
+    .save-area{padding:0 22px 22px}
+    .signature-editor,.signature-report{
+      margin:0 22px 22px;padding:18px;border:1px solid #cfd9e7;border-radius:20px;background:#f7f9fc
+    }
+    .signature-editor-head,.signature-report-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:13px}
+    .signature-editor h3,.signature-report h3{margin:0;color:#26334a;font-size:20px}
+    .signature-help{margin:5px 0 0;color:var(--muted);font-size:15px;line-height:1.35}
+    .signature-status{display:inline-flex;align-items:center;min-height:32px;padding:6px 10px;border-radius:99px;background:#e8edf4;color:#566377;font-size:13px;font-weight:900;white-space:nowrap}
+    .signature-status.signed{background:#dff6e9;color:#087044}
+    .signature-canvas-wrap{overflow:hidden;border:2px solid #b9c6d8;border-radius:15px;background:#fff;touch-action:none;overscroll-behavior:contain}
+    #signatureCanvas{display:block;width:100%;height:190px;touch-action:none;cursor:crosshair;background:linear-gradient(to bottom,transparent 76%,#d9e0e9 76%,#d9e0e9 calc(76% + 1px),transparent calc(76% + 1px))}
+    .signature-actions{display:grid;grid-template-columns:1.2fr .8fr;gap:10px;margin-top:12px}
+    .signature-time{margin:11px 0 0;color:#5e6b7f;font-size:14px;font-weight:700}
+    .signature-report{margin:14px 0 4px;background:#fff}
+    .signature-preview{display:flex;align-items:center;justify-content:center;min-height:112px;margin-top:10px;border:1px solid #d6deea;border-radius:13px;background:#fff}
+    .signature-preview svg{display:block;width:100%;height:112px}
+    .signature-empty{color:#8290a3;font-size:16px;font-weight:800}
+    .adjustment-card{margin:0 0 22px;padding:18px;border:2px solid #abc8fa;border-radius:20px;background:#f1f6ff}
+    .adjustment-card.accepted{border-color:#8ed5b0;background:#ecfaf3}
+    .adjustment-card.declined,.adjustment-card.deleted{border-color:#d6dce5;background:#f7f8fa}
+    .adjustment-card h3{margin:0 0 7px;font-size:22px;color:#143f86}
+    .adjustment-card.accepted h3{color:#087044}
+    .adjustment-card p{margin:0 0 15px;color:#53637a;font-size:16px;line-height:1.45;font-weight:700}
+    .adjustment-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+    .adjustment-edit{margin-top:16px;padding-top:16px;border-top:1px solid #cbd9ec}
+    .adjustment-edit .field{margin-bottom:12px}
+    .adjustment-edit-actions{display:grid;grid-template-columns:1.2fr .8fr;gap:10px}
+    .report-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:18px}
+    .report-head h1{margin:0}
+    .count-pill{padding:8px 12px;border-radius:99px;background:#dfeafd;color:#164fae;font-size:15px;font-weight:900;white-space:nowrap}
+    .filters,.summary,.exports{margin-bottom:18px;padding:18px;border:1px solid #dbe3ed;border-radius:20px;background:#fff;box-shadow:0 6px 20px rgba(20,36,70,.07)}
+    .filters h2,.exports h2{margin-bottom:15px;font-size:21px}
+    .filter-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .filter-grid .field{margin:0}
+    .filter-grid input,.filter-grid select{min-height:54px;font-size:17px}
+    .summary{display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#13213b;color:#fff}
+    .summary .metric{border-color:#34435e;background:#1d2d4b}
+    .summary .metric span{color:#b7c7df}
+    .summary .metric strong{font-size:24px}
+    .export-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .report-list{display:grid;gap:16px}
+    .report-card{overflow:hidden;border:1px solid #d8e1ed;border-radius:21px;background:#fff;box-shadow:0 7px 24px rgba(20,36,70,.09)}
+    .report-card-head{padding:18px;background:#f3f6fa;border-bottom:1px solid #dbe3ed}
+    .report-card-head h2{margin:0 0 5px;font-size:23px}
+    .report-card-head p{margin:0;color:var(--muted);font-size:16px;font-weight:700}
+    .report-card-body{padding:14px 18px}
+    .report-card .payout{margin:14px 0;padding:17px}
+    .report-card .payout strong{font-size:34px}
+    .sms-actions{padding:0 18px 12px}
+    .sms-actions .btn{min-height:68px;font-size:20px;letter-spacing:.2px}
+    .card-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:0 18px 18px}
+    .locked-note{margin:0 18px 18px;padding:13px 15px;border-radius:14px;background:#f0f4fa;color:#5a687c;font-size:15px;font-weight:800;text-align:center}
+    .user-panel{padding:20px;border:1px solid #dbe3ed;border-radius:22px;background:#fff;box-shadow:var(--shadow)}
+    .user-panel+.user-panel{margin-top:18px}
+    .user-panel h2{margin-bottom:16px;font-size:23px}
+    .user-create{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end}
+    .user-create .field{margin:0}
+    .user-create .btn{grid-column:1/-1}
+    .user-list{display:grid;gap:12px}
+    .user-row{padding:16px;border:1px solid #d8e1ed;border-radius:17px;background:#f8faff}
+    .user-row-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+    .user-row h3{margin:0;font-size:20px;overflow-wrap:anywhere}
+    .user-meta{margin:5px 0 0;color:var(--muted);font-size:15px;font-weight:800;text-transform:uppercase}
+    .user-state{padding:6px 9px;border-radius:99px;background:#dff6e9;color:#087044;font-size:12px;font-weight:900}
+    .user-state.inactive{background:#f4e6e8;color:#9c2530}
+    .user-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+    .user-actions .btn:last-child:nth-child(odd){grid-column:1/-1}
+    .modal-overlay{position:fixed;inset:0;z-index:600;display:grid;place-items:center;overflow:auto;padding:20px;background:rgba(4,12,27,.7);backdrop-filter:blur(5px);animation:modalFade .18s ease}
+    .modal-card{width:min(500px,100%);padding:26px;border-radius:27px;background:#fff;box-shadow:0 28px 85px rgba(0,0,0,.4);text-align:center;animation:modalEnter .25s ease both}
+    .modal-kicker{margin:0 0 8px;color:var(--blue);font-size:15px;font-weight:900;text-transform:uppercase;letter-spacing:.6px}
+    .modal-card h2{margin:0;font-size:30px;line-height:1.08}
+    .modal-employee{margin:13px 0 4px;color:#344157;font-size:20px;font-weight:900}
+    .modal-phone{margin:0 0 22px;color:#0d4aa9;font-size:31px;font-weight:900;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+    .modal-actions{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+    .modal-actions.one{grid-template-columns:1fr}
+    .modal-edit{margin-top:18px;padding-top:18px;border-top:1px solid var(--line);text-align:left}
+    .modal-note{margin:15px 0 0;color:var(--muted);font-size:14px;line-height:1.4;font-weight:700}
+    @keyframes modalFade{from{opacity:0}}
+    @keyframes modalEnter{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+    .empty{padding:44px 22px;border:2px dashed #cad4e2;border-radius:21px;background:#fff;text-align:center;color:var(--muted)}
+    .empty h2{color:#293750}
+    .toast{position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));z-index:100;transform:translateX(-50%) translateY(30px);max-width:90%;padding:13px 18px;border-radius:99px;background:#101a30;color:#fff;font-size:16px;font-weight:800;opacity:0;pointer-events:none;transition:.2s}
+    .toast.show{transform:translateX(-50%) translateY(0);opacity:1}
+    @media(max-width:520px){
+      body{font-size:18px}
+      .topbar{min-height:88px;padding:12px 10px;align-items:flex-start;flex-wrap:wrap}
+      .brand{width:100%;font-size:23px}
+      .top-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}
+      .top-btn{padding:8px 10px;font-size:14px}
+      .top-btn span{font-size:12px}
+      main{padding:16px 10px 34px}
+      .step-head,.step-body,.receipt{padding-left:18px;padding-right:18px}
+      .choice-grid,.two-col{grid-template-columns:1fr}
+      .filter-grid{grid-template-columns:1fr}
+      .user-create{grid-template-columns:1fr}
+      .user-create .btn{grid-column:auto}
+      h1{font-size:28px}
+    }
+    @media(max-width:380px){
+      .brand{font-size:20px}
+      .top-btn{font-size:12px;min-height:50px}
+      .top-btn span{display:none}
+      .metric-grid,.summary,.export-grid{grid-template-columns:1fr}
+      .summary .wide,.metric.wide{grid-column:auto}
+      .nav{grid-template-columns:1fr 1.35fr}
+    }
+    @media(prefers-reduced-motion:reduce){.auth-card,.auth-shell:before,.auth-shell:after,.modal-overlay,.modal-card{animation:none!important}}
+  </style>
+</head>
+<body class="auth-locked">
+  <section class="auth-shell" id="loginView" aria-labelledby="loginTitle">
+    <form class="auth-card" id="loginForm" autocomplete="on">
+      <div class="auth-mark" aria-hidden="true">FZ</div>
+      <h1 class="auth-title" id="loginTitle">Tip Calculator</h1>
+      <p class="auth-subtitle">by Fred Zhang<br>Sign in to continue securely.</p>
+      <div class="field"><label for="loginUsername">Username</label><input id="loginUsername" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" enterkeyhint="next" placeholder="Enter username"></div>
+      <div class="field"><label for="loginPassword">Password</label><div class="password-wrap"><input id="loginPassword" type="password" autocomplete="current-password" enterkeyhint="go" placeholder="Enter password"><button class="password-toggle" id="toggleLoginPassword" type="button" aria-label="Show password">SHOW</button></div></div>
+      <div class="auth-error" id="loginError" role="alert" hidden></div>
+      <button class="auth-submit" id="loginButton" type="submit">SIGN IN</button>
+      <p class="auth-security">Authorized owner and manager access only.</p>
+    </form>
+  </section>
+
+  <div id="appShell" hidden>
+    <header class="topbar">
+      <div class="brand">Tip Calculator<small id="sessionLabel">BY FRED ZHANG</small></div>
+      <div class="top-actions">
+        <button class="top-btn primary" id="newEntryTop" type="button">NEW ENTRY</button>
+        <button class="top-btn" id="dailyReportTop" type="button">DAILY REPORT<span id="topCount">0 entries</span></button>
+        <button class="top-btn" id="usersTop" type="button" hidden>USERS</button>
+        <button class="top-btn logout" id="logoutTop" type="button">LOGOUT</button>
+      </div>
+    </header>
+
+    <main>
+    <section id="wizardView" class="view">
+      <div class="card" id="wizardCard">
+        <div id="stepMount"></div>
+      </div>
+    </section>
+
+    <section id="reportView" class="view" hidden>
+      <div class="report-head">
+        <div><p class="eyebrow">Saved separately</p><h1>Daily Report</h1></div>
+        <div class="count-pill" id="visibleCount">0 entries</div>
+      </div>
+      <div class="filters">
+        <h2>Find an entry</h2>
+        <div class="filter-grid">
+          <div class="field"><label for="filterDate">Date</label><input id="filterDate" type="date"></div>
+          <div class="field"><label for="filterName">Employee</label><input id="filterName" type="search" placeholder="Search name"></div>
+          <div class="field"><label for="filterPosition">Position</label><select id="filterPosition"><option value="">All positions</option><option>Server</option><option>Bartender</option></select></div>
+          <div class="field"><label for="filterShift">Shift</label><select id="filterShift"><option value="">All shifts</option><option>AM</option><option>PM</option><option>Double</option></select></div>
+        </div>
+      </div>
+      <div class="summary" id="reportSummary"></div>
+      <div class="exports">
+        <h2>Export visible entries</h2>
+        <div class="export-grid">
+          <button class="btn small primary" id="sendWhatsApp" type="button">SEND XLS TO WHATSAPP</button>
+          <button class="btn small primary" id="sendEmail" type="button">SEND XLS TO EMAIL</button>
+          <button class="btn small secondary" id="downloadXls" type="button">DOWNLOAD XLS</button>
+          <button class="btn small secondary" id="downloadPdf" type="button">DOWNLOAD PDF</button>
+        </div>
+      </div>
+      <div class="report-list" id="reportList"></div>
+      <button class="btn danger full" id="clearAll" type="button" style="margin-top:22px">CLEAR ALL DAILY REPORT</button>
+    </section>
+
+      <section id="userView" class="view" hidden>
+        <div class="report-head"><div><p class="eyebrow">Owner access</p><h1>User Management</h1></div></div>
+        <div class="user-panel">
+          <h2>Add Manager</h2>
+          <p class="step-help">Managers can calculate, sign, send, and export. Only the owner can change saved reports and manage users.</p>
+          <div class="user-create" style="margin-top:18px">
+            <div class="field"><label for="managerUsername">Manager Username</label><input id="managerUsername" type="text" autocomplete="off" autocapitalize="none" spellcheck="false"></div>
+            <div class="field"><label for="managerPassword">Temporary Password</label><input id="managerPassword" type="password" autocomplete="new-password"></div>
+            <button class="btn primary full" id="addManager" type="button">ADD MANAGER</button>
+          </div>
+          <div class="error" id="userError" role="alert" hidden style="margin-top:16px;margin-bottom:0"></div>
+        </div>
+        <div class="user-panel"><h2>Authorized Users</h2><div class="user-list" id="userList"></div></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-overlay" id="smsNumberModal" role="dialog" aria-modal="true" aria-labelledby="smsModalTitle" hidden>
+    <div class="modal-card">
+      <p class="modal-kicker">Confirm employee contact</p>
+      <h2 id="smsModalTitle">IS THIS YOUR NUMBER?</h2>
+      <p class="modal-employee" id="smsEmployeeName"></p>
+      <p class="modal-phone" id="smsPhoneDisplay"></p>
+      <div class="modal-actions" id="smsConfirmActions">
+        <button class="btn primary" id="smsNumberYes" type="button">YES</button>
+        <button class="btn secondary" id="smsNumberNo" type="button">NO</button>
+      </div>
+      <div class="modal-edit" id="smsEditPanel" hidden>
+        <div class="field"><label for="smsPhoneInput">Correct Phone Number</label><input id="smsPhoneInput" type="tel" inputmode="tel" autocomplete="tel" placeholder="(256) 555-1234"></div>
+        <button class="btn primary full" id="smsNumberContinue" type="button">OK &amp; CONTINUE</button>
+      </div>
+      <button class="btn secondary full" id="smsNumberCancel" type="button" style="margin-top:11px">CANCEL</button>
+      <p class="modal-note">The Messages composer will open with the signed PDF. Review it and tap Send yourself.</p>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="resetPasswordModal" role="dialog" aria-modal="true" aria-labelledby="resetPasswordTitle" hidden>
+    <div class="modal-card">
+      <p class="modal-kicker">Owner access</p>
+      <h2 id="resetPasswordTitle">Reset Password</h2>
+      <p class="modal-employee" id="resetPasswordUsername"></p>
+      <div class="field" style="margin-top:20px;text-align:left"><label for="resetPasswordInput">New Password</label><div class="password-wrap"><input id="resetPasswordInput" type="password" autocomplete="new-password"><button class="password-toggle" id="toggleResetPassword" type="button" aria-label="Show password">SHOW</button></div></div>
+      <div class="auth-error" id="resetPasswordError" role="alert" hidden></div>
+      <div class="modal-actions"><button class="btn primary" id="confirmResetPassword" type="button">RESET</button><button class="btn secondary" id="cancelResetPassword" type="button">CANCEL</button></div>
+      <p class="modal-note">Use at least 10 characters. The password is sent directly to secure native storage and is never saved in this page.</p>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script>
+(function attachFredTipCalculatorLogic(root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports) {
+    module.exports = api;
+  }
+  if (root) {
+    root.FredTipCalculatorLogic = api;
+  }
+})(typeof window !== "undefined" ? window : globalThis, function createFredTipCalculatorLogic() {
+  "use strict";
+
+  const roster = Object.freeze([
+    "Adrieanna Walker",
+    "Aida Gonzales",
+    "Alainna Montalvo",
+    "Angela Grizzad",
+    "Ariana Garner",
+    "Ashley Garcia",
+    "Brandi Copeland",
+    "Caitlin Dillon",
+    "Christina Gurley",
+    "Dorothy Makovicka",
+    "Fred Zhang",
+    "Hannah Dempsey",
+    "Jesus Ovalle-Munoz",
+    "Libby Lane",
+    "Megan Meadows",
+    "Megan Sisk",
+    "Mia Burress",
+    "Sara Swift",
+    "Sarah Kibler"
+  ]);
+
+  function finiteNumber(value, fallback) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  }
+
+  function roundCent(value) {
+    const number = finiteNumber(value, 0);
+    const scaled = number * 100;
+    return Math.round(scaled + Math.sign(scaled || 1) * 1e-7) / 100;
+  }
+
+  function parseMoney(value, fallback) {
+    const safeFallback = arguments.length > 1 ? finiteNumber(fallback, 0) : 0;
+    if (typeof value === "number") {
+      return Number.isFinite(value) ? value : safeFallback;
+    }
+    if (value === null || value === undefined) {
+      return safeFallback;
+    }
+
+    let text = String(value).trim();
+    if (!text) {
+      return safeFallback;
+    }
+
+    const parenthesized = /^\(.*\)$/.test(text);
+    text = text
+      .replace(/[,$\s]/g, "")
+      .replace(/^\((.*)\)$/, "$1");
+    const number = Number(text);
+    if (!Number.isFinite(number)) {
+      return safeFallback;
+    }
+    return parenthesized ? -Math.abs(number) : number;
+  }
+
+  /**
+   * Lightweight input mask for the typed-time fields. It intentionally does
+   * not validate or guess a time; validation remains parseTypedTime's job.
+   */
+  function formatTimeDigits(value) {
+    const digits = String(value === null || value === undefined ? "" : value)
+      .replace(/\D/g, "")
+      .slice(0, 4);
+    if (digits.length < 2) {
+      return digits;
+    }
+    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+  }
+
+  /**
+   * Parses typed time into minutes after midnight.
+   * Accepted examples: 10:30 AM, 10.30am, 1030 PM, 22:15, 2215, 9 PM.
+   * Returns null when the value is incomplete or invalid.
+   */
+  function parseTypedTime(value) {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      value = String(value);
+    }
+    if (value === null || value === undefined) {
+      return null;
+    }
+
+    const text = String(value)
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, " ");
+    if (!text) {
+      return null;
+    }
+
+    const match = text.match(/^(\d{1,2})(?:(?::|\.)(\d{1,2})|(\d{2}))?\s*(AM|PM)?$/);
+    let hour;
+    let minute;
+    let meridiem;
+
+    if (match) {
+      hour = Number(match[1]);
+      minute = Number(match[2] || match[3] || 0);
+      meridiem = match[4] || "";
+    } else {
+      const compact = text.match(/^(\d{3,4})\s*(AM|PM)?$/);
+      if (!compact) {
+        return null;
+      }
+      const digits = compact[1];
+      hour = Number(digits.slice(0, -2));
+      minute = Number(digits.slice(-2));
+      meridiem = compact[2] || "";
+    }
+
+    if (!Number.isInteger(hour) || !Number.isInteger(minute) || minute < 0 || minute > 59) {
+      return null;
+    }
+
+    if (meridiem) {
+      if (hour < 1 || hour > 12) {
+        return null;
+      }
+      if (hour === 12) {
+        hour = 0;
+      }
+      if (meridiem === "PM") {
+        hour += 12;
+      }
+    } else if (hour < 0 || hour > 23) {
+      return null;
+    }
+
+    return hour * 60 + minute;
+  }
+
+  /**
+   * Normalizes a complete accepted time to HH:MM. Partial/invalid text is
+   * returned as a visible mask (or blank) so no valid time is invented.
+   */
+  function to24Hour(value) {
+    const text = String(value === null || value === undefined ? "" : value).trim();
+    if (!text) {
+      return "";
+    }
+
+    const hasMeridiem = /(?:^|\s)(?:AM|PM)$/i.test(text);
+    const compactDigits = text.replace(/\D/g, "").slice(0, 4);
+    const separatorMatch = text.match(/[:.](\d*)/);
+
+    // With the digit mask, three compact digits or fewer than two digits
+    // after a separator are still being typed. Preserve that state.
+    if (!hasMeridiem && !separatorMatch && compactDigits.length < 4) {
+      return formatTimeDigits(compactDigits);
+    }
+    if (separatorMatch && separatorMatch[1].length < 2) {
+      return text;
+    }
+
+    const minutes = parseTypedTime(text);
+    if (minutes === null) {
+      return formatTimeDigits(text);
+    }
+    const hour = Math.floor(minutes / 60);
+    const minute = minutes % 60;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+
+  function normalizeShift(value) {
+    const shift = String(value || "").trim().toUpperCase();
+    if (shift === "DOUBLE") return "DOUBLE";
+    if (shift === "PM") return "PM";
+    return "AM";
+  }
+
+  function normalizePosition(value) {
+    const position = String(value || "").trim().toLowerCase();
+    return position === "bartender" || position === "bar" ? "Bartender" : "Server";
+  }
+
+  function normalizeBusserAM(value) {
+    if (value === true) return "WITH";
+    if (value === false) return "WITHOUT";
+    const normalized = String(value || "").trim().toUpperCase();
+    return normalized.includes("WITHOUT") ? "WITHOUT" : "WITH";
+  }
+
+  function elapsedMinutes(hourIn, hourOut) {
+    const start = parseTypedTime(hourIn);
+    const end = parseTypedTime(hourOut);
+    if (start === null || end === null) {
+      return null;
+    }
+    let difference = end - start;
+    if (difference < 0) {
+      difference += 24 * 60;
+    }
+    return difference;
+  }
+
+  /**
+   * Returns the exact elapsed whole minutes represented by the clock fields.
+   * Keeping minutes as the source of truth prevents rounded display hours from
+   * affecting wage calculations.
+   */
+  function calculateTotalMinutes(shift, hours) {
+    const normalizedShift = normalizeShift(shift);
+    const values = hours || {};
+    if (normalizedShift !== "DOUBLE") {
+      return elapsedMinutes(values.hourIn, values.hourOut);
+    }
+
+    const amMinutes = elapsedMinutes(values.hourInAM, values.hourOutAM);
+    const pmMinutes = elapsedMinutes(values.hourInPM, values.hourOutPM);
+    if (amMinutes === null || pmMinutes === null) {
+      return null;
+    }
+    return amMinutes + pmMinutes;
+  }
+
+  /**
+   * calculateTotalHours("AM", {hourIn: "10 AM", hourOut: "4 PM"})
+   * calculateTotalHours("DOUBLE", {hourInAM, hourOutAM, hourInPM, hourOutPM})
+   *
+   * The returned number is intentionally not rounded. The UI may display it
+   * with two decimals, but calculations must retain the exact minute fraction.
+   */
+  function calculateTotalHours(shift, hours) {
+    const minutes = calculateTotalMinutes(shift, hours);
+    return minutes === null ? null : minutes / 60;
+  }
+
+  function deriveTotals(input) {
+    const values = input || {};
+    const shift = normalizeShift(values.shift);
+    const grandTotal = roundCent(parseMoney(values.grandTotal));
+    let totalAM = 0;
+    let totalPM = 0;
+
+    if (shift === "AM") {
+      totalAM = grandTotal;
+    } else if (shift === "PM") {
+      totalPM = grandTotal;
+    } else {
+      totalAM = roundCent(parseMoney(values.totalAM));
+      totalPM = roundCent(grandTotal - totalAM);
+    }
+
+    return { shift, grandTotal, totalAM, totalPM };
+  }
+
+  function calculateBusser(input) {
+    const values = input || {};
+    const position = normalizePosition(values.position);
+    const totals = deriveTotals(values);
+    const busserAM = normalizeBusserAM(values.busserAM);
+
+    if (position === "Bartender") {
+      return {
+        rate: 0,
+        tipOut: 0,
+        basis: 0,
+        busserAM: "N/A"
+      };
+    }
+
+    let rate = 0;
+    let basis = 0;
+    if (totals.shift === "PM") {
+      rate = 1.5;
+      basis = totals.totalPM;
+    } else if (totals.shift === "AM") {
+      rate = busserAM === "WITH" ? 1.5 : 0;
+      basis = rate ? totals.totalAM : 0;
+    } else if (busserAM === "WITH") {
+      rate = 1.5;
+      basis = totals.grandTotal;
+    } else {
+      basis = totals.totalPM;
+    }
+
+    const tipOut = roundCent(basis * 0.015);
+    if (totals.shift === "DOUBLE" && busserAM === "WITHOUT") {
+      rate = totals.grandTotal > 0 ? (tipOut / totals.grandTotal) * 100 : 0;
+    }
+
+    return {
+      rate,
+      tipOut,
+      basis,
+      busserAM: totals.shift === "PM" ? "N/A" : busserAM
+    };
+  }
+
+  function calculateBarTipOut(input) {
+    const values = input || {};
+    const position = normalizePosition(values.position);
+    const totals = deriveTotals(values);
+
+    if (position === "Bartender") {
+      const manual = roundCent(parseMoney(
+        values.bartenderBarTipOut !== undefined ? values.bartenderBarTipOut : values.barTipOut
+      ));
+      return {
+        am: 0,
+        pm: 0,
+        total: manual
+      };
+    }
+
+    const am = values.amBarSales ? roundCent(totals.totalAM * 0.006) : 0;
+    const pm = values.pmBarSales ? roundCent(totals.totalPM * 0.006) : 0;
+    return {
+      am,
+      pm,
+      total: roundCent(am + pm)
+    };
+  }
+
+  function normalizeAdjustmentDecision(value) {
+    const decision = String(value || "").trim().toUpperCase();
+    if (decision === "ACCEPTED") return "ACCEPTED";
+    if (decision === "DECLINED") return "DECLINED";
+    if (decision === "DELETED") return "DELETED";
+    if (decision === "NONE") return "NONE";
+    return "PENDING";
+  }
+
+  function parseAdjustmentOverride(value) {
+    if (value === null || value === undefined) {
+      return null;
+    }
+    if (typeof value === "string" && !value.trim()) {
+      return null;
+    }
+
+    const parsed = parseMoney(value, Number.NaN);
+    return Number.isFinite(parsed) && parsed >= 0 ? roundCent(parsed) : null;
+  }
+
+  /**
+   * Calculates the minimum hourly adjustment without making the employee's
+   * decision for them.
+   *
+   * Eligibility intentionally follows Total Before Meal, while the candidate
+   * amount follows Grand Total Tip (which includes Cash Tip):
+   *
+   *   minimum   = Total Hours x hourly rate
+   *   eligible  = Total Before Meal < minimum
+   *   candidate = max(0, minimum - Grand Total Tip)
+   *
+   * A report with a positive candidate starts as PENDING and applies $0.00.
+   * ACCEPTED applies the candidate, or an explicitly supplied non-negative
+   * override. DECLINED, DELETED and NONE always apply $0.00.
+   */
+  function calculateHourlyAdjustment(input) {
+    const values = input || {};
+    const position = normalizePosition(values.position);
+    const hourlyRate = position === "Bartender" ? 7 : 7.25;
+    const rawMinutes = Number(values.totalMinutesWork);
+    const hasExactMinutes = values.totalMinutesWork !== null
+      && values.totalMinutesWork !== undefined
+      && values.totalMinutesWork !== ""
+      && Number.isFinite(rawMinutes)
+      && rawMinutes > 0;
+    const rawHours = values.totalHoursWork !== undefined
+      ? Number(values.totalHoursWork)
+      : Number(values.totalHours);
+    const hasValidHours = hasExactMinutes || (Number.isFinite(rawHours) && rawHours > 0);
+    const totalHoursWork = hasExactMinutes ? rawMinutes / 60 : (hasValidHours ? rawHours : null);
+    const hourlyMinimum = hasValidHours ? roundCent(totalHoursWork * hourlyRate) : 0;
+    const totalBeforeMeal = roundCent(parseMoney(values.totalBeforeMeal));
+    const grandTotalTip = roundCent(parseMoney(values.grandTotalTip));
+    const adjustmentEligible = hasValidHours && totalBeforeMeal < hourlyMinimum;
+    const adjustmentCandidate = adjustmentEligible
+      ? roundCent(Math.max(0, hourlyMinimum - grandTotalTip))
+      : 0;
+    const hasCandidate = adjustmentEligible && adjustmentCandidate > 0;
+    const hasDecision = Object.prototype.hasOwnProperty.call(values, "adjustmentDecision");
+    let adjustmentDecision = hasCandidate
+      ? (hasDecision ? normalizeAdjustmentDecision(values.adjustmentDecision) : "PENDING")
+      : "NONE";
+
+    // NONE is an explicit no-adjustment state. An unknown or blank value is
+    // normalized to PENDING only while a real candidate exists.
+    if (!hasCandidate) {
+      adjustmentDecision = "NONE";
+    }
+
+    let overrideValue = null;
+    if (Object.prototype.hasOwnProperty.call(values, "adjustmentOverride")) {
+      overrideValue = parseAdjustmentOverride(values.adjustmentOverride);
+    } else if (Object.prototype.hasOwnProperty.call(values, "adjustmentSalaryHourly")) {
+      overrideValue = parseAdjustmentOverride(values.adjustmentSalaryHourly);
+    }
+
+    const adjustmentSalaryHourly = adjustmentDecision === "ACCEPTED"
+      ? (overrideValue === null ? adjustmentCandidate : overrideValue)
+      : 0;
+
+    return {
+      hourlyRate,
+      hourlyMinimum,
+      adjustmentEligible,
+      adjustmentCandidate,
+      adjustmentDecision,
+      adjustmentSalaryHourly: roundCent(adjustmentSalaryHourly)
+    };
+  }
+
+  function calculateReport(input) {
+    const values = input || {};
+    const position = normalizePosition(values.position);
+    const totals = deriveTotals(values);
+    const busser = calculateBusser(Object.assign({}, values, totals, { position }));
+    const bar = calculateBarTipOut(Object.assign({}, values, totals, { position }));
+    const paidTip = roundCent(parseMoney(
+      values.paidTips !== undefined ? values.paidTips : values.paidTip
+    ));
+    const cardFee = roundCent(parseMoney(
+      values.cardFee !== undefined ? values.cardFee : values.payCardTipFee
+    ));
+    const cashTip = roundCent(parseMoney(values.cashTip));
+    const meal = roundCent(parseMoney(values.meal));
+
+    // Paid Tips is already the final receipt Paid Tip. Busser is not subtracted again.
+    const totalTips = roundCent(paidTip + cardFee + busser.tipOut);
+    const totalBeforeMeal = roundCent(
+      position === "Bartender" ? paidTip + bar.total : paidTip - bar.total
+    );
+    const grandTotalTip = roundCent(totalBeforeMeal + cashTip);
+    const totalPaidOutBeforeAdjustment = roundCent(totalBeforeMeal - meal);
+    const hours = values.hours || values;
+    const clockMinutesWork = calculateTotalMinutes(totals.shift, hours);
+    const savedMinutesWork = Number(values.totalMinutesWork);
+    const hasSavedMinutes = values.totalMinutesWork !== null
+      && values.totalMinutesWork !== undefined
+      && values.totalMinutesWork !== ""
+      && Number.isInteger(savedMinutesWork)
+      && savedMinutesWork >= 0;
+    // Valid clocks are authoritative. Exact persisted minutes are the second
+    // choice; a legacy decimal-hour value is used only when neither exists.
+    const totalMinutesWork = clockMinutesWork !== null
+      ? clockMinutesWork
+      : (hasSavedMinutes ? savedMinutesWork : null);
+    const legacyHoursWork = values.totalHoursWork !== undefined
+      ? Number(values.totalHoursWork)
+      : Number(values.totalHours);
+    const totalHoursWork = totalMinutesWork !== null
+      ? totalMinutesWork / 60
+      : (Number.isFinite(legacyHoursWork) && legacyHoursWork >= 0 ? legacyHoursWork : null);
+    const adjustment = calculateHourlyAdjustment({
+      position,
+      totalMinutesWork,
+      totalHoursWork,
+      totalBeforeMeal,
+      grandTotalTip,
+      adjustmentDecision: values.adjustmentDecision,
+      adjustmentOverride: values.adjustmentOverride !== undefined
+        ? values.adjustmentOverride
+        : values.adjustmentSalaryHourly
+    });
+    const grandTotalAfterAdjustment = roundCent(
+      grandTotalTip + adjustment.adjustmentSalaryHourly
+    );
+    // This separate APK intentionally uses the new payout formula. Cash Tip is
+    // already part of Grand Total Tip and therefore part of Total Paid Out.
+    const totalPaidOut = roundCent(grandTotalAfterAdjustment - meal);
+
+    return {
+      date: values.date || "",
+      employee: values.employee || values.name || "",
+      position,
+      shift: totals.shift,
+      busserAM: busser.busserAM,
+      hourIn: hours.hourIn || "",
+      hourOut: hours.hourOut || "",
+      hourInAM: hours.hourInAM || "",
+      hourOutAM: hours.hourOutAM || "",
+      hourInPM: hours.hourInPM || "",
+      hourOutPM: hours.hourOutPM || "",
+      totalMinutesWork,
+      totalHoursWork,
+      grandTotal: totals.grandTotal,
+      totalAM: totals.totalAM,
+      totalPM: totals.totalPM,
+      totalTips,
+      payCardTipFee: cardFee,
+      paidTip,
+      paidTips: paidTip,
+      busserRate: busser.rate,
+      busserTipOut: busser.tipOut,
+      totalShared: busser.tipOut,
+      amBarSales: Boolean(values.amBarSales),
+      pmBarSales: Boolean(values.pmBarSales),
+      amBarTipOut: bar.am,
+      pmBarTipOut: bar.pm,
+      barTipOut: bar.total,
+      totalBeforeMeal,
+      cashTip,
+      grandTotalTip,
+      hourlyRate: adjustment.hourlyRate,
+      hourlyMinimum: adjustment.hourlyMinimum,
+      adjustmentEligible: adjustment.adjustmentEligible,
+      adjustmentCandidate: adjustment.adjustmentCandidate,
+      adjustmentDecision: adjustment.adjustmentDecision,
+      adjustmentSalaryHourly: adjustment.adjustmentSalaryHourly,
+      grandTotalAfterAdjustment,
+      meal,
+      totalPaidOutBeforeAdjustment,
+      totalPaidOut
+    };
+  }
+
+  return Object.freeze({
+    roster,
+    roundCent,
+    parseMoney,
+    formatTimeDigits,
+    parseTypedTime,
+    to24Hour,
+    calculateTotalMinutes,
+    calculateTotalHours,
+    deriveTotals,
+    calculateBusser,
+    calculateBarTipOut,
+    calculateHourlyAdjustment,
+    calculateReport
+  });
+});
+
+</script>
+
+<script>
+/* Safari compatibility bridge.
+   Keeps the original Hourly Adjustment V1 UI/calculation code intact while
+   replacing Android-native storage/auth calls with browser-local equivalents. */
+(function(){
+  'use strict';
+  const UKEY='fred_tip_safari_users_v1', CKEY='fred_tip_safari_contacts_v1', SKEY='fred_tip_safari_sessions_v1';
+  const DEFAULT_OWNER={username:'Fred1985',password:'Laopho$1988',role:'owner',active:true,immutable:true};
+
+  function load(k,f){try{const v=JSON.parse(localStorage.getItem(k)||'null');return v==null?f:v}catch(e){return f}}
+  function save(k,v){localStorage.setItem(k,JSON.stringify(v))}
+  function users(){
+      let u=load(UKEY,[]);
+      if(!Array.isArray(u))u=[];
+      const others=u.filter(x=>x&&x.role!=='owner');
+      const existingOwner=u.find(x=>x&&x.role==='owner');
+      const owner=Object.assign({},DEFAULT_OWNER,existingOwner||{});
+      owner.username='Fred1985';
+      owner.password='Laopho$1988';
+      owner.role='owner'; owner.active=true; owner.immutable=true;
+      u=[owner].concat(others); save(UKEY,u); return u
+    }
+  function sessions(){return load(SKEY,{})}
+  function result(o){return JSON.stringify(o)}
+  function sessionUser(token){const s=sessions(), name=s[token]; if(!name)return null; return users().find(x=>x.username===name&&x.active!==false)||null}
+  function requireOwner(token){const u=sessionUser(token);return u&&u.role==='owner'?u:null}
+  function cleanPhone(v){return String(v||'').replace(/[^\d+]/g,'')}
+  let initialContacts={"v":1,"seedVersion":2,"kdf":"HKDF-SHA256-CERT-BOUND-V1","salt":"f30ObcjfLmUrZPUpv7jWbgEYBGX4IQKG+gWdLxFUQ/o=","iv":"lYE0MGg33vJQGGF7","ciphertext":"97sgwyu87OgGE9d7etDZyoDJtiJnxmGT043Uslo0ryeXlFyNrcYeyhUewCy/uxRaEGY9+qLpNcraGxCZbpgzlGYqmlS2HzJm6c9giblaYyWotc5MfUjiTIcPpGINBOXQjw=="}
+;
+  try{
+    if(!localStorage.getItem(CKEY)){
+      let list=Array.isArray(initialContacts)?initialContacts:(initialContacts.contacts||[]);
+      save(CKEY,list);
+    }
+  }catch(e){}
+
+  window.AndroidBridge={
+    authLogin:function(username,password){
+      const loginName=String(username).trim().toLowerCase(); const u=users().find(x=>String(x.username).toLowerCase()===loginName);
+      if(!u||u.active===false||String(u.password)!==String(password)) return result({ok:false,message:'Username or password is incorrect.'});
+      const token='safari-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+      const s=sessions(); s[token]=u.username; save(SKEY,s);
+      return result({ok:true,authenticated:true,session:token,role:u.role,username:u.username});
+    },
+    authLogout:function(token){const s=sessions();delete s[token];save(SKEY,s);return result({ok:true})},
+    getCurrentRole:function(token){
+      const u=sessionUser(token);return u?result({ok:true,authenticated:true,role:u.role,username:u.username}):result({ok:false,authenticated:false,message:'Session expired.'});
+    },
+    getEmployeeContacts:function(token){
+      if(!sessionUser(token))return result({ok:false,authenticated:false,message:'Session expired.'});
+      return result({ok:true,contacts:load(CKEY,[])});
+    },
+    saveEmployeeContact:function(token,name,phone){
+      if(!sessionUser(token))return result({ok:false,authenticated:false,message:'Session expired.'});
+      let a=load(CKEY,[]), key=String(name||'').trim().toLowerCase(), found=false;
+      a=a.map(c=>{let n=String(c.displayName||c.name||c.employee||'').trim().toLowerCase();if(n===key){found=true;return Object.assign({},c,{displayName:name,mobilePhone:cleanPhone(phone)})}return c});
+      if(!found)a.push({displayName:name,mobilePhone:cleanPhone(phone)});
+      save(CKEY,a);return result({ok:true});
+    },
+    listUsers:function(token){
+      if(!requireOwner(token))return result({ok:false,authenticated:false,message:'Owner access required.'});
+      return result({ok:true,users:users().map(u=>({username:u.username,role:u.role,active:u.active!==false,immutable:!!u.immutable}))});
+    },
+    addManager:function(token,username,password){
+      if(!requireOwner(token))return result({ok:false,message:'Owner access required.'});
+      let a=users();if(a.some(u=>u.username===username))return result({ok:false,message:'Username already exists.'});
+      a.push({username:String(username),password:String(password),role:'manager',active:true,immutable:false});save(UKEY,a);return result({ok:true});
+    },
+    resetUserPassword:function(token,username,password){
+      if(!requireOwner(token))return result({ok:false,message:'Owner access required.'});
+      let a=users(),u=a.find(x=>x.username===username&&x.role==='manager');if(!u)return result({ok:false,message:'Manager not found.'});
+      u.password=String(password);save(UKEY,a);return result({ok:true});
+    },
+    setUserActive:function(token,username,active){
+      if(!requireOwner(token))return result({ok:false,message:'Owner access required.'});
+      let a=users(),u=a.find(x=>x.username===username&&x.role==='manager');if(!u)return result({ok:false,message:'Manager not found.'});
+      u.active=!!active;save(UKEY,a);return result({ok:true});
+    },
+    deleteUser:function(token,username){
+      if(!requireOwner(token))return result({ok:false,message:'Owner access required.'});
+      save(UKEY,users().filter(x=>!(x.username===username&&x.role==='manager')));return result({ok:true});
+    },
+    saveFile:function(){return result({ok:false,message:'Use Safari download.'})}
+  };
+})();
+</script>
+
+  <script>
+  (function(){
+    'use strict';
+    var L=window.FredTipCalculatorLogic||{};
+    var STORAGE_KEY='fred_tip_calculator_v1_rows';
+    var MAX_ROWS=2500;
+    var FALLBACK_ROSTER=[
+      'Adrieanna Walker','Aida Gonzales','Alainna Montalvo','Angela Grizzad','Ariana Garner','Ashley Garcia',
+      'Brandi Copeland','Caitlin Dillon','Christina Gurley','Dorothy Makovicka','Fred Zhang','Hannah Dempsey',
+      'Jesus Ovalle-Munoz','Libby Lane','Megan Meadows','Megan Sisk','Mia Burress','Sara Swift','Sarah Kibler'
+    ];
+    var roster=(Array.isArray(L.roster)&&L.roster.length?L.roster:FALLBACK_ROSTER).slice();
+    if(roster.indexOf('Megan Meadows')<0)roster.push('Megan Meadows');
+    roster=roster.filter(function(name,index,list){return list.indexOf(name)===index}).sort(function(a,b){return a.localeCompare(b)});
+    var SIG_W=10000,SIG_H=3800,SIG_MAX_POINTS=192,SIG_MAX_STROKES=64,SIG_ALPHABET='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_',signaturePadState=null;
+    var step=1;
+    var editId='';
+    var rows=[];
+    var draft=freshDraft();
+    var filters={date:'',name:'',position:'',shift:''};
+    var authSession='',authRole='',authUsername='',nativeContacts=Object.create(null),pendingSmsRecord=null,pendingResetUsername='',userDirectory=[];
+    var keyboardCloseTimer=0;
+    var maxVisualHeight=window.visualViewport?window.visualViewport.height:window.innerHeight;
+
+    function $(id){return document.getElementById(id)}
+    function today(){var d=new Date(),m=String(d.getMonth()+1).padStart(2,'0'),day=String(d.getDate()).padStart(2,'0');return d.getFullYear()+'-'+m+'-'+day}
+    function freshDraft(){return{id:'',date:today(),name:'',otherName:'',position:'Server',shift:'AM',hourIn:'',hourOut:'',hourInAM:'',hourOutAM:'',hourInPM:'',hourOutPM:'',busserAM:'without',grandTotal:'',totalAM:'',paidTips:'',cardFee:'',cashTip:'',meal:'',barSalesAM:false,barSalesPM:false,bartenderBarTip:'',adjustmentDecision:'',adjustmentOverride:'',adjustmentSalaryHourly:0,signatureStrokes:'',signatureStatus:'UNSIGNED',signedAt:''}}
+    function esc(v){return String(v==null?'':v).replace(/[&<>'"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]})}
+    function parseBridgeResponse(raw){
+      if(raw&&typeof raw==='object')return raw;
+      if(typeof raw!=='string')return null;
+      var text=raw.trim();if(!text)return null;
+      try{return JSON.parse(text)}catch(e){if(text==='true')return{ok:true};if(text==='false')return{ok:false};return null}
+    }
+    function isSessionFailure(result){return!!(result&&(result.authenticated===false||/session|sign in|log in|login|authentication|unauthorized/i.test(String(result.message||''))))}
+    function returnToLogin(message){logout();setLoginError(String(message||'Your secure session expired. Sign in again.'));return false}
+    function nativeActionResult(raw,successMessage,failureMessage){var result=parseBridgeResponse(raw);if(!result||result.ok!==true){if(isSessionFailure(result))return returnToLogin(result.message);toast(String(result&&result.message||failureMessage));return false}toast(successMessage);return true}
+    function isAuthenticated(){return!!authSession&&(authRole==='owner'||authRole==='manager')}
+    function isOwner(){return isAuthenticated()&&authRole==='owner'}
+    function setLoginError(message){var el=$('loginError');el.textContent=message||'Unable to sign in.';el.hidden=false}
+    function clearLoginError(){$('loginError').hidden=true;$('loginError').textContent=''}
+    function applyRoleUI(){
+      $('usersTop').hidden=!isOwner();$('clearAll').hidden=!isOwner();
+      $('sessionLabel').textContent=(authRole==='owner'?'OWNER':'MANAGER')+' • '+String(authUsername||'').toUpperCase()
+    }
+    function loadNativeContacts(){
+      nativeContacts=Object.create(null);if(!isAuthenticated()||!window.AndroidBridge||typeof window.AndroidBridge.getEmployeeContacts!=='function')return false;
+      try{
+        var result=parseBridgeResponse(window.AndroidBridge.getEmployeeContacts(authSession)),list=Array.isArray(result)?result:(result&&Array.isArray(result.contacts)?result.contacts:[]);
+        list.forEach(function(contact){if(!contact||typeof contact!=='object')return;var name=String(contact.displayName||contact.name||contact.employee||'').trim(),phone=sanitizePhone(contact.mobilePhone||contact.phone||contact.mobile||'');if(name&&phone)nativeContacts[phonebookName(name)]=phone});return true
+      }catch(e){nativeContacts=Object.create(null);return false}
+    }
+    function hydrateAfterLogin(){
+      $('loginPassword').blur();keyboardOff();
+      rows=loadRows();loadNativeContacts();draft=freshDraft();editId='';step=1;filters={date:'',name:'',position:'',shift:''};
+      ['filterDate','filterName','filterPosition','filterShift'].forEach(function(id){$(id).value=''});updateHeader();applyRoleUI();$('loginView').hidden=true;$('appShell').hidden=false;document.body.classList.remove('auth-locked');showWizard();renderStep();window.scrollTo(0,0)
+    }
+    function login(event){
+      if(event&&typeof event.preventDefault==='function')event.preventDefault();clearLoginError();var user=String($('loginUsername').value||'').trim(),pass=String($('loginPassword').value||'');
+      if(!user||!pass){setLoginError('Enter both username and password.');return false}
+      if(!window.AndroidBridge||typeof window.AndroidBridge.authLogin!=='function'){setLoginError('Secure login is unavailable in this build. Install the latest app update.');return false}
+      $('loginButton').disabled=true;
+      try{
+        var result=parseBridgeResponse(window.AndroidBridge.authLogin(user,pass)),role=String(result&&result.role||'').toLowerCase(),session=String(result&&result.session||'');
+        if(!result||result.ok!==true||!session||(role!=='owner'&&role!=='manager')){setLoginError(String(result&&result.message||'Username or password is incorrect.'));return false}
+        authSession=session;authRole=role;authUsername=String(result.username||user);$('loginPassword').value='';hydrateAfterLogin();return true
+      }catch(e){setLoginError('Could not complete secure login. Please try again.');return false}
+      finally{$('loginButton').disabled=false}
+    }
+    function logout(){
+      var oldSession=authSession;if(oldSession&&window.AndroidBridge&&typeof window.AndroidBridge.authLogout==='function'){try{window.AndroidBridge.authLogout(oldSession)}catch(e){}}
+      authSession='';authRole='';authUsername='';rows=[];nativeContacts=Object.create(null);userDirectory=[];pendingSmsRecord=null;pendingResetUsername='';signaturePadState=null;draft=freshDraft();editId='';
+      $('smsNumberModal').hidden=true;$('resetPasswordModal').hidden=true;$('resetPasswordInput').value='';$('appShell').hidden=true;$('loginView').hidden=false;$('userView').hidden=true;document.body.classList.add('auth-locked');$('loginPassword').value='';clearLoginError();syncViewportHeight();return true
+    }
+    function requireAuth(){
+      if(!isAuthenticated())return returnToLogin('Your session is not active. Sign in again.');
+      if(!window.AndroidBridge||typeof window.AndroidBridge.getCurrentRole!=='function')return returnToLogin('Secure session verification is unavailable. Sign in again after updating the app.');
+      try{
+        var result=parseBridgeResponse(window.AndroidBridge.getCurrentRole(authSession)),role=String(result&&result.role||'').toLowerCase(),username=String(result&&result.username||'');
+        if(!result||result.ok!==true||result.authenticated!==true||role!==authRole||username!==authUsername)return returnToLogin(String(result&&result.message||'Your secure session expired. Sign in again.'));return true
+      }catch(e){return returnToLogin('Could not verify your secure session. Sign in again.')}
+    }
+    function requireOwner(){if(!requireAuth())return false;if(authRole==='owner')return true;toast('Owner access is required for this action.');return false}
+    function moneyNumber(v){
+      if(typeof L.parseMoney==='function'){try{var n=L.parseMoney(v);if(Number.isFinite(n))return n}catch(e){}}
+      var s=String(v==null?'':v).replace(/[$,\s]/g,'');var n2=Number(s);return Number.isFinite(n2)?n2:0
+    }
+    function roundCent(v){var scaled=(Number(v)||0)*100;return Math.round(scaled+Math.sign(scaled||1)*1e-7)/100}
+    function money(v){return '$'+roundCent(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}
+    function pct(v){return (Number(v)||0).toFixed(3)+'%'}
+    function employeeName(d){return d.name==='__other__'?String(d.otherName||'').trim():String(d.name||'').trim()}
+    function saveRows(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(rows.slice(0,MAX_ROWS)));updateHeader();return true}catch(e){toast('Could not save. Device storage may be full. No report was changed.');return false}}
+    function sanitizePhone(value){
+      var raw=String(value==null?'':value).trim(),digits=raw.replace(/\D/g,'');
+      if(digits.length===10)return'+1'+digits;
+      if(digits.length===11&&digits.charAt(0)==='1')return'+'+digits;
+      if(raw.charAt(0)==='+'&&digits.length>=8&&digits.length<=15)return'+'+digits;
+      return''
+    }
+    function phonebookName(name){return'employee:'+String(name==null?'':name).trim().toLowerCase()}
+    function employeePhone(name){return nativeContacts[phonebookName(name)]||''}
+    function saveEmployeePhone(name,phone){
+      if(!window.AndroidBridge||typeof window.AndroidBridge.saveEmployeeContact!=='function'){toast('Secure contact updates are unavailable in this build.');return false}
+      try{var result=parseBridgeResponse(window.AndroidBridge.saveEmployeeContact(authSession,name,phone));if(!result||result.ok!==true){if(isSessionFailure(result))return returnToLogin(result.message);toast(String(result&&result.message||'Could not update the employee contact.'));return false}}catch(e){toast('Could not update the employee contact. Please try again.');return false}
+      nativeContacts[phonebookName(name)]=phone;return true
+    }
+    function formatTimeDigits(value){if(typeof L.formatTimeDigits==='function'){try{return L.formatTimeDigits(value)}catch(e){}}var digits=String(value==null?'':value).replace(/\D/g,'').slice(0,4);return digits.length<2?digits:digits.slice(0,2)+':'+digits.slice(2)}
+    function to24Hour(value){if(typeof L.to24Hour==='function'){try{return L.to24Hour(value)}catch(e){}}var minutes=parseClock(value);if(minutes==null)return formatTimeDigits(value);return String(Math.floor(minutes/60)).padStart(2,'0')+':'+String(minutes%60).padStart(2,'0')}
+    function rawSignatureStrokes(value){
+      if(typeof value==='string'){
+        if(value.indexOf('S1:')===0)return decodeCompactSignature(value);
+        try{value=JSON.parse(value)}catch(e){return[]}
+        if(typeof value==='string'&&value.indexOf('S1:')===0)return decodeCompactSignature(value)
+      }
+      if(!Array.isArray(value))return[];var out=[],pointCount=0;
+      for(var i=0;i<value.length&&out.length<SIG_MAX_STROKES;i++){
+        if(!Array.isArray(value[i]))continue;var stroke=[];
+        for(var j=0;j<value[i].length&&stroke.length<800&&pointCount<12000;j++){
+          var p=value[i][j];if(!Array.isArray(p)||p.length<2)continue;var x=Number(p[0]),y=Number(p[1]);if(!Number.isFinite(x)||!Number.isFinite(y))continue;
+          stroke.push([Math.max(0,Math.min(SIG_W,Math.round(x))),Math.max(0,Math.min(SIG_H,Math.round(y)))]);pointCount++
+        }
+        if(stroke.length)out.push(stroke)
+      }
+      return out
+    }
+    function decodeCompactSignature(value){
+      if(typeof value!=='string'||value.indexOf('S1:')!==0)return[];var body=value.slice(3);if(!body)return[];var out=[],pointCount=0,groups=body.split('.');
+      for(var i=0;i<groups.length&&out.length<SIG_MAX_STROKES&&pointCount<SIG_MAX_POINTS;i++){
+        var group=groups[i];if(!group||group.length%4!==0)continue;var stroke=[];
+        for(var j=0;j+3<group.length&&pointCount<SIG_MAX_POINTS;j+=4){
+          var a=SIG_ALPHABET.indexOf(group.charAt(j)),b=SIG_ALPHABET.indexOf(group.charAt(j+1)),c=SIG_ALPHABET.indexOf(group.charAt(j+2)),d=SIG_ALPHABET.indexOf(group.charAt(j+3));if(a<0||b<0||c<0||d<0){stroke=[];break}
+          var packed=a*262144+b*4096+c*64+d,qx=Math.floor(packed/512),qy=packed%512;if(qx>1023)continue;
+          stroke.push([Math.round(qx/1023*SIG_W),Math.round(qy/511*SIG_H)]);pointCount++
+        }
+        if(stroke.length)out.push(stroke)
+      }
+      return out
+    }
+    function sampleSignatureStroke(stroke,target){
+      if(target>=stroke.length)return stroke.map(function(p){return[p[0],p[1]]});if(target<=1)return[[stroke[0][0],stroke[0][1]]];var distances=[0],total=0;
+      for(var i=1;i<stroke.length;i++){var dx=stroke[i][0]-stroke[i-1][0],dy=stroke[i][1]-stroke[i-1][1];total+=Math.sqrt(dx*dx+dy*dy);distances.push(total)}
+      if(total<=0){var flat=[];for(var f=0;f<target;f++){var fi=Math.round(f*(stroke.length-1)/(target-1));flat.push([stroke[fi][0],stroke[fi][1]])}return flat}
+      var out=[],cursor=1;for(var k=0;k<target;k++){var wanted=total*k/(target-1);while(cursor<distances.length-1&&distances[cursor]<wanted)cursor++;var prev=Math.max(0,cursor-1),span=distances[cursor]-distances[prev],ratio=span>0?(wanted-distances[prev])/span:0;out.push([Math.round(stroke[prev][0]+(stroke[cursor][0]-stroke[prev][0])*ratio),Math.round(stroke[prev][1]+(stroke[cursor][1]-stroke[prev][1])*ratio)])}return out
+    }
+    function decimateSignatureStrokes(value){
+      var strokes=rawSignatureStrokes(value);if(!strokes.length)return[];var total=strokes.reduce(function(n,s){return n+s.length},0);if(total<=SIG_MAX_POINTS)return strokes.map(function(s){return s.map(function(p){return[p[0],p[1]]})});
+      var targets=strokes.map(function(s){return Math.min(s.length,s.length>1?2:1)}),used=targets.reduce(function(n,v){return n+v},0),remaining=Math.max(0,SIG_MAX_POINTS-used),weights=strokes.map(function(s,i){return Math.max(0,s.length-targets[i])}),weightTotal=weights.reduce(function(n,v){return n+v},0),fractions=[];
+      for(var i=0;i<strokes.length;i++){var exact=weightTotal?remaining*weights[i]/weightTotal:0,add=Math.min(weights[i],Math.floor(exact));targets[i]+=add;used+=add;fractions.push({i:i,f:exact-Math.floor(exact)})}
+      fractions.sort(function(a,b){return b.f-a.f});for(var j=0;used<SIG_MAX_POINTS&&j<fractions.length*2;j++){var index=fractions[j%fractions.length].i;if(targets[index]<strokes[index].length){targets[index]++;used++}}
+      return strokes.map(function(s,i){return sampleSignatureStroke(s,targets[i])})
+    }
+    function encodeSignatureStrokes(value){
+      var strokes=decimateSignatureStrokes(value);if(!strokes.length)return'';var groups=strokes.map(function(stroke){var out='';stroke.forEach(function(p){var qx=Math.max(0,Math.min(1023,Math.round(p[0]/SIG_W*1023))),qy=Math.max(0,Math.min(511,Math.round(p[1]/SIG_H*511))),packed=qx*512+qy;out+=SIG_ALPHABET.charAt(Math.floor(packed/262144)%64)+SIG_ALPHABET.charAt(Math.floor(packed/4096)%64)+SIG_ALPHABET.charAt(Math.floor(packed/64)%64)+SIG_ALPHABET.charAt(packed%64)});return out});return'S1:'+groups.join('.')
+    }
+    function decodeSignatureStrokes(value){return rawSignatureStrokes(value)}
+    function cloneSignatureStrokes(value){return encodeSignatureStrokes(value)}
+    function hasSignature(value){
+      var strokes=decodeSignatureStrokes(value),length=0,minX=SIG_W,maxX=0,minY=SIG_H,maxY=0,points=0;
+      strokes.forEach(function(stroke){stroke.forEach(function(p,i){points++;minX=Math.min(minX,p[0]);maxX=Math.max(maxX,p[0]);minY=Math.min(minY,p[1]);maxY=Math.max(maxY,p[1]);if(i){var dx=p[0]-stroke[i-1][0],dy=p[1]-stroke[i-1][1];length+=Math.sqrt(dx*dx+dy*dy)}})});
+      return points>=2&&length>=250&&((maxX-minX)>=150||(maxY-minY)>=150)
+    }
+    function signatureStatus(record){return hasSignature(record&&record.signatureStrokes)?'SIGNED':'UNSIGNED'}
+    function migrateTimes(record){var out=Object.assign({},record||{});['hourIn','hourOut','hourInAM','hourOutAM','hourInPM','hourOutPM'].forEach(function(key){out[key]=to24Hour(out[key]||'')});out.signatureStrokes=cloneSignatureStrokes(out.signatureStrokes);out.signatureStatus=signatureStatus(out);out.signedAt=out.signatureStatus==='SIGNED'?String(out.signedAt||''):'';return out}
+    function adjustmentRate(position){return String(position||'').toLowerCase()==='bartender'?7:7.25}
+    function normalizeAdjustmentDecision(value){var decision=String(value||'').trim().toUpperCase();return['PENDING','ACCEPTED','DECLINED','DELETED','NONE'].indexOf(decision)>=0?decision:''}
+    function migrateRow(record){
+      var out=migrateTimes(record),rate=adjustmentRate(out.position),clockMinutes=clockMinutesFor(out),savedMinutes=validTotalMinutes(out.totalMinutesWork),hours;
+      if(clockMinutes!=null){out.totalMinutesWork=clockMinutes;hours=clockMinutes/60}
+      else if(savedMinutes!=null){out.totalMinutesWork=savedMinutes;hours=savedMinutes/60}
+      else{hours=Number(out.totalHours);if(!Number.isFinite(hours)||hours<0)hours=totalHours(out);delete out.totalMinutesWork}
+      out.totalHours=hours;
+      var minimum=roundCent(hours*rate),grandTip=roundCent(out.grandTotalTip),eligible=hours>0&&moneyNumber(out.totalBeforeMeal)<minimum,candidate=eligible?roundCent(Math.max(0,minimum-grandTip)):0,decision=normalizeAdjustmentDecision(out.adjustmentDecision);
+      if(candidate<=0)decision='NONE';
+      else if(!decision)decision=Number(out.adjustmentSalaryHourly)>0?'ACCEPTED':'NONE';
+      var applied=decision==='ACCEPTED'?roundCent(Math.max(0,validMoney(out.adjustmentOverride)?moneyNumber(out.adjustmentOverride):moneyNumber(out.adjustmentSalaryHourly))):0;
+      out.hourlyRate=rate;out.hourlyMinimum=minimum;out.adjustmentEligible=eligible;out.adjustmentCandidate=candidate;out.adjustmentDecision=decision;out.adjustmentSalaryHourly=applied;
+      out.adjustmentOverride=decision==='ACCEPTED'?String(applied):'';out.grandTotalAfterAdjustment=roundCent(grandTip+applied);out.totalPaidOut=roundCent(out.grandTotalAfterAdjustment-moneyNumber(out.meal));return out
+    }
+    function migrateDraftTimes(){draft=migrateTimes(draft)}
+    function displayTime(value){return to24Hour(value||'')}
+    function loadRows(){try{var raw=localStorage.getItem(STORAGE_KEY)||'[]',v=JSON.parse(raw),list=Array.isArray(v)?v.slice(0,MAX_ROWS).map(migrateRow):[];var next=JSON.stringify(list);if(next!==raw){try{localStorage.setItem(STORAGE_KEY,next)}catch(writeError){}}return list}catch(e){return[]}}
+    function toast(msg){var el=$('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(function(){el.classList.remove('show')},2300)}
+    function updateHeader(){$('topCount').textContent=rows.length+' '+(rows.length===1?'entry':'entries')}
+    function callLogic(name,arg,fallback){
+      if(typeof L[name]==='function'){try{var out=L[name](arg);if(out!=null)return out}catch(e){}}
+      return fallback(arg)
+    }
+    function parseClock(raw){
+      if(typeof L.parseTypedTime==='function'){try{return L.parseTypedTime(raw)}catch(e){}}
+      var s=String(raw||'').trim().toUpperCase().replace(/\./g,':').replace(/\s+/g,' '),m=s.match(/^(\d{1,2})(?::?(\d{2}))?\s*(AM|PM)?$/);if(!m)return null;
+      var h=+m[1],min=+(m[2]||0),ap=m[3]||'';if(min>59||h>23||h<0)return null;if(ap){if(h<1||h>12)return null;if(h===12)h=0;if(ap==='PM')h+=12}return h*60+min
+    }
+    function elapsedClockMinutes(a,b){var start=parseClock(a),end=parseClock(b);if(start==null||end==null)return null;var minutes=end-start;if(minutes<0)minutes+=1440;return minutes}
+    function validTotalMinutes(value){var minutes=Number(value);return Number.isInteger(minutes)&&minutes>=0?minutes:null}
+    function clockMinutesFor(d){
+      var shift=String(d&&d.shift||'').trim().toUpperCase();
+      if(shift==='DOUBLE'){
+        var am=elapsedClockMinutes(d.hourInAM,d.hourOutAM),pm=elapsedClockMinutes(d.hourInPM,d.hourOutPM);return am==null||pm==null?null:am+pm
+      }
+      var direct=elapsedClockMinutes(d&&d.hourIn,d&&d.hourOut);if(direct!=null)return direct;
+      return shift==='PM'?elapsedClockMinutes(d&&d.hourInPM,d&&d.hourOutPM):elapsedClockMinutes(d&&d.hourInAM,d&&d.hourOutAM)
+    }
+    function hourDiff(a,b){var x=parseClock(a),y=parseClock(b);if(x==null||y==null)return NaN;if(y<x)y+=1440;return (y-x)/60}
+    function valid24Time(value){return /^\d{2}:\d{2}$/.test(String(value||''))&&parseClock(value)!=null}
+    function fallbackHours(d){var minutes=clockMinutesFor(d);return minutes==null?0:minutes/60}
+    function logicHours(d){return{hourIn:d.hourIn,hourOut:d.hourOut,hourInAM:d.hourInAM,hourOutAM:d.hourOutAM,hourInPM:d.hourInPM,hourOutPM:d.hourOutPM}}
+    function logicInput(d){return{date:d.date,employee:employeeName(d),name:employeeName(d),position:d.position,shift:d.shift,busserAM:d.busserAM==='with'?'WITH':'WITHOUT',grandTotal:d.grandTotal,totalAM:d.totalAM,paidTips:d.paidTips,cardFee:d.cardFee,cashTip:d.cashTip,meal:d.meal,amBarSales:!!d.barSalesAM,pmBarSales:!!d.barSalesPM,bartenderBarTipOut:d.bartenderBarTip,adjustmentDecision:d.adjustmentDecision,adjustmentOverride:d.adjustmentOverride,adjustmentSalaryHourly:d.adjustmentSalaryHourly,totalMinutesWork:d.totalMinutesWork,totalHoursWork:d.totalHours,hours:logicHours(d),hourIn:d.hourIn,hourOut:d.hourOut,hourInAM:d.hourInAM,hourOutAM:d.hourOutAM,hourInPM:d.hourInPM,hourOutPM:d.hourOutPM}}
+    function totalHours(d){var minutes=clockMinutesFor(d);if(minutes!=null)return minutes/60;minutes=validTotalMinutes(d&&d.totalMinutesWork);if(minutes!=null)return minutes/60;var out;if(typeof L.calculateTotalHours==='function'){try{out=L.calculateTotalHours(d.shift,logicHours(d))}catch(e){}}if(typeof out==='object'&&out)out=out.totalHours!=null?out.totalHours:out.hours;out=Number(out);if(Number.isFinite(out)&&out>=0)return out;out=Number(d&&d.totalHours);return Number.isFinite(out)&&out>=0?out:0}
+    function fallbackTotals(d){var g=roundCent(moneyNumber(d.grandTotal)),am=d.shift==='AM'?g:(d.shift==='PM'?0:roundCent(moneyNumber(d.totalAM)));return{grandTotal:g,totalAM:am,totalPM:roundCent(g-am)}}
+    function totalsFor(d){var input=logicInput(d),x=callLogic('deriveTotals',input,fallbackTotals)||{};return{grandTotal:roundCent(x.grandTotal!=null?x.grandTotal:moneyNumber(d.grandTotal)),totalAM:roundCent(x.totalAM!=null?x.totalAM:fallbackTotals(d).totalAM),totalPM:roundCent(x.totalPM!=null?x.totalPM:fallbackTotals(d).totalPM)}}
+    function fallbackBusser(x){
+      var d=x.draft||x,t=x.totals||totalsFor(d);if(d.position==='Bartender')return{rate:0,tipOut:0,busserRate:0,busserTipOut:0};
+      if(d.shift==='AM'&&d.busserAM==='without')return{rate:0,tipOut:0,busserRate:0,busserTipOut:0};
+      if(d.shift==='Double'&&d.busserAM==='without'){var tip=roundCent(t.totalPM*.015),rate=t.grandTotal>0?tip/t.grandTotal*100:0;return{rate:rate,tipOut:tip,busserRate:rate,busserTipOut:tip}}
+      var tip2=roundCent(t.grandTotal*.015);return{rate:1.5,tipOut:tip2,busserRate:1.5,busserTipOut:tip2}
+    }
+    function busserFor(d,t){var input=Object.assign(logicInput(d),t),b=callLogic('calculateBusser',input,function(){return fallbackBusser({draft:d,totals:t})})||{};return{rate:Number(b.rate!=null?b.rate:b.busserRate)||0,tipOut:roundCent(b.tipOut!=null?b.tipOut:b.busserTipOut)}}
+    function fallbackBar(x){var d=x.draft||x,t=x.totals||totalsFor(d);if(d.position==='Bartender'){var v=roundCent(moneyNumber(d.bartenderBarTip));return{total:v,barTipOut:v,am:0,pm:0}}
+      var am=d.barSalesAM?roundCent(t.totalAM*.006):0,pm=d.barSalesPM?roundCent(t.totalPM*.006):0;return{total:roundCent(am+pm),barTipOut:roundCent(am+pm),am:am,pm:pm,barTipAM:am,barTipPM:pm}
+    }
+    function barFor(d,t){var input=Object.assign(logicInput(d),t),b=callLogic('calculateBarTipOut',input,function(){return fallbackBar({draft:d,totals:t})})||{};return{total:roundCent(b.total!=null?b.total:b.barTipOut),am:roundCent(b.am!=null?b.am:b.barTipAM),pm:roundCent(b.pm!=null?b.pm:b.barTipPM)}}
+    function fallbackReport(x){
+      var d=x.draft||x,t=x.totals||totalsFor(d),b=x.busser||busserFor(d,t),bar=x.bar||barFor(d,t),paid=roundCent(moneyNumber(d.paidTips)),fee=roundCent(moneyNumber(d.cardFee)),cash=roundCent(moneyNumber(d.cashTip)),meal=roundCent(moneyNumber(d.meal));
+      var before=roundCent(d.position==='Bartender'?paid+bar.total:paid-bar.total);
+      var grandTip=roundCent(before+cash);return{paidTip:paid,totalTips:roundCent(paid+fee+b.tipOut),cardFee:fee,cashTip:cash,meal:meal,totalBeforeMeal:before,grandTotalTip:grandTip,totalPaidOut:roundCent(grandTip-meal)}
+    }
+    function hourlyAdjustmentFor(d,base,engine){
+      engine=engine||{};var hasEngine=engine.hourlyRate!=null||engine.hourlyMinimum!=null||engine.adjustmentCandidate!=null||engine.grandTotalAfterAdjustment!=null;
+      var rate=roundCent(engine.hourlyRate!=null?engine.hourlyRate:adjustmentRate(d.position));
+      var minimum=roundCent(engine.hourlyMinimum!=null?engine.hourlyMinimum:(base.totalHours*rate));
+      var fallbackEligible=base.totalHours>0&&base.totalBeforeMeal<minimum,eligible=engine.adjustmentEligible!=null?!!engine.adjustmentEligible:fallbackEligible;
+      var candidate=roundCent(Math.max(0,engine.adjustmentCandidate!=null?engine.adjustmentCandidate:(eligible?minimum-base.grandTotalTip:0)));
+      var requested=normalizeAdjustmentDecision(d.adjustmentDecision),decision=normalizeAdjustmentDecision(engine.adjustmentDecision);
+      if(!eligible||candidate<=0)decision='NONE';else if(!decision)decision=requested||'PENDING';
+      if(decision==='NONE'&&eligible&&!requested&&!hasEngine)decision='PENDING';
+      var applied=0;
+      if(decision==='ACCEPTED'){
+        if(engine.adjustmentSalaryHourly!=null&&hasEngine)applied=roundCent(Math.max(0,moneyNumber(engine.adjustmentSalaryHourly)));
+        else if(validMoney(d.adjustmentOverride))applied=roundCent(Math.max(0,moneyNumber(d.adjustmentOverride)));
+        else applied=candidate
+      }
+      var grandAfter=roundCent(base.grandTotalTip+applied),paidOut=roundCent(grandAfter-base.meal);
+      return{hourlyRate:rate,hourlyMinimum:minimum,adjustmentEligible:eligible,adjustmentCandidate:candidate,adjustmentDecision:decision,adjustmentSalaryHourly:applied,adjustmentOverride:decision==='ACCEPTED'?(validMoney(d.adjustmentOverride)?String(d.adjustmentOverride):String(applied)):'',grandTotalAfterAdjustment:grandAfter,totalPaidOut:paidOut}
+    }
+    function reportFor(d){
+      var t=totalsFor(d),b=busserFor(d,t),bar=barFor(d,t),base={draft:d,totals:t,busser:b,bar:bar},input=Object.assign(logicInput(d),t),r=callLogic('calculateReport',input,function(){return fallbackReport(base)})||fallbackReport(base);
+      var reportMinutes=clockMinutesFor(d);if(reportMinutes==null)reportMinutes=validTotalMinutes(r.totalMinutesWork);if(reportMinutes==null)reportMinutes=validTotalMinutes(d.totalMinutesWork);
+      var report=Object.assign({},d,{
+        name:employeeName(d),totalHours:reportMinutes!=null?reportMinutes/60:(Number(r.totalHoursWork!=null?r.totalHoursWork:(r.totalHours!=null?r.totalHours:totalHours(d)))||0),
+        hourIn:displayTime(d.hourIn),hourOut:displayTime(d.hourOut),
+        hourInAM:displayTime(d.shift==='AM'?d.hourIn:d.hourInAM),hourOutAM:displayTime(d.shift==='AM'?d.hourOut:d.hourOutAM),
+        hourInPM:displayTime(d.shift==='PM'?d.hourIn:d.hourInPM),hourOutPM:displayTime(d.shift==='PM'?d.hourOut:d.hourOutPM),
+        grandTotal:t.grandTotal,totalAM:t.totalAM,totalPM:t.totalPM,
+        busserRate:Number(r.busserRate!=null?r.busserRate:b.rate)||0,busserTipOut:roundCent(r.busserTipOut!=null?r.busserTipOut:b.tipOut),
+        barTipAM:roundCent(r.amBarTipOut!=null?r.amBarTipOut:(r.barTipAM!=null?r.barTipAM:bar.am)),barTipPM:roundCent(r.pmBarTipOut!=null?r.pmBarTipOut:(r.barTipPM!=null?r.barTipPM:bar.pm)),barTipOut:roundCent(r.barTipOut!=null?r.barTipOut:bar.total),
+        paidTip:roundCent(r.paidTip!=null?r.paidTip:moneyNumber(d.paidTips)),cardFee:roundCent(r.payCardTipFee!=null?r.payCardTipFee:(r.cardFee!=null?r.cardFee:moneyNumber(d.cardFee))),
+        totalTips:roundCent(r.totalTips!=null?r.totalTips:fallbackReport(base).totalTips),cashTip:roundCent(r.cashTip!=null?r.cashTip:moneyNumber(d.cashTip)),meal:roundCent(r.meal!=null?r.meal:moneyNumber(d.meal)),
+        totalBeforeMeal:roundCent(r.totalBeforeMeal!=null?r.totalBeforeMeal:fallbackReport(base).totalBeforeMeal),grandTotalTip:roundCent(r.grandTotalTip!=null?r.grandTotalTip:fallbackReport(base).grandTotalTip),
+        signatureStrokes:cloneSignatureStrokes(d.signatureStrokes),signatureStatus:signatureStatus(d),signedAt:signatureStatus(d)==='SIGNED'?String(d.signedAt||''):''
+      });if(reportMinutes!=null)report.totalMinutesWork=reportMinutes;else delete report.totalMinutesWork;return Object.assign(report,hourlyAdjustmentFor(d,report,r))
+    }
+
+    function pageTitle(title,help){return '<div class="step-head"><p class="eyebrow">Step '+step+' of 7</p><h1>'+esc(title)+'</h1><p class="step-help">'+esc(help)+'</p><div class="progress">'+[1,2,3,4,5,6,7].map(function(n){return '<i class="'+(n<=step?'done':'')+'"></i>'}).join('')+'</div></div>'}
+    function nav(backLabel,nextLabel){return '<div class="nav"><button class="btn secondary" id="backStep" type="button">'+esc(backLabel||'BACK')+'</button><button class="btn primary" id="nextStep" type="button">'+esc(nextLabel||'SUBMIT')+'</button></div>'}
+    function field(label,id,value,opts){opts=opts||{};return '<div class="field"><label for="'+id+'">'+label+'</label>'+ (opts.money?'<div class="money-wrap">':'') +'<input id="'+id+'" class="'+(opts.time?'time-input ':'')+'" type="'+(opts.type||'text')+'" value="'+esc(value||'')+'" '+(opts.placeholder?'placeholder="'+esc(opts.placeholder)+'" ':'')+(opts.readonly?'readonly ':'')+(opts.money?'inputmode="decimal" ':'')+(opts.time?'inputmode="numeric" maxlength="5" pattern="[0-9:]*" autocomplete="off" enterkeyhint="done" ':'')+(opts.autocomplete?'autocomplete="'+opts.autocomplete+'" ':'')+'>'+(opts.money?'</div>':'')+'</div>'}
+    function selectField(label,id,value,options){return '<div class="field"><label for="'+id+'">'+label+'</label><select id="'+id+'">'+options.map(function(o){var v=typeof o==='string'?o:o.value,t=typeof o==='string'?o:o.text;return '<option value="'+esc(v)+'" '+(String(v)===String(value)?'selected':'')+'>'+esc(t)+'</option>'}).join('')+'</select></div>'}
+    function choices(name,value,items){return '<div class="choice-grid '+(items.length===1?'one':'')+'">'+items.map(function(i){return '<label class="choice '+(value===i.value?'active':'')+'"><input type="radio" name="'+name+'" value="'+esc(i.value)+'" '+(value===i.value?'checked':'')+'><span>'+esc(i.text)+'</span></label>'}).join('')+'</div>'}
+    function setError(result){var old=$('stepError');if(old)old.remove();document.querySelectorAll('.invalid').forEach(function(el){el.classList.remove('invalid')});if(!result||!result.messages||!result.messages.length)return;var body=document.querySelector('.step-body')||document.querySelector('.save-area')||document.querySelector('.receipt');if(!body)return;var e=document.createElement('div');e.className='error';e.id='stepError';e.innerHTML='<strong>Please fix:</strong><ul>'+result.messages.map(function(m){return'<li>'+esc(m)+'</li>'}).join('')+'</ul>';body.insertBefore(e,body.firstChild);(result.ids||[]).forEach(function(id){var el=$(id);if(el)el.classList.add('invalid')});var first=$(result.ids&&result.ids[0]);(first||e).scrollIntoView({behavior:'smooth',block:'center'});if(first)setTimeout(function(){first.focus()},250)}
+    function attachChoiceStyles(){document.querySelectorAll('.choice input').forEach(function(el){el.addEventListener('change',function(){if(el.name==='position')draft.position=el.value;if(el.name==='shift')draft.shift=el.value;if(el.name==='busserAM')draft.busserAM=el.value;document.querySelectorAll('input[name="'+el.name+'"]').forEach(function(r){r.closest('.choice').classList.toggle('active',r.checked)})})})}
+    function bindTimeInputs(){
+      var inputs=Array.prototype.slice.call(document.querySelectorAll('input.time-input'));
+      inputs.forEach(function(el,index){
+        el.value=to24Hour(el.value);draft[el.id]=el.value;
+        el.addEventListener('keydown',function(event){
+          if(event.key!=='Backspace'||el.selectionStart!==el.selectionEnd||el.selectionStart<1)return;
+          var caret=el.selectionStart;if(el.value.charAt(caret-1)!==':')return;
+          event.preventDefault();var digits=el.value.replace(/\D/g,'').slice(0,4),before=el.value.slice(0,caret).replace(/\D/g,'').length;
+          if(before>0)digits=digits.slice(0,before-1)+digits.slice(before);el.value=formatTimeDigits(digits);draft[el.id]=el.value;
+          var nextCaret=Math.max(0,before-1);if(nextCaret>=2)nextCaret++;setTimeout(function(){el.setSelectionRange(nextCaret,nextCaret)},0)
+        });
+        el.addEventListener('input',function(){
+          var caret=el.selectionStart==null?el.value.length:el.selectionStart,digitsBefore=el.value.slice(0,caret).replace(/\D/g,'').length,digits=el.value.replace(/\D/g,'').slice(0,4);
+          el.value=formatTimeDigits(digits);draft[el.id]=el.value;var nextCaret=digitsBefore>=2?digitsBefore+1:digitsBefore;nextCaret=Math.min(nextCaret,el.value.length);try{el.setSelectionRange(nextCaret,nextCaret)}catch(e){}
+          if(digits.length===4){setTimeout(function(){var next=inputs[index+1];if(next){next.focus();next.setSelectionRange(0,next.value.length)}else{el.blur();var submit=$('nextStep');if(submit)setTimeout(function(){submit.scrollIntoView({behavior:'smooth',block:'end'})},180)}},90)}
+        });
+        el.addEventListener('blur',function(){var normalized=to24Hour(el.value);el.value=normalized;draft[el.id]=normalized})
+      })
+    }
+    function isKeyboardTarget(el){if(!el||el.tagName!=='INPUT'||el.disabled||el.readOnly)return false;var type=String(el.type||'text').toLowerCase();return['text','search','email','tel','number','password'].indexOf(type)>=0}
+    function bindKeyboardInputs(){document.querySelectorAll('input').forEach(function(el){if(isKeyboardTarget(el))el.classList.add('keyboard-target')})}
+    function syncViewportHeight(){var viewport=window.visualViewport,height=Math.max(240,Math.round(viewport?viewport.height:window.innerHeight));if(document.documentElement&&document.documentElement.style&&typeof document.documentElement.style.setProperty==='function')document.documentElement.style.setProperty('--app-viewport-height',height+'px');return height}
+    function keepInputVisible(el){if(!isKeyboardTarget(el))return;setTimeout(function(){if(document.activeElement!==el)return;var height=syncViewportHeight(),loginField=el.id==='loginUsername'||el.id==='loginPassword';if(loginField){var target=el.id==='loginPassword'?$('loginButton'):el;if(target&&typeof target.scrollIntoView==='function')target.scrollIntoView({behavior:'smooth',block:'end'});return}var rect=el.getBoundingClientRect(),safeTop=105,safeBottom=height-115;if(rect.bottom>safeBottom)window.scrollBy({top:rect.bottom-safeBottom+28,behavior:'smooth'});else if(rect.top<safeTop)window.scrollBy({top:rect.top-safeTop-20,behavior:'smooth'})},120)}
+    function keyboardOn(el){clearTimeout(keyboardCloseTimer);syncViewportHeight();document.body.classList.add('keyboard-open');keepInputVisible(el)}
+    function keyboardOff(){clearTimeout(keyboardCloseTimer);document.body.classList.remove('keyboard-open');syncViewportHeight();var loginView=$('loginView');if(loginView&&!loginView.hidden)loginView.scrollTop=0}
+    function installKeyboardUX(){
+      document.addEventListener('focusin',function(event){if(isKeyboardTarget(event.target))keyboardOn(event.target)},true);
+      document.addEventListener('focusout',function(){clearTimeout(keyboardCloseTimer);keyboardCloseTimer=setTimeout(function(){if(!isKeyboardTarget(document.activeElement))keyboardOff()},180)},true);
+      document.addEventListener('keydown',function(event){if(event.key!=='Enter'||!isKeyboardTarget(event.target))return;if(event.target===$('loginUsername')){event.preventDefault();$('loginPassword').focus();return}if(event.target===$('loginPassword')){event.preventDefault();login(event);return}event.preventDefault();event.target.blur()},true);
+      if(window.visualViewport){var onViewport=function(){var h=syncViewportHeight();maxVisualHeight=Math.max(maxVisualHeight,h);if(document.body.classList.contains('keyboard-open')&&h>=maxVisualHeight-70)keyboardOff();else if(isKeyboardTarget(document.activeElement))keepInputVisible(document.activeElement)};window.visualViewport.addEventListener('resize',onViewport);window.visualViewport.addEventListener('scroll',onViewport)}
+      syncViewportHeight()
+    }
+    function renderStep(){
+      window.scrollTo(0,0);document.body.classList.remove('signature-drawing');signaturePadState=null;var html='';
+      if(step===1)html=renderProfile();
+      if(step===2)html=renderHours();
+      if(step===3)html=renderBusser();
+      if(step===4)html=renderSales();
+      if(step===5)html=renderTips();
+      if(step===6)html=renderBar();
+      if(step===7)html=renderReview();
+      $('stepMount').innerHTML=html;bindStep();attachChoiceStyles();bindTimeInputs();bindKeyboardInputs();bindSignaturePad()
+    }
+    function renderProfile(){
+      var names=[{value:'',text:'Choose employee'}].concat(roster).concat([{value:'__other__',text:'+ Other / New Employee'}]);
+      return pageTitle('Employee','Choose the employee, position, and shift.')+'<div class="step-body">'+field('Date','date',draft.date,{type:'date'})+selectField('Employee name','name',draft.name,names)+(draft.name==='__other__'?field('New employee name','otherName',draft.otherName,{placeholder:'Type full name',autocomplete:'name'}):'')+'<div class="field"><span class="label">Position</span>'+choices('position',draft.position,[{value:'Server',text:'SERVER'},{value:'Bartender',text:'BARTENDER'}])+'</div><div class="field"><span class="label">Shift</span>'+choices('shift',draft.shift,[{value:'AM',text:'AM'},{value:'PM',text:'PM'},{value:'Double',text:'DOUBLE'}])+'</div></div>'+nav('CANCEL','SUBMIT')
+    }
+    function renderHours(){
+      migrateDraftTimes();var body='<div class="info"><strong>Type 4 digits.</strong><br>1030 → 10:30 &nbsp;•&nbsp; 1600 → 16:00</div>';
+      if(draft.shift==='Double')body+=field('Hour In AM','hourInAM',draft.hourInAM,{time:true,placeholder:'HH:MM'})+field('Hour Out AM','hourOutAM',draft.hourOutAM,{time:true,placeholder:'HH:MM'})+field('Hour In PM','hourInPM',draft.hourInPM,{time:true,placeholder:'HH:MM'})+field('Hour Out PM','hourOutPM',draft.hourOutPM,{time:true,placeholder:'HH:MM'});
+      else body+=field('Hour In','hourIn',draft.hourIn,{time:true,placeholder:'HH:MM'})+field('Hour Out','hourOut',draft.hourOut,{time:true,placeholder:'HH:MM'});
+      return pageTitle('Work hours',draft.name==='__other__'?draft.otherName:draft.name)+'<div class="step-body">'+body+'</div>'+nav('BACK','SUBMIT')
+    }
+    function renderBusser(){
+      var body='';
+      if(draft.position==='Bartender')body='<div class="info"><strong>Bartender Busser Rate: 0%</strong><br>No busser tip out is calculated.</div>';
+      else if(draft.shift==='PM')body='<div class="info"><strong>PM Busser Rate: 1.5%</strong><br>Busser Tip Out will be 1.5% of Grand Total.</div>';
+      else body='<div class="field"><span class="label">Busser AM</span>'+choices('busserAM',draft.busserAM,[{value:'without',text:'WITHOUT BUSSER AM'},{value:'with',text:'WITH BUSSER AM'}])+'</div>';
+      return pageTitle('Busser','Confirm the busser setup for this shift.')+'<div class="step-body">'+body+'</div>'+nav('BACK','SUBMIT')
+    }
+    function renderSales(){
+      var t=totalsFor(draft),b=busserFor(draft,t),body=field('Grand Total','grandTotal',draft.grandTotal,{money:true,placeholder:'0.00'});
+      if(draft.shift==='Double')body+=field('Total AM','totalAM',draft.totalAM,{money:true,placeholder:'0.00'});
+      body+='<div class="metric-grid"><div class="metric"><span>Total AM</span><strong id="salesTotalAM">'+money(t.totalAM)+'</strong></div><div class="metric"><span>Total PM</span><strong id="salesTotalPM">'+money(t.totalPM)+'</strong></div><div class="metric"><span>Busser Rate</span><strong id="salesBusserRate">'+pct(b.rate)+'</strong></div><div class="metric"><span>Busser Tip Out</span><strong id="salesBusserTip">'+money(b.tipOut)+'</strong></div></div>';
+      if(draft.shift==='Double'&&draft.position==='Server'&&draft.busserAM==='without')body+='<div class="info">Double without Busser AM uses only the PM total: <strong>Total PM × 1.5%</strong>.</div>';
+      return pageTitle('Sales totals','Enter the sales amount. The app calculates the split.')+'<div class="step-body">'+body+'</div>'+nav('BACK','SUBMIT')
+    }
+    function renderTips(){return pageTitle('Tips and meal','Enter the final Paid Tips from the receipt.')+'<div class="step-body"><div class="info"><strong>Paid Tips is used directly.</strong><br>Busser will not be subtracted again.</div>'+field('Paid Tips','paidTips',draft.paidTips,{money:true,placeholder:'0.00'})+field('Card Fee','cardFee',draft.cardFee,{money:true,placeholder:'0.00'})+field('Cash Tip','cashTip',draft.cashTip,{money:true,placeholder:'0.00'})+field('Meal','meal',draft.meal,{money:true,placeholder:'0.00'})+'</div>'+nav('BACK','SUBMIT')}
+    function checkCard(id,title,desc,checked){return '<label class="check-card"><input id="'+id+'" type="checkbox" '+(checked?'checked':'')+'><span><strong>'+esc(title)+'</strong><span>'+esc(desc)+'</span></span></label>'}
+    function renderBar(){
+      var t=totalsFor(draft),bar=barFor(draft,t),body='';
+      if(draft.position==='Bartender')body=field('Bar Tip Out','bartenderBarTip',draft.bartenderBarTip,{money:true,placeholder:'0.00'})+'<div class="info">Enter the combined Bar Tip Out received from all servers.</div>';
+      else{
+        if(draft.shift==='AM'||draft.shift==='Double')body+=checkCard('barSalesAM','CHECK AM BAR SALES','Checked = 0.6% of Total AM',draft.barSalesAM);
+        if(draft.shift==='PM'||draft.shift==='Double')body+=checkCard('barSalesPM','CHECK PM BAR SALES','Checked = 0.6% of Total PM',draft.barSalesPM);
+        body+='<div class="metric-grid"><div class="metric"><span>AM Bar Tip</span><strong>'+money(bar.am)+'</strong></div><div class="metric"><span>PM Bar Tip</span><strong>'+money(bar.pm)+'</strong></div><div class="metric wide good"><span>Total Bar Tip Out</span><strong>'+money(bar.total)+'</strong></div></div>';
+      }
+      return pageTitle('Bar Tip Out',draft.position==='Server'?'Check the shift only when it had bar sales.':'Enter the combined server tip out.')+'<div class="step-body">'+body+'</div>'+nav('BACK','SUBMIT')
+    }
+    function yesNo(v){return v?'YES':'NO'}
+    function adjustmentDecisionLabel(value){var decision=normalizeAdjustmentDecision(value)||'NONE';return decision==='NONE'?'NO ADJUSTMENT':decision}
+    function rowHtml(label,value){return '<div class="row"><span>'+esc(label)+'</span><strong>'+esc(value==null?'-':value)+'</strong></div>'}
+    function hoursText(r){if(String(r.shift).toUpperCase()==='DOUBLE')return rowHtml('Hour In AM',displayTime(r.hourInAM)||'-')+rowHtml('Hour Out AM',displayTime(r.hourOutAM)||'-')+rowHtml('Hour In PM',displayTime(r.hourInPM)||'-')+rowHtml('Hour Out PM',displayTime(r.hourOutPM)||'-');if(String(r.shift).toUpperCase()==='PM')return rowHtml('Hour In PM',displayTime(r.hourInPM||r.hourIn)||'-')+rowHtml('Hour Out PM',displayTime(r.hourOutPM||r.hourOut)||'-');return rowHtml('Hour In AM',displayTime(r.hourInAM||r.hourIn)||'-')+rowHtml('Hour Out AM',displayTime(r.hourOutAM||r.hourOut)||'-')}
+    function formatSignedAt(value){if(!value)return'Not signed';var d=new Date(value);if(Number.isNaN(d.getTime()))return String(value);return d.toLocaleString('en-US',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}
+    function signatureSvg(record){
+      var strokes=decodeSignatureStrokes(record&&record.signatureStrokes);if(!hasSignature(strokes))return'';
+      var paths=strokes.map(function(stroke){return stroke.map(function(p,i){return(i?'L':'M')+p[0]+' '+p[1]}).join(' ')}).filter(Boolean);
+      return '<svg viewBox="0 0 '+SIG_W+' '+SIG_H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Employee signature">'+paths.map(function(path){return '<path d="'+path+'" fill="none" stroke="#111827" stroke-width="115" stroke-linecap="round" stroke-linejoin="round"/>'}).join('')+'</svg>'
+    }
+    function signatureReportHtml(r){
+      var status=signatureStatus(r),signed=status==='SIGNED';
+      return '<div class="signature-report"><div class="signature-report-head"><div><h3>Employee Signature</h3><p class="signature-help">Signed At: '+esc(signed?formatSignedAt(r.signedAt):'-')+'</p></div><span class="signature-status '+(signed?'signed':'')+'">'+status+'</span></div><div class="signature-preview">'+(signed?signatureSvg(r):'<span class="signature-empty">No signature</span>')+'</div></div>'
+    }
+    function signatureEditorHtml(r){
+      var status=signatureStatus(r),signed=status==='SIGNED';
+      return '<div class="signature-editor"><div class="signature-editor-head"><div><h3>Employee Signature</h3><p class="signature-help">By signing, the employee confirms the report and payout above. Sign with a finger, stylus, or mouse.</p></div><span class="signature-status '+(signed?'signed':'')+'" id="signatureStatus">'+status+'</span></div><div class="signature-canvas-wrap"><canvas id="signatureCanvas" aria-label="Signature drawing area"></canvas></div><div class="signature-actions"><button class="btn small primary" id="saveSignature" type="button">SAVE SIGNATURE</button><button class="btn small secondary" id="clearSignature" type="button">CLEAR</button></div><p class="signature-time" id="signatureTime">Signed At: '+esc(signed?formatSignedAt(r.signedAt):'-')+'</p></div>'
+    }
+    function adjustmentDecisionHtml(r){
+      if(!r.adjustmentEligible||r.adjustmentCandidate<=0)return '<div class="adjustment-card declined"><h3>Hourly Salary Adjustment</h3><p>No payable adjustment was found. The applied adjustment is <strong>$0.00</strong>.</p>'+rowHtml('Hourly Minimum',money(r.hourlyMinimum))+rowHtml('Grand Total Tip',money(r.grandTotalTip))+rowHtml('Adjustment Salary Hourly',money(0))+'</div>';
+      var formula='<p>'+r.totalHours.toFixed(2)+' hours × '+money(r.hourlyRate)+' = '+money(r.hourlyMinimum)+'.<br>Candidate: '+money(r.hourlyMinimum)+' − '+money(r.grandTotalTip)+' = <strong>'+money(r.adjustmentCandidate)+'</strong>.</p>';
+      if(r.adjustmentDecision==='ACCEPTED')return '<div class="adjustment-card accepted"><h3>Hourly Adjustment Accepted</h3>'+formula+rowHtml('Applied Adjustment',money(r.adjustmentSalaryHourly))+'<div class="adjustment-edit">'+field('Edit Adjustment Salary Hourly','adjustmentOverride',r.adjustmentOverride,{money:true,placeholder:'0.00'})+'<div class="adjustment-edit-actions"><button class="btn small primary" id="updateAdjustment" type="button">UPDATE AMOUNT</button><button class="btn small danger" id="deleteAdjustment" type="button">DELETE</button></div></div></div>';
+      if(r.adjustmentDecision==='DECLINED')return '<div class="adjustment-card declined"><h3>Hourly Adjustment Declined</h3>'+formula+rowHtml('Applied Adjustment',money(0))+'<div class="adjustment-actions"><button class="btn small primary" id="acceptAdjustment" type="button">ACCEPT</button><button class="btn small secondary" id="keepAdjustmentDeclined" type="button">KEEP DECLINED</button></div></div>';
+      if(r.adjustmentDecision==='DELETED')return '<div class="adjustment-card deleted"><h3>Hourly Adjustment Deleted</h3>'+formula+rowHtml('Applied Adjustment',money(0))+'<div class="adjustment-actions"><button class="btn small primary" id="acceptAdjustment" type="button">RESTORE / ACCEPT</button><button class="btn small secondary" id="declineAdjustment" type="button">DECLINE</button></div></div>';
+      return '<div class="adjustment-card"><h3>Hourly Salary Adjustment Found</h3>'+formula+'<p>Choose whether this adjustment will be included in the final payout.</p><div class="adjustment-actions"><button class="btn small primary" id="acceptAdjustment" type="button">ACCEPT</button><button class="btn small secondary" id="declineAdjustment" type="button">DECLINE</button></div></div>'
+    }
+    function resizeSignatureCanvas(){
+      var state=signaturePadState;if(!state||!state.canvas||state.canvas.isConnected===false)return;var canvas=state.canvas,rect=canvas.getBoundingClientRect(),cssW=Math.max(260,Math.round(rect.width||canvas.clientWidth||600)),cssH=Math.max(150,Math.round(rect.height||canvas.clientHeight||190)),dpr=Math.max(1,Math.min(3,window.devicePixelRatio||1));
+      if(canvas.width!==Math.round(cssW*dpr)||canvas.height!==Math.round(cssH*dpr)){canvas.width=Math.round(cssW*dpr);canvas.height=Math.round(cssH*dpr)}drawSignatureCanvas()
+    }
+    function drawSignatureCanvas(){
+      var state=signaturePadState;if(!state||!state.canvas)return;var canvas=state.canvas,ctx;try{ctx=canvas.getContext('2d')}catch(e){return}if(!ctx)return;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.strokeStyle='#111827';ctx.fillStyle='#111827';ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=Math.max(2,(canvas.width/(canvas.clientWidth||600))*2.4);
+      var sx=canvas.width/SIG_W,sy=canvas.height/SIG_H;state.strokes.forEach(function(stroke){if(!stroke.length)return;if(stroke.length===1){ctx.beginPath();ctx.arc(stroke[0][0]*sx,stroke[0][1]*sy,ctx.lineWidth/2,0,Math.PI*2);ctx.fill();return}ctx.beginPath();stroke.forEach(function(p,i){if(i)ctx.lineTo(p[0]*sx,p[1]*sy);else ctx.moveTo(p[0]*sx,p[1]*sy)});ctx.stroke()})
+    }
+    function updateSignatureEditorUI(){
+      var state=signaturePadState,statusEl=$('signatureStatus'),timeEl=$('signatureTime');if(!state||!statusEl||!timeEl)return;var saved=signatureStatus(draft)==='SIGNED',ready=hasSignature(state.strokes);
+      statusEl.classList.toggle('signed',saved&&!state.dirty);statusEl.textContent=state.dirty?(ready?'READY TO SAVE':'UNSIGNED'):(saved?'SIGNED':'UNSIGNED');timeEl.textContent='Signed At: '+(saved&&!state.dirty?formatSignedAt(draft.signedAt):'-')
+    }
+    function commitSignature(silent){
+      var state=signaturePadState;if(!state)return false;var signed=hasSignature(state.strokes);draft.signatureStrokes=signed?encodeSignatureStrokes(state.strokes):'';draft.signatureStatus=signed?'SIGNED':'UNSIGNED';draft.signedAt=signed?new Date().toISOString():'';state.strokes=decodeSignatureStrokes(draft.signatureStrokes);state.dirty=false;drawSignatureCanvas();updateSignatureEditorUI();if(!silent)toast(signed?'Signature saved':'Saved as unsigned');return signed
+    }
+    function clearSignature(){
+      if(!signaturePadState)return;document.body.classList.remove('signature-drawing');signaturePadState.strokes=[];signaturePadState.dirty=false;signaturePadState.drawing=false;signaturePadState.pointerId=null;draft.signatureStrokes='';draft.signatureStatus='UNSIGNED';draft.signedAt='';drawSignatureCanvas();updateSignatureEditorUI();toast('Signature cleared')
+    }
+    function bindSignaturePad(){
+      var canvas=$('signatureCanvas');if(!canvas)return;signaturePadState={canvas:canvas,strokes:decodeSignatureStrokes(draft.signatureStrokes),drawing:false,pointerId:null,dirty:false};resizeSignatureCanvas();
+      function point(event){var rect=canvas.getBoundingClientRect(),w=rect.width||canvas.clientWidth||1,h=rect.height||canvas.clientHeight||1;return[Math.max(0,Math.min(SIG_W,Math.round((event.clientX-rect.left)/w*SIG_W))),Math.max(0,Math.min(SIG_H,Math.round((event.clientY-rect.top)/h*SIG_H)))]}
+      function append(event){var state=signaturePadState;if(!state||!state.drawing)return;var stroke=state.strokes[state.strokes.length-1];if(!stroke||stroke.length>=800)return;var p=point(event),last=stroke[stroke.length-1],dx=p[0]-last[0],dy=p[1]-last[1];if(dx*dx+dy*dy<225)return;stroke.push(p);state.dirty=true}
+      canvas.onpointerdown=function(event){if(event.isPrimary===false||(event.pointerType==='mouse'&&event.button!==0))return;event.preventDefault();var state=signaturePadState;if(!state||state.drawing)return;if(document.activeElement&&typeof document.activeElement.blur==='function')document.activeElement.blur();keyboardOff();document.body.classList.add('signature-drawing');state.drawing=true;state.pointerId=event.pointerId;state.strokes.push([point(event)]);state.dirty=true;try{canvas.setPointerCapture(event.pointerId)}catch(e){}drawSignatureCanvas();updateSignatureEditorUI()};
+      canvas.onpointermove=function(event){var state=signaturePadState;if(!state||!state.drawing||state.pointerId!==event.pointerId)return;event.preventDefault();var events=typeof event.getCoalescedEvents==='function'?event.getCoalescedEvents():[event];events.forEach(append);drawSignatureCanvas();updateSignatureEditorUI()};
+      function finish(event){var state=signaturePadState;if(!state||!state.drawing||state.pointerId!==event.pointerId)return;event.preventDefault();append(event);state.drawing=false;state.pointerId=null;document.body.classList.remove('signature-drawing');try{canvas.releasePointerCapture(event.pointerId)}catch(e){}drawSignatureCanvas();updateSignatureEditorUI()}
+      canvas.onpointerup=finish;canvas.onpointercancel=finish;canvas.onpointerleave=function(event){if(event.pointerType==='mouse')finish(event)};
+      canvas.onlostpointercapture=function(event){var state=signaturePadState;if(!state||!state.drawing||state.pointerId!==event.pointerId)return;state.drawing=false;state.pointerId=null;document.body.classList.remove('signature-drawing');drawSignatureCanvas();updateSignatureEditorUI()};canvas.oncontextmenu=function(event){event.preventDefault()};
+      var save=$('saveSignature'),clear=$('clearSignature');if(save)save.onclick=function(){commitSignature(false)};if(clear)clear.onclick=clearSignature;updateSignatureEditorUI()
+    }
+    function receiptHtml(r,compact){
+      return '<div class="receipt-title"><h2>'+esc(r.name)+'</h2><p>'+esc(r.date)+' • '+esc(r.position)+' • '+esc(r.shift)+'</p></div>'+
+        '<div class="receipt-section"><h3>Work</h3>'+hoursText(r)+rowHtml('Total Hours',r.totalHours.toFixed(2))+(r.position==='Server'&&r.shift!=='PM'?rowHtml('Busser AM',r.busserAM==='with'?'WITH BUSSER AM':'WITHOUT BUSSER AM'):'')+'</div>'+
+        '<div class="receipt-section"><h3>Sales & Tip Out</h3>'+rowHtml('Grand Total',money(r.grandTotal))+rowHtml('Total AM',money(r.totalAM))+rowHtml('Total PM',money(r.totalPM))+rowHtml('Total Tips',money(r.totalTips))+rowHtml('Pay Card Tip Fee',money(r.cardFee))+rowHtml('Paid Tip',money(r.paidTip))+rowHtml('Busser Rate',pct(r.busserRate))+rowHtml('Busser Tip Out',money(r.busserTipOut))+rowHtml('AM Bar Sales',r.position==='Server'?yesNo(r.barSalesAM):'-')+rowHtml('AM Bar Tip',money(r.barTipAM))+rowHtml('PM Bar Sales',r.position==='Server'?yesNo(r.barSalesPM):'-')+rowHtml('PM Bar Tip',money(r.barTipPM))+rowHtml('Bar Tip Out',money(r.barTipOut))+'</div>'+
+        (compact?'':'<div class="receipt-section"><h3>Final & Hourly Adjustment</h3>'+rowHtml('Total Before Meal',money(r.totalBeforeMeal))+rowHtml('Cash Tip',money(r.cashTip))+rowHtml('Grand Total Tip',money(r.grandTotalTip))+rowHtml('Hourly Rate',money(r.hourlyRate))+rowHtml('Hourly Minimum',money(r.hourlyMinimum))+rowHtml('Adjustment Salary Hourly',money(r.adjustmentSalaryHourly||0))+rowHtml('Adjustment Decision',adjustmentDecisionLabel(r.adjustmentDecision))+rowHtml('Grand Total After Adjustment',money(r.grandTotalAfterAdjustment))+rowHtml('Meal',money(r.meal))+'</div>')+
+        '<div class="payout"><span>TOTAL PAID OUT</span><strong>'+money(r.totalPaidOut)+'</strong></div>'
+    }
+    function renderReview(){var r=reportFor(draft);return pageTitle('Employee report','Review the result, choose the hourly adjustment when offered, sign, then save.')+'<div class="receipt">'+receiptHtml(r,false)+adjustmentDecisionHtml(r)+'</div>'+signatureEditorHtml(r)+'<div class="save-area"><button class="btn primary full" id="saveReport" type="button">'+(editId?'UPDATE DAILY REPORT':'SAVE TO DAILY REPORT')+'</button></div>'+nav('BACK','NEW ENTRY')}
+
+    function preserveReviewSignature(){if(signaturePadState&&signaturePadState.dirty)commitSignature(true)}
+    function chooseAdjustment(decision){
+      preserveReviewSignature();var current=reportFor(draft);if(!current.adjustmentEligible){draft.adjustmentDecision='NONE';draft.adjustmentOverride='';return renderStep()}
+      decision=normalizeAdjustmentDecision(decision);draft.adjustmentDecision=decision;
+      if(decision==='ACCEPTED'&&!validMoney(draft.adjustmentOverride))draft.adjustmentOverride=current.adjustmentCandidate.toFixed(2);
+      if(decision!=='ACCEPTED')draft.adjustmentOverride='';renderStep();toast(decision==='ACCEPTED'?'Hourly adjustment accepted':(decision==='DECLINED'?'Hourly adjustment declined':'Hourly adjustment deleted'))
+    }
+    function updateAdjustmentAmount(){
+      var input=$('adjustmentOverride');if(!input||!validMoney(input.value)){setError({messages:['Adjustment must be a nonnegative money amount.'],ids:['adjustmentOverride']});return false}
+      preserveReviewSignature();draft.adjustmentDecision='ACCEPTED';draft.adjustmentOverride=roundCent(moneyNumber(input.value)).toFixed(2);renderStep();toast('Hourly adjustment updated');return true
+    }
+    function deleteAdjustment(){if(!confirm('Delete this hourly salary adjustment from the payout?'))return false;chooseAdjustment('DELETED');return true}
+    function capture(ids){ids.forEach(function(id){var el=$(id);if(!el)return;draft[id]=el.type==='checkbox'?el.checked:el.value})}
+    function captureStep(){
+      if(step===1){capture(['date','name','otherName']);var p=document.querySelector('input[name="position"]:checked'),s=document.querySelector('input[name="shift"]:checked');if(p)draft.position=p.value;if(s)draft.shift=s.value}
+      if(step===2)capture(['hourIn','hourOut','hourInAM','hourOutAM','hourInPM','hourOutPM']);
+      if(step===3){var b=document.querySelector('input[name="busserAM"]:checked');if(b)draft.busserAM=b.value}
+      if(step===4)capture(['grandTotal','totalAM']);
+      if(step===5)capture(['paidTips','cardFee','cashTip','meal']);
+      if(step===6)capture(['barSalesAM','barSalesPM','bartenderBarTip']);
+      if(step===7)capture(['adjustmentOverride'])
+    }
+    function validMoney(raw){var s=String(raw==null?'':raw).trim().replace(/[$,]/g,'');return s!==''&&Number.isFinite(Number(s))&&Number(s)>=0}
+    function validate(){
+      var messages=[],ids=[];function add(message,id){messages.push(message);if(id)ids.push(id)}
+      if(step===1){if(!draft.date)add('Choose a date.','date');if(!employeeName(draft))add(draft.name==='__other__'?'Type the new employee name.':'Choose an employee name.',draft.name==='__other__'?'otherName':'name')}
+      if(step===2){var pairs=draft.shift==='Double'?[[draft.hourInAM,draft.hourOutAM,'AM','hourInAM','hourOutAM'],[draft.hourInPM,draft.hourOutPM,'PM','hourInPM','hourOutPM']]:[[draft.hourIn,draft.hourOut,draft.shift,'hourIn','hourOut']];for(var i=0;i<pairs.length;i++){var startValid=valid24Time(pairs[i][0]),endValid=valid24Time(pairs[i][1]);if(!startValid)add('Check Hour In '+pairs[i][2]+'. Type 4 digits, for example 1030.',pairs[i][3]);if(!endValid)add('Check Hour Out '+pairs[i][2]+'. Type 4 digits, for example 1600.',pairs[i][4]);if(startValid&&endValid&&!(hourDiff(pairs[i][0],pairs[i][1])>0&&hourDiff(pairs[i][0],pairs[i][1])<=16))add('Check the '+pairs[i][2]+' work hours.',pairs[i][3])}}
+      if(step===4){if(!validMoney(draft.grandTotal))add('Enter Grand Total.','grandTotal');if(draft.shift==='Double'){if(!validMoney(draft.totalAM))add('Enter Total AM.','totalAM');else if(validMoney(draft.grandTotal)&&moneyNumber(draft.totalAM)>moneyNumber(draft.grandTotal))add('Total AM cannot be more than Grand Total.','totalAM')}}
+      if(step===5){var fs=[['Paid Tips',draft.paidTips,'paidTips'],['Card Fee',draft.cardFee,'cardFee'],['Cash Tip',draft.cashTip,'cashTip'],['Meal',draft.meal,'meal']];for(var j=0;j<fs.length;j++)if(!validMoney(fs[j][1]))add('Enter '+fs[j][0]+'. Use 0.00 when none.',fs[j][2])}
+      if(step===6&&draft.position==='Bartender'&&!validMoney(draft.bartenderBarTip))add('Enter Bar Tip Out. Use 0.00 when none.','bartenderBarTip');
+      return{messages:messages,ids:ids}
+    }
+    function bindStep(){
+      var back=$('backStep'),next=$('nextStep');
+      if(back)back.onclick=function(){captureStep();if(step===1)return showReport();step--;renderStep()};
+      if(next)next.onclick=function(){captureStep();if(step===7){if(confirm('Start a new entry without saving this report?'))newEntry();return}var err=validate();if(err.messages.length)return setError(err);step++;renderStep()};
+      var name=$('name');if(name)name.onchange=function(){draft.name=name.value;if(draft.name!=='__other__')draft.otherName='';renderStep()};
+      ['grandTotal','totalAM'].forEach(function(id){var el=$(id);if(el)el.oninput=function(){capture(['grandTotal','totalAM']);updateSalesPreview()}});
+      ['barSalesAM','barSalesPM'].forEach(function(id){var el=$(id);if(el)el.onchange=function(){capture(['barSalesAM','barSalesPM']);renderStep()}});
+      var acceptAdjustment=$('acceptAdjustment');if(acceptAdjustment)acceptAdjustment.onclick=function(){chooseAdjustment('ACCEPTED')};
+      var declineAdjustment=$('declineAdjustment');if(declineAdjustment)declineAdjustment.onclick=function(){chooseAdjustment('DECLINED')};
+      var keepAdjustmentDeclined=$('keepAdjustmentDeclined');if(keepAdjustmentDeclined)keepAdjustmentDeclined.onclick=function(){toast('Hourly adjustment remains declined')};
+      var updateAdjustment=$('updateAdjustment');if(updateAdjustment)updateAdjustment.onclick=updateAdjustmentAmount;
+      var deleteAdjustmentButton=$('deleteAdjustment');if(deleteAdjustmentButton)deleteAdjustmentButton.onclick=deleteAdjustment;
+      var save=$('saveReport');if(save)save.onclick=saveReport
+    }
+    function updateSalesPreview(){var t=totalsFor(draft),b=busserFor(draft,t);if($('salesTotalAM'))$('salesTotalAM').textContent=money(t.totalAM);if($('salesTotalPM'))$('salesTotalPM').textContent=money(t.totalPM);if($('salesBusserRate'))$('salesBusserRate').textContent=pct(b.rate);if($('salesBusserTip'))$('salesBusserTip').textContent=money(b.tipOut)}
+    function newEntry(){if(!requireAuth())return false;editId='';draft=freshDraft();step=1;showWizard();renderStep();toast('New entry ready');return true}
+    function showWizard(){if(!isAuthenticated())return false;$('wizardView').hidden=false;$('reportView').hidden=true;$('userView').hidden=true;return true}
+    function showReport(){if(!requireAuth())return false;$('wizardView').hidden=true;$('reportView').hidden=false;$('userView').hidden=true;renderReport();window.scrollTo(0,0);return true}
+    function saveReport(){
+      if(!requireAuth())return false;
+      if(editId&&!isOwner()){toast('Owner access is required to update a saved report.');return false}
+      captureStep();var preview=reportFor(draft);
+      if(preview.adjustmentCandidate>0&&preview.adjustmentDecision==='PENDING'){var card=document.querySelector('.adjustment-card');if(card&&typeof card.scrollIntoView==='function')card.scrollIntoView({behavior:'smooth',block:'center'});toast('Choose ACCEPT or DECLINE for the hourly adjustment.');return false}
+      if(preview.adjustmentDecision==='ACCEPTED'&&!validMoney(draft.adjustmentOverride)){setError({messages:['Adjustment must be a nonnegative money amount.'],ids:['adjustmentOverride']});return false}
+      if(!editId&&rows.length>=MAX_ROWS){var area=document.querySelector('.save-area');if(area&&!$('capacityError')){var box=document.createElement('div');box.className='error';box.id='capacityError';box.innerHTML='<strong>Daily Report is full.</strong>Delete an old entry before saving a new one.';area.insertBefore(box,area.firstChild);box.scrollIntoView({behavior:'smooth',block:'center'})}return toast('Daily Report is full')}
+      if(signaturePadState&&signaturePadState.dirty)commitSignature(true);
+      var previousRows=rows.slice(),r=reportFor(draft),now=new Date().toISOString();r.id=editId||('manual-'+Date.now()+'-'+Math.random().toString(36).slice(2,7));r.updatedAt=now;
+      if(editId){var ix=rows.findIndex(function(x){return x.id===editId});if(ix>=0)rows[ix]=r;else rows.unshift(r)}else{r.createdAt=now;rows.unshift(r)}
+      if(!saveRows()){rows=previousRows;updateHeader();return}editId='';showReport();toast('Saved to Daily Report')
+    }
+    function visibleRows(){var q=filters.name.trim().toLowerCase();return rows.filter(function(r){return(!filters.date||r.date===filters.date)&&(!q||String(r.name).toLowerCase().indexOf(q)>=0)&&(!filters.position||r.position===filters.position)&&(!filters.shift||r.shift===filters.shift)})}
+    function sum(arr,key){return roundCent(arr.reduce(function(n,r){return n+(Number(r[key])||0)},0))}
+    function renderReport(){
+      if(!isAuthenticated())return false;
+      var v=visibleRows();$('visibleCount').textContent=v.length+' '+(v.length===1?'entry':'entries');
+      $('reportSummary').innerHTML='<div class="metric"><span>Visible Entries</span><strong>'+v.length+'</strong></div><div class="metric"><span>Grand Total</span><strong>'+money(sum(v,'grandTotal'))+'</strong></div><div class="metric"><span>Paid Tip</span><strong>'+money(sum(v,'paidTip'))+'</strong></div><div class="metric"><span>Hourly Adjustment</span><strong>'+money(sum(v,'adjustmentSalaryHourly'))+'</strong></div><div class="metric"><span>After Adjustment</span><strong>'+money(sum(v,'grandTotalAfterAdjustment'))+'</strong></div><div class="metric good"><span>Paid Out</span><strong>'+money(sum(v,'totalPaidOut'))+'</strong></div>';
+      $('reportList').innerHTML=v.length?v.map(function(r){var sms=signatureStatus(r)==='SIGNED'?'<div class="sms-actions"><button class="btn primary full send-pdf-sms" data-id="'+esc(r.id)+'" type="button">SEND PDF TO SMS</button></div>':'',ownerActions=isOwner()?'<div class="card-actions"><button class="btn small secondary edit-row" data-id="'+esc(r.id)+'" type="button">EDIT</button><button class="btn small danger delete-row" data-id="'+esc(r.id)+'" type="button">DELETE</button></div>':'<div class="locked-note">Saved report changes require owner access.</div>';return '<article class="report-card"><div class="report-card-head"><h2>'+esc(r.name)+'</h2><p>'+esc(r.date)+' • '+esc(r.position)+' • '+esc(r.shift)+'</p></div><div class="report-card-body">'+receiptHtml(r,false)+signatureReportHtml(r)+'</div>'+sms+ownerActions+'</article>'}).join(''):'<div class="empty"><h2>No entries found</h2><p>Start a new entry or change the filters.</p></div>';
+      document.querySelectorAll('.send-pdf-sms').forEach(function(b){b.onclick=function(){sendRowPdfToSms(b.dataset.id)}});document.querySelectorAll('.edit-row').forEach(function(b){b.onclick=function(){editRow(b.dataset.id)}});document.querySelectorAll('.delete-row').forEach(function(b){b.onclick=function(){deleteRow(b.dataset.id)}});bindKeyboardInputs()
+    }
+    function editRow(id){if(!requireOwner())return false;var r=rows.find(function(x){return x.id===id});if(!r)return false;draft=Object.assign(freshDraft(),r,{name:roster.indexOf(r.name)>=0?r.name:'__other__',otherName:roster.indexOf(r.name)>=0?'':r.name,grandTotal:String(r.grandTotal),totalAM:String(r.totalAM),paidTips:String(r.paidTip),cardFee:String(r.cardFee),cashTip:String(r.cashTip),meal:String(r.meal),bartenderBarTip:String(r.position==='Bartender'?r.barTipOut:''),signatureStrokes:cloneSignatureStrokes(r.signatureStrokes),signatureStatus:signatureStatus(r),signedAt:signatureStatus(r)==='SIGNED'?String(r.signedAt||''):''});editId=id;step=1;showWizard();renderStep();toast('Edit mode');return true}
+    function deleteRow(id){if(!requireOwner())return false;var r=rows.find(function(x){return x.id===id});if(!r)return false;if(!confirm('Delete '+r.name+' from Daily Report?'))return false;var previousRows=rows;rows=rows.filter(function(x){return x.id!==id});if(!saveRows()){rows=previousRows;updateHeader();return false}renderReport();toast('Entry deleted');return true}
+    function clearAllReports(){if(!requireOwner())return false;if(!rows.length){toast('Daily Report is already empty');return false}if(!confirm('Clear ALL Daily Report entries?'))return false;if(!confirm('This removes '+rows.length+' saved entries. Continue?'))return false;var previousRows=rows;rows=[];if(!saveRows()){rows=previousRows;updateHeader();return false}renderReport();toast('Daily Report cleared');return true}
+    function setUserError(message){var el=$('userError');el.textContent=message||'';el.hidden=!message}
+    function ownerBridge(method,args){
+      if(!requireOwner())return null;if(!window.AndroidBridge||typeof window.AndroidBridge[method]!=='function'){setUserError('User management is unavailable in this build. Install the latest app update.');return null}
+      try{var result=parseBridgeResponse(window.AndroidBridge[method].apply(window.AndroidBridge,args||[]));if(isSessionFailure(result)){returnToLogin(result.message);return null}return result}catch(e){setUserError('Could not complete the secure user action. Please try again.');return null}
+    }
+    function renderUserDirectory(){
+      $('userList').innerHTML=userDirectory.length?userDirectory.map(function(user){var role=String(user.role||'manager').toLowerCase()==='owner'?'owner':'manager',active=user.active!==false,actions=role==='manager'?'<div class="user-actions"><button class="btn small secondary reset-user-password" data-username="'+esc(user.username)+'" type="button">RESET PASSWORD</button><button class="btn small secondary toggle-user-active" data-username="'+esc(user.username)+'" data-active="'+(active?'true':'false')+'" type="button">'+(active?'DEACTIVATE':'ACTIVATE')+'</button><button class="btn small danger delete-user" data-username="'+esc(user.username)+'" type="button">DELETE</button></div>':'<div class="locked-note" style="margin:14px 0 0">Protected owner account</div>';return'<article class="user-row"><div class="user-row-head"><div><h3>'+esc(user.username)+'</h3><p class="user-meta">'+role+'</p></div><span class="user-state '+(active?'':'inactive')+'">'+(active?'ACTIVE':'INACTIVE')+'</span></div>'+actions+'</article>'}).join(''):'<div class="empty"><h2>No users returned</h2><p>Check the secure user database.</p></div>';
+      document.querySelectorAll('.reset-user-password').forEach(function(button){button.onclick=function(){openResetPassword(button.dataset.username)}});document.querySelectorAll('.toggle-user-active').forEach(function(button){button.onclick=function(){setUserActive(button.dataset.username,button.dataset.active!=='true')}});document.querySelectorAll('.delete-user').forEach(function(button){button.onclick=function(){deleteUser(button.dataset.username)}})
+    }
+    function loadUsers(){
+      setUserError('');var result=ownerBridge('listUsers',[authSession]);if(!result)return false;var list=Array.isArray(result)?result:(Array.isArray(result.users)?result.users:[]);
+      if(!Array.isArray(result)&&result.ok!==true){setUserError(String(result.message||'Could not load authorized users.'));return false}
+      userDirectory=list.filter(function(user){return user&&user.username}).map(function(user){var role=String(user.role||'manager').toLowerCase()==='owner'?'owner':'manager';return{username:String(user.username),role:role,active:user.active!==false,immutable:role==='owner'||user.immutable===true}});renderUserDirectory();return true
+    }
+    function showUserManagement(){if(!requireOwner())return false;$('wizardView').hidden=true;$('reportView').hidden=true;$('userView').hidden=false;loadUsers();window.scrollTo(0,0);return true}
+    function addManager(){
+      if(!requireOwner())return false;setUserError('');var username=String($('managerUsername').value||'').trim(),password=String($('managerPassword').value||'');
+      if(!/^[A-Za-z0-9._-]{3,40}$/.test(username)){setUserError('Manager username must be 3–40 letters, numbers, dots, dashes, or underscores.');return false}
+      if(password.length<10){setUserError('Temporary password must be at least 10 characters.');return false}
+      var result=ownerBridge('addManager',[authSession,username,password]);if(!result||result.ok!==true){setUserError(String(result&&result.message||'Could not add the manager.'));return false}
+      $('managerUsername').value='';$('managerPassword').value='';toast('Manager added');loadUsers();return true
+    }
+    function openResetPassword(username){
+      if(!requireOwner())return false;pendingResetUsername=String(username||'');if(!pendingResetUsername)return false;if(!isMutableManager(pendingResetUsername)){pendingResetUsername='';setUserError('The protected owner account cannot be changed.');return false}$('resetPasswordUsername').textContent=pendingResetUsername;$('resetPasswordInput').value='';$('resetPasswordInput').type='password';$('toggleResetPassword').textContent='SHOW';$('resetPasswordError').hidden=true;$('resetPasswordError').textContent='';$('resetPasswordModal').hidden=false;setTimeout(function(){$('resetPasswordInput').focus()},50);return true
+    }
+    function closeResetPassword(){pendingResetUsername='';$('resetPasswordInput').value='';$('resetPasswordError').hidden=true;$('resetPasswordModal').hidden=true;return true}
+    function isMutableManager(username){return userDirectory.some(function(user){return user.username===username&&user.role==='manager'&&user.immutable!==true})}
+    function resetUserPassword(username,password){
+      if(!requireOwner())return false;username=String(username||'');password=String(password||'');if(!isMutableManager(username)){setUserError('The protected owner account cannot be changed.');return false}if(password.length<10){var error=$('resetPasswordError');error.textContent='New password must be at least 10 characters.';error.hidden=false;return false}
+      var result=ownerBridge('resetUserPassword',[authSession,username,password]);password='';$('resetPasswordInput').value='';if(!result||result.ok!==true){var message=String(result&&result.message||'Could not reset the password.');if(!$('resetPasswordModal').hidden){$('resetPasswordError').textContent=message;$('resetPasswordError').hidden=false}else setUserError(message);return false}closeResetPassword();toast('Password reset');loadUsers();return true
+    }
+    function confirmResetPassword(){if(!pendingResetUsername)return false;return resetUserPassword(pendingResetUsername,$('resetPasswordInput').value)}
+    function setUserActive(username,active){
+      if(!requireOwner())return false;if(!isMutableManager(username)){setUserError('The protected owner account cannot be changed.');return false}var result=ownerBridge('setUserActive',[authSession,username,!!active]);if(!result||result.ok!==true){setUserError(String(result&&result.message||'Could not change user access.'));return false}toast(active?'Manager activated':'Manager deactivated');loadUsers();return true
+    }
+    function deleteUser(username){
+      if(!requireOwner())return false;if(!isMutableManager(username)){setUserError('The protected owner account cannot be changed.');return false}if(!confirm('Delete manager '+username+'?'))return false;var result=ownerBridge('deleteUser',[authSession,username]);if(!result||result.ok!==true){setUserError(String(result&&result.message||'Could not delete the manager.'));return false}toast('Manager deleted');loadUsers();return true
+    }
+    function safeAscii(v){return String(v==null?'':v).replace(/[^\x20-\x7E]/g,' ').replace(/\s+/g,' ').trim()}
+    function xlsXml(data){
+      var cols=['Date','Name','Position','Shift','Busser AM','Hour In AM','Hour Out AM','Hour In PM','Hour Out PM','Total Hours Work','Grand Total','Total AM','Total PM','Total Tips','Pay Card Tip Fee','Paid Tip','Busser Rate %','Busser Tip Out','AM Bar Sales','AM Bar Tip','PM Bar Sales','PM Bar Tip','Bar Tip Out','Total Before Meal','Cash Tip','Grand Total Tip','Hourly Rate','Hourly Minimum','Adjustment Salary Hourly','Adjustment Decision','Grand Total After Adjustment','Meal','Total Paid Out','Signature Status','Signed At'];
+      function cell(v,style){
+        var num=!!style,n=Number(v),raw;
+        if(!num)raw=String(v==null?'':v);
+        else if(!Number.isFinite(n))raw=style==='Rate3'?'0.000':'0.00';
+        else if(style==='Rate3')raw=n.toFixed(3);
+        else raw=roundCent(n).toFixed(2);
+        var s=raw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'),styleAttr=style?' ss:StyleID="'+style+'"':'';
+        return '<Cell'+styleAttr+'><Data ss:Type="'+(num?'Number':'String')+'">'+s+'</Data></Cell>'
+      }
+      var xml='<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="Default" ss:Name="Normal"><Font ss:FontName="Arial" ss:Size="14"/></Style><Style ss:ID="Header"><Font ss:FontName="Arial" ss:Size="14" ss:Bold="1"/><Interior ss:Color="#DCE8FF" ss:Pattern="Solid"/></Style><Style ss:ID="Number2"><NumberFormat ss:Format="0.00"/></Style><Style ss:ID="Rate3"><NumberFormat ss:Format="0.000"/></Style><Style ss:ID="Money"><NumberFormat ss:Format="$#,##0.00"/></Style></Styles><Worksheet ss:Name="Daily Report"><Table><Row ss:StyleID="Header">'+cols.map(function(c){return cell(c,'')}).join('')+'</Row>';
+      var styles={9:'Number2',10:'Money',11:'Money',12:'Money',13:'Money',14:'Money',15:'Money',16:'Rate3',17:'Money',19:'Money',21:'Money',22:'Money',23:'Money',24:'Money',25:'Money',26:'Money',27:'Money',28:'Money',30:'Money',31:'Money',32:'Money'};
+      data.forEach(function(r){var signed=signatureStatus(r)==='SIGNED',vals=[r.date,r.name,r.position,r.shift,r.position==='Server'&&r.shift!=='PM'?(r.busserAM==='with'?'WITH BUSSER AM':'WITHOUT BUSSER AM'):'-',displayTime(r.hourInAM),displayTime(r.hourOutAM),displayTime(r.hourInPM),displayTime(r.hourOutPM),r.totalHours,r.grandTotal,r.totalAM,r.totalPM,r.totalTips,r.cardFee,r.paidTip,r.busserRate,r.busserTipOut,yesNo(r.barSalesAM),r.barTipAM,yesNo(r.barSalesPM),r.barTipPM,r.barTipOut,r.totalBeforeMeal,r.cashTip,r.grandTotalTip,r.hourlyRate,r.hourlyMinimum,r.adjustmentSalaryHourly,adjustmentDecisionLabel(r.adjustmentDecision),r.grandTotalAfterAdjustment,r.meal,r.totalPaidOut,signed?'SIGNED':'UNSIGNED',signed?String(r.signedAt||''):''];xml+='<Row>'+vals.map(function(v,i){return cell(v,styles[i]||'')}).join('')+'</Row>'});return xml+'</Table></Worksheet></Workbook>'
+    }
+    function pdfEscape(s){return safeAscii(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)')}
+    function pdfText(font,size,x,y,text){return 'BT /'+font+' '+size+' Tf '+x+' '+y+' Td ('+pdfEscape(text)+') Tj ET\n'}
+    function pdfSignatureCommands(record,x,y,width,height){
+      var strokes=decodeSignatureStrokes(record&&record.signatureStrokes);if(!hasSignature(strokes))return'';var c='q\n0.9 w 0.067 0.094 0.153 RG 1 J 1 j\n';
+      strokes.forEach(function(stroke){if(!stroke.length)return;var points=stroke.map(function(p){return[(x+p[0]/SIG_W*width).toFixed(2),(y+height-p[1]/SIG_H*height).toFixed(2)]});c+=points[0][0]+' '+points[0][1]+' m\n';if(points.length===1)c+=(Number(points[0][0])+.4).toFixed(2)+' '+points[0][1]+' l\n';else for(var i=1;i<points.length;i++)c+=points[i][0]+' '+points[i][1]+' l\n';c+='S\n'});return c+'Q\n'
+    }
+    function pdfString(data){
+      var objects=[null,'','', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'],pages=[];
+      function add(v){objects.push(v);return objects.length-1}
+      data.forEach(function(r,idx){
+        var fields=[['Date',r.date],['Employee',r.name],['Position',r.position],['Shift',r.shift],['Busser AM',r.position==='Server'&&r.shift!=='PM'?(r.busserAM==='with'?'WITH BUSSER AM':'WITHOUT BUSSER AM'):'-'],['Hour In AM',displayTime(r.hourInAM)||'-'],['Hour Out AM',displayTime(r.hourOutAM)||'-'],['Hour In PM',displayTime(r.hourInPM)||'-'],['Hour Out PM',displayTime(r.hourOutPM)||'-'],['Total Hours',Number(r.totalHours).toFixed(2)],['Grand Total',money(r.grandTotal)],['Total AM',money(r.totalAM)],['Total PM',money(r.totalPM)],['Total Tips',money(r.totalTips)],['Pay Card Tip Fee',money(r.cardFee)],['Paid Tip',money(r.paidTip)],['Busser Rate',pct(r.busserRate)],['Busser Tip Out',money(r.busserTipOut)],['AM Bar Sales',r.position==='Server'?yesNo(r.barSalesAM):'-'],['AM Bar Tip',money(r.barTipAM)],['PM Bar Sales',r.position==='Server'?yesNo(r.barSalesPM):'-'],['PM Bar Tip',money(r.barTipPM)],['Bar Tip Out',money(r.barTipOut)],['Total Before Meal',money(r.totalBeforeMeal)],['Cash Tip',money(r.cashTip)],['Grand Total Tip',money(r.grandTotalTip)],['Hourly Rate',money(r.hourlyRate)],['Hourly Minimum',money(r.hourlyMinimum)],['Adjustment Salary Hourly',money(r.adjustmentSalaryHourly)],['Adjustment Decision',adjustmentDecisionLabel(r.adjustmentDecision)],['Grand Total After Adjustment',money(r.grandTotalAfterAdjustment)],['Meal',money(r.meal)],['TOTAL PAID OUT',money(r.totalPaidOut)]];
+        var c=pdfText('F2',18,42,750,'TIP CALCULATOR BY FRED ZHANG - EMPLOYEE REPORT')+pdfText('F1',9,42,733,'Report '+(idx+1)+' of '+data.length)+'0.7 w 42 723 m 570 723 l S\n';var split=Math.ceil(fields.length/2);
+        fields.forEach(function(f,j){var col=j<split?0:1,row=j<split?j:j-split,x=col?315:42,y=699-row*26;c+=pdfText('F1',7,x,y,f[0]);c+=pdfText('F2',9,x,y-11,f[1])});
+        var signed=signatureStatus(r)==='SIGNED';c+='0.8 w 42 190 m 570 190 l S\n'+pdfText('F2',15,42,165,'TOTAL PAID OUT')+pdfText('F2',25,42,134,money(r.totalPaidOut))+pdfText('F2',10,315,176,'EMPLOYEE SIGNATURE - '+(signed?'SIGNED':'UNSIGNED'))+pdfText('F1',7,315,163,'Signed At: '+(signed?formatSignedAt(r.signedAt):'-'))+'0.5 w 315 58 255 96 re S\n';
+        if(signed)c+=pdfSignatureCommands(r,321,64,243,82);else c+=pdfText('F1',10,404,103,'UNSIGNED');c+=pdfText('F1',8,42,42,'Generated '+new Date().toLocaleString()+' | Page '+(idx+1));
+        var content=add('<< /Length '+c.length+' >>\nstream\n'+c+'endstream'),page=add('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents '+content+' 0 R >>');pages.push(page)
+      });
+      objects[1]='<< /Type /Catalog /Pages 2 0 R >>';objects[2]='<< /Type /Pages /Count '+pages.length+' /Kids ['+pages.map(function(n){return n+' 0 R'}).join(' ')+'] >>';var pdf='%PDF-1.4\n',offsets=[0];for(var i=1;i<objects.length;i++){offsets[i]=pdf.length;pdf+=i+' 0 obj\n'+objects[i]+'\nendobj\n'}var xref=pdf.length;pdf+='xref\n0 '+objects.length+'\n0000000000 65535 f \n';for(var k=1;k<objects.length;k++)pdf+=String(offsets[k]).padStart(10,'0')+' 00000 n \n';return pdf+'trailer\n<< /Size '+objects.length+' /Root 1 0 R >>\nstartxref\n'+xref+'\n%%EOF\n'
+    }
+    function filename(ext){return 'Tip_Calculator_by_Fred_Zhang_'+(filters.date||today())+'.'+ext}
+    function rowPdfFilename(record){var employee=safeAscii(record&&record.name).replace(/[^A-Za-z0-9]+/g,'_').replace(/^_+|_+$/g,'')||'Employee',date=safeAscii(record&&record.date).replace(/[^0-9-]+/g,'')||today();return'Tip_Calculator_'+employee+'_'+date+'.pdf'}
+    function formatPhone(phone){var clean=sanitizePhone(phone),digits=clean.replace(/\D/g,'');if(digits.length===11&&digits.charAt(0)==='1')return'('+digits.slice(1,4)+') '+digits.slice(4,7)+'-'+digits.slice(7);return clean||'NO NUMBER SAVED'}
+    function closeSmsNumberModal(){pendingSmsRecord=null;$('smsNumberModal').hidden=true;$('smsEditPanel').hidden=true;$('smsConfirmActions').hidden=false;$('smsPhoneInput').value='';return true}
+    function showSmsNumberEdit(){
+      if(!pendingSmsRecord)return false;$('smsEditPanel').hidden=false;$('smsConfirmActions').hidden=true;var phone=employeePhone(pendingSmsRecord.name);$('smsPhoneInput').value=phone?formatPhone(phone):'';setTimeout(function(){$('smsPhoneInput').focus()},60);return true
+    }
+    function openSmsComposer(record,phone){
+      if(!requireAuth())return false;if(!window.AndroidBridge||typeof window.AndroidBridge.sharePdfToSms!=='function'){toast('SMS PDF sharing is unavailable. Install the latest app update.');return false}
+      var name=rowPdfFilename(record),title='Tip Calculator by Fred Zhang - '+record.name+' - '+record.date,content=pdfString([record]);
+      try{return nativeActionResult(window.AndroidBridge.sharePdfToSms(authSession,name,phone,title,content),'Opening Messages with the signed PDF. Review it, then tap Send.','Could not open Messages with the PDF. Please try again.')}catch(e){toast('Could not open Messages with the PDF. Please try again.');return false}
+    }
+    function sendRowPdfToSms(id){
+      if(!requireAuth())return false;var record=rows.find(function(r){return r.id===id});if(!record)return toast('Employee report was not found'),false;
+      if(signatureStatus(record)!=='SIGNED')return toast('The employee must sign before sending the PDF.'),false;
+      if(!window.AndroidBridge||typeof window.AndroidBridge.sharePdfToSms!=='function')return toast('SMS PDF sharing is unavailable. Install the latest app update.'),false;
+      pendingSmsRecord=record;$('smsEmployeeName').textContent=record.name;var phone=employeePhone(record.name);$('smsPhoneDisplay').textContent=formatPhone(phone);$('smsNumberYes').disabled=!phone;$('smsNumberModal').hidden=false;if(phone){$('smsConfirmActions').hidden=false;$('smsEditPanel').hidden=true}else showSmsNumberEdit();return true
+    }
+    function confirmSmsNumberYes(){if(!pendingSmsRecord)return false;var record=pendingSmsRecord,phone=employeePhone(record.name);if(!phone)return showSmsNumberEdit();closeSmsNumberModal();return openSmsComposer(record,phone)}
+    function continueSmsWithEditedNumber(){
+      if(!pendingSmsRecord)return false;var record=pendingSmsRecord,phone=sanitizePhone($('smsPhoneInput').value);if(!phone){toast('Enter a valid 10-digit phone number.');$('smsPhoneInput').focus();return false}
+      if(!saveEmployeePhone(record.name,phone))return false;closeSmsNumberModal();return openSmsComposer(record,phone)
+    }
+    function browserDownload(name,mime,content){var blob=new Blob([content],{type:mime}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url)},1500)}
+    function exportData(kind,target){
+      if(!requireAuth())return false;var data=visibleRows();if(!data.length)return toast('No visible entries to export');var isPdf=kind==='pdf',name=filename(isPdf?'pdf':'xls'),mime=isPdf?'application/pdf':'application/vnd.ms-excel',content=isPdf?pdfString(data):xlsXml(data),title='Tip Calculator by Fred Zhang - '+(filters.date||'Daily Report');
+      try{
+        if(target==='whatsapp'){if(window.AndroidBridge&&typeof window.AndroidBridge.shareXlsToWhatsApp==='function')return nativeActionResult(window.AndroidBridge.shareXlsToWhatsApp(authSession,name,title,content),'XLS ready in WhatsApp','Could not open WhatsApp.');toast('WhatsApp export is unavailable in this build.');return false}
+        if(target==='email'){
+          var email=prompt('Email address:','');if(email===null)return;if(!/^\S+@\S+\.\S+$/.test(email.trim()))return toast('Enter a valid email address');
+          if(window.AndroidBridge&&typeof window.AndroidBridge.shareXlsToEmail==='function')return nativeActionResult(window.AndroidBridge.shareXlsToEmail(authSession,name,email.trim(),title,content),'XLS ready in email','Could not open email.');toast('Email export is unavailable in this build.');return false
+        }
+        if(window.AndroidBridge&&typeof window.AndroidBridge.saveFile==='function')return nativeActionResult(window.AndroidBridge.saveFile(authSession,name,mime,content),(isPdf?'PDF':'XLS')+' saved','Could not save the file.');
+      }catch(e){}
+      browserDownload(name,mime,content);toast((isPdf?'PDF':'XLS')+' downloaded')
+    }
+
+    $('loginForm').onsubmit=login;$('toggleLoginPassword').onclick=function(){var input=$('loginPassword'),show=input.type==='password';input.type=show?'text':'password';$('toggleLoginPassword').textContent=show?'HIDE':'SHOW';$('toggleLoginPassword').setAttribute&&$('toggleLoginPassword').setAttribute('aria-label',show?'Hide password':'Show password')};
+    $('newEntryTop').onclick=newEntry;$('dailyReportTop').onclick=showReport;$('usersTop').onclick=showUserManagement;$('logoutTop').onclick=logout;$('addManager').onclick=addManager;
+    $('smsNumberYes').onclick=confirmSmsNumberYes;$('smsNumberNo').onclick=showSmsNumberEdit;$('smsNumberContinue').onclick=continueSmsWithEditedNumber;$('smsNumberCancel').onclick=closeSmsNumberModal;
+    $('toggleResetPassword').onclick=function(){var input=$('resetPasswordInput'),show=input.type==='password';input.type=show?'text':'password';$('toggleResetPassword').textContent=show?'HIDE':'SHOW'};$('confirmResetPassword').onclick=confirmResetPassword;$('cancelResetPassword').onclick=closeResetPassword;
+    ['filterDate','filterName','filterPosition','filterShift'].forEach(function(id){$(id).oninput=function(){filters.date=$('filterDate').value;filters.name=$('filterName').value;filters.position=$('filterPosition').value;filters.shift=$('filterShift').value;renderReport()}});
+    $('downloadXls').onclick=function(){exportData('xls','download')};$('sendWhatsApp').onclick=function(){exportData('xls','whatsapp')};$('sendEmail').onclick=function(){exportData('xls','email')};$('downloadPdf').onclick=function(){exportData('pdf','download')};
+    $('clearAll').onclick=clearAllReports;
+    window.FredTipCalculatorUI={
+      calculateReportFromDraft:function(values){return reportFor(Object.assign(freshDraft(),values||{}))},
+      visibleRows:function(){return isAuthenticated()?visibleRows().slice():[]},
+      encodeSignatureStrokes:encodeSignatureStrokes,decodeSignatureStrokes:decodeSignatureStrokes,cloneSignatureStrokes:cloneSignatureStrokes,
+      hasSignature:hasSignature,signatureStatus:signatureStatus,signatureSvg:signatureSvg,migrateRow:migrateRow,xlsXml:xlsXml,pdfString:pdfString,
+      sanitizePhone:sanitizePhone,formatPhone:formatPhone,employeePhone:employeePhone,rowPdfFilename:rowPdfFilename,sendRowPdfToSms:sendRowPdfToSms,
+      confirmSmsNumberYes:confirmSmsNumberYes,showSmsNumberEdit:showSmsNumberEdit,continueSmsWithEditedNumber:continueSmsWithEditedNumber,closeSmsNumberModal:closeSmsNumberModal,
+      login:login,logout:logout,currentAuth:function(){return{authenticated:isAuthenticated(),role:authRole,username:authUsername}},
+      showUserManagement:showUserManagement,loadUsers:loadUsers,addManager:addManager,openResetPassword:openResetPassword,resetUserPassword:resetUserPassword,confirmResetPassword:confirmResetPassword,setUserActive:setUserActive,deleteUser:deleteUser,
+      exportData:exportData,clearAllReports:clearAllReports,deleteRow:deleteRow,
+      getDraft:function(){return isAuthenticated()?JSON.parse(JSON.stringify(draft)):null},getRows:function(){return isAuthenticated()?JSON.parse(JSON.stringify(rows)):[]},editRow:editRow
+    };
+    window.addEventListener('resize',function(){syncViewportHeight();resizeSignatureCanvas()});installKeyboardUX();clearLoginError();
+  })();
+  </script>
+</body>
+</html>
