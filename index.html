@@ -47,6 +47,31 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 .approval-card{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:#fff}
 .phone{font-variant-numeric:tabular-nums}
 </style>
+
+<style>
+  #hourlyResult .grid3, #hourlyReportsList .grid3 { gap:14px !important; }
+  #hourlyResult .kpi, #hourlyReportsList .kpi {
+    padding:14px 16px !important;
+    border:1px solid #e1e7ef;
+    border-radius:14px;
+    background:#fafcff;
+    min-height:76px;
+  }
+  #hourlyResult .kpi span, #hourlyReportsList .kpi span {
+    display:block;
+    font-size:13px;
+    color:#687386;
+    margin-bottom:6px;
+    font-weight:700;
+  }
+  #hourlyResult .kpi b, #hourlyReportsList .kpi b {
+    display:block;
+    font-size:20px;
+    line-height:1.25;
+    color:#10213c;
+  }
+  #hourlyResult h2 { margin-bottom:16px; }
+</style>
 </head>
 <body>
 <div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
@@ -321,8 +346,11 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
             </div>
           </div>
 
-          <h3>Final Hourly Reports</h3>
-          <div class="actions" style="margin:8px 0 14px">
+          <h3 style="font-size:26px;margin-top:26px">Final Daily Report</h3>
+          <div class="notice good">Only reports that have been fully calculated and finalized by Manager/Owner appear here.</div>
+          <div class="actions" style="margin:12px 0 16px;gap:10px;flex-wrap:wrap">
+            <button class="btn light" type="button" onclick="downloadAllReportsXls()">Download XLS</button>
+            <button class="btn light" type="button" onclick="downloadAllReportsPdf()">Download PDF</button>
             <button class="btn light" type="button" onclick="shareAllReportsXls('whatsapp')">Send XLS to WhatsApp</button>
             <button class="btn light" type="button" onclick="shareAllReportsPdf('whatsapp')">Send PDF to WhatsApp</button>
             <button class="btn light" type="button" onclick="shareAllReportsXls('email')">Send XLS to Email</button>
@@ -411,7 +439,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=19"></script>
+<script type="module" src="app.js?v=20"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>

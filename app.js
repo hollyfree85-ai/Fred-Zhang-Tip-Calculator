@@ -549,8 +549,8 @@ function listenEmployee(){
     $("mySubmissions").innerHTML=active.length?active.map(r=>`
       <div style="padding:10px 0;border-bottom:1px solid #edf0f4">
         <b>${esc(r.date)} • ${esc(r.shift)}</b>
-        <div class="small">${esc(r.clock)} • Grand $${Number(r.grandTotal||0).toFixed(2)}
-        ${["DOUBLE","LONG"].includes(r.shift)?` • AM $${Number(r.totalAM||0).toFixed(2)}`:""}
+        <div class="small">${esc(r.clock)} • Grand ${fmtMoney(r.grandTotal)}
+        ${["DOUBLE","LONG"].includes(r.shift)?` • AM ${fmtMoney(r.totalAM)}`:""}
         • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}
         • <span class="status ${esc(r.status)}">${esc(r.status)}</span></div>
       </div>`).join(""):'<div class="small">No report currently in process.</div>';
@@ -604,8 +604,8 @@ function renderStaff(a){
       <div class="small">${esc(r.date)} • ${esc(r.position)} • ${esc(r.clock)} • ${
         r.breakMode==="with"?"With Break":r.breakMode==="without"?"Without Break":"N/A"
       }</div>
-      <div class="small" style="margin:6px 0">Grand $${Number(r.grandTotal||0).toFixed(2)}
-        ${["DOUBLE","LONG"].includes(r.shift)?` • Total AM $${Number(r.totalAM||0).toFixed(2)}`:""}
+      <div class="small" style="margin:6px 0">Grand ${fmtMoney(r.grandTotal)}
+        ${["DOUBLE","LONG"].includes(r.shift)?` • Total AM ${fmtMoney(r.totalAM)}`:""}
         • Meal $${Number(r.meal||0).toFixed(2)} • Cash Tip $${Number(r.cashTip||0).toFixed(2)}
       </div>
       <div class="actions">
@@ -622,7 +622,7 @@ function renderStaff(a){
       <td>${esc(r.date)}</td><td>${esc(r.employee)}</td><td>${esc(r.position)}</td><td>${esc(r.shift)}</td>
       <td>${r.breakMode==="with"?"With Break":r.breakMode==="without"?"Without Break":"N/A"}</td>
       <td>${esc(r.clock)}</td>
-      <td>$${Number(r.grandTotal||0).toFixed(2)}</td>
+      <td>${fmtMoney(r.grandTotal)}</td>
       <td>${["DOUBLE","LONG"].includes(r.shift)?"$"+Number(r.totalAM||0).toFixed(2):"—"}</td>
       <td>${esc(employeeBarText(r))}</td>
       <td>$${Number(r.meal||0).toFixed(2)}</td><td>$${Number(r.cashTip||0).toFixed(2)}</td>
@@ -974,7 +974,7 @@ function renderHourlyQueue(rows){
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:10px 0">
       <div>
         <b>${esc(r.employee)} — ${esc(r.shift)}</b>
-        <div class="small">${esc(r.date)} • ${esc(r.clock)} • Grand $${Number(r.grandTotal||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}</div>
+        <div class="small">${esc(r.date)} • ${esc(r.clock)} • Grand ${fmtMoney(r.grandTotal)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}</div>
       </div>
       <div class="actions">
         <button class="btn green" onclick="loadSubmissionToHourly('${r.id}')">Open in Hourly</button>
@@ -1089,6 +1089,23 @@ async function shareReportFile(blob,filename,target){
   setTimeout(()=>URL.revokeObjectURL(a.href),3000);
   alert(`Report downloaded as ${filename}. On this browser, automatic file attachment to ${target==="whatsapp"?"WhatsApp":"email"} is blocked; attach the downloaded file.`);
 }
+
+function downloadBlob(blob,filename){
+  const a=document.createElement("a");
+  const url=URL.createObjectURL(blob);
+  a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+window.downloadAllReportsXls=function(){
+  const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to download.");return;}
+  downloadBlob(xlsBlob(rows),`Fred_Zhang_Final_Daily_Report_${todayLocal()}.xls`);
+};
+window.downloadAllReportsPdf=function(){
+  const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to download.");return;}
+  downloadBlob(simplePdfBlob(rows),`Fred_Zhang_Final_Daily_Report_${todayLocal()}.pdf`);
+};
+
 window.shareAllReportsXls=async function(target){
   const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to send.");return;}
   await shareReportFile(xlsBlob(rows),`Fred_Zhang_Tip_Report_${todayLocal()}.xls`,target);
@@ -1110,15 +1127,15 @@ function listenHourlyReports(){
           <span class="status approved">MONEY READY</span>
         </div>
         <div class="grid3" style="margin-top:10px">
-          <div class="kpi"><span>Grand Total</span><b>$${Number(r.grandTotal||0).toFixed(2)}</b></div>
-          <div class="kpi"><span>Total AM</span><b>$${Number(r.totalAM||0).toFixed(2)}</b></div>
-          <div class="kpi"><span>Total PM</span><b>$${Number(r.totalPM||0).toFixed(2)}</b></div>
-          <div class="kpi"><span>Paid Tip</span><b>$${Number(r.paidTip||0).toFixed(2)}</b></div>
-          <div class="kpi"><span>Busser Rate</span><b>${(Number(r.busserRate||0)*100).toFixed(2)}%</b></div>
-          <div class="kpi"><span>Busser Tip Out</span><b>$${Number(r.busserTipOut||0).toFixed(2)}</b></div>
-          <div class="kpi"><span>Bar Tip Out</span><b>$${Number(r.barTipOut||0).toFixed(2)}</b></div>
-          <div class="kpi"><span>Hourly Adjustment</span><b>$${Number(r.adjustmentSalaryHourly||0).toFixed(2)}</b></div>
-          <div class="kpi"><span>TOTAL PAID OUT</span><b>$${Number(r.totalPaidOut||0).toFixed(2)}</b></div>
+          <div class="kpi"><span>Grand Total</span><b>${fmtMoney(r.grandTotal)}</b></div>
+          <div class="kpi"><span>Total AM</span><b>${fmtMoney(r.totalAM)}</b></div>
+          <div class="kpi"><span>Total PM</span><b>${fmtMoney(r.totalPM)}</b></div>
+          <div class="kpi"><span>Paid Tip</span><b>${fmtMoney(r.paidTip)}</b></div>
+          <div class="kpi"><span>Busser Rate</span><b>${fmtPct(r.busserRate)}</b></div>
+          <div class="kpi"><span>Busser Tip Out</span><b>${fmtMoney(r.busserTipOut)}</b></div>
+          <div class="kpi"><span>Bar Tip Out</span><b>${fmtMoney(r.barTipOut)}</b></div>
+          <div class="kpi"><span>Hourly Adjustment</span><b>${fmtMoney(r.adjustmentSalaryHourly)}</b></div>
+          <div class="kpi"><span>TOTAL PAID OUT</span><b>${fmtMoney(r.totalPaidOut)}</b></div>
         </div>
         <div class="actions" style="margin-top:10px">
           <button class="btn light" onclick="editHourlyReport('${r.id}')">EDIT</button>
@@ -1248,8 +1265,8 @@ window.calculateHourlyV01=function(){
     pmBarSales:$("hPmBar").value==="yes"
   });
   const r=lastHourlyResult;
-  const m=v=>"$"+Number(v||0).toFixed(2), p=v=>(Number(v||0)*100).toFixed(2)+"%";
-  $("hrHours").textContent=r.totalHoursWork==null?"—":Number(r.totalHoursWork).toFixed(2);
+  const m=fmtMoney, p=fmtPct;
+  $("hrHours").textContent=r.totalHoursWork==null?"—":Number(r.totalHoursWork).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   $("hrGrandTotal").textContent=m(r.grandTotal);
   $("hrTotalAM").textContent=m(r.totalAM);
   $("hrTotalPM").textContent=m(r.totalPM);
@@ -1281,7 +1298,6 @@ window.saveHourlyV01=async function(){
     let ref;
     if(currentHourlyReportId){
       ref=doc(db,"hourlyReports",currentHourlyReportId);
-      const old=await getDoc(ref);
       await updateDoc(ref,{
         ...r,
         sourceSubmissionId:currentHourlySubmissionId||"",
@@ -1289,7 +1305,6 @@ window.saveHourlyV01=async function(){
         updatedAt:serverTimestamp(),
         updatedBy:currentProfile.displayName||currentProfile.username
       });
-      await writeAudit("hourly_report_edit",currentHourlyReportId,r.employee,{before:old.exists()?old.data():null,after:r});
     }else{
       ref=doc(collection(db,"hourlyReports"));
       await setDoc(ref,{
@@ -1300,7 +1315,6 @@ window.saveHourlyV01=async function(){
         createdByUid:currentUser.uid,
         createdBy:currentProfile.displayName||currentProfile.username
       });
-      await writeAudit("hourly_final_money_ready",ref.id,r.employee,{after:r,sourceSubmissionId:currentHourlySubmissionId||""});
     }
 
     if(currentHourlySubmissionId){
@@ -1329,22 +1343,35 @@ window.saveHourlyV01=async function(){
         finalizedAt:serverTimestamp(),
         updatedAt:serverTimestamp()
       });
-
-      await setDoc(doc(db,"moneyReadyBoard",currentHourlySubmissionId),{
-        employee:r.employee||"",
-        submissionId:currentHourlySubmissionId,
-        reportId:ref.id,
-        message:"Money is ready. Please come to cashier.",
-        active:true,
-        createdAt:serverTimestamp(),
-        finalizedBy:currentProfile.displayName||currentProfile.username
-      });
     }
 
-    alert("Final submitted. Employee message: Money is ready. Please come to cashier.");
+    // Optional actions must NOT cause Final Submit to fail.
+    try{
+      await writeAudit(currentHourlyReportId?"hourly_report_edit":"hourly_final_money_ready",
+        ref.id,r.employee,{after:r,sourceSubmissionId:currentHourlySubmissionId||""});
+    }catch(e){ console.warn("Audit log skipped:",e); }
+
+    if(currentHourlySubmissionId){
+      try{
+        await setDoc(doc(db,"moneyReadyBoard",currentHourlySubmissionId),{
+          employee:r.employee||"",
+          submissionId:currentHourlySubmissionId,
+          reportId:ref.id,
+          message:"Money is ready. Please come to cashier.",
+          active:true,
+          createdAt:serverTimestamp(),
+          finalizedBy:currentProfile.displayName||currentProfile.username
+        });
+      }catch(e){ console.warn("Money Ready board write skipped:",e); }
+    }
+
+    alert("Final approved. Report moved to Final Daily Report. Employee status: MONEY READY.");
     currentHourlyReportId=null;
     currentHourlySubmissionId=null;
-  }catch(e){ alert(`Save failed: ${e.code || e.message}`); }
+  }catch(e){
+    console.error("Final submit failed:",e);
+    alert(`Final Submit failed: ${e.code || e.message}`);
+  }
 };
 
 window.exportCSV=function(){
@@ -1390,4 +1417,28 @@ function fz24(id){
 
 // V9.8: Server Room Money Ready Board + anonymous kiosk mode + automatic weekday/weekend busser rules.
 
+
+function fmtMoney(v){
+  return "$ " + Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtPct(v){
+  return (Number(v||0)*100).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
+}
+function selectZeroOnFocus(el){
+  if(!el) return;
+  el.addEventListener("focus",()=>{
+    const raw=String(el.value??"").trim();
+    if(raw==="" || Number(raw)===0) setTimeout(()=>el.select(),0);
+  });
+  el.addEventListener("click",()=>{
+    const raw=String(el.value??"").trim();
+    if(raw!=="" && Number(raw)===0) setTimeout(()=>el.select(),0);
+  });
+}
+["hGrandTotal","hTotalAM","hPaidTip","hCardFee","hCashTip","hMeal",
+ "mGrandTotal","mTotalAM","mPaidTip","mMeal","mCash",
+ "eGrandTotal","eTotalAM","eMeal","eCash"].forEach(id=>selectZeroOnFocus($(id)));
+
 // V9.9: Hourly queue duplicate delete; XLS/PDF sharing; automatic Money Ready SMS backend support.
+
+// V10.0: polished Hourly V01 UI, comma/space currency formatting, zero overwrite inputs, Final Daily Report, robust final submit.
