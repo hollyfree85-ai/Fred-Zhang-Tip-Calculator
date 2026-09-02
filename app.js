@@ -25,6 +25,10 @@ let unsubs = [];
 let latestRows = [];
 let knownPending = new Set();
 let lastHourlyResult = null;
+let currentHourlySubmissionId = null;
+let currentHourlyReportId = null;
+let latestHourlyReports = [];
+let userNameByUid = {};
 const EMPLOYEE_ROSTER = Object.freeze(["Adrieanna Walker", "Aida Gonzales", "Alainna Montalvo", "Angela Grizzad", "Ariana Garner", "Ashley Garcia", "Brandi Copeland", "Caitlin Dillon", "Christina Gurley", "Dorothy Makovicka", "Fred Zhang", "Hannah Dempsey", "Jesus Ovalle-Munoz", "Libby Lane", "Megan Meadows", "Megan Sisk", "Mia Burress", "Sara Swift", "Sarah Kibler"]);
 
 
@@ -347,7 +351,16 @@ function listenEmployee(){
         ${["DOUBLE","LONG"].includes(r.shift)?` • AM $${Number(r.totalAM||0).toFixed(2)}`:""}
         • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}
         • <span class="status ${esc(r.status)}">${esc(r.status)}</span></div>
+        ${r.status==="money_ready"?'<div class="notice good" style="margin-top:8px"><b>Money is ready. Please come to cashier.</b></div>':""}
       </div>`).join(""):'<div class="small">No submissions yet.</div>';
+
+    const ready=a.find(r=>r.status==="money_ready" && !sessionStorage.getItem("moneyReady:"+r.id));
+    if(ready){
+      sessionStorage.setItem("moneyReady:"+ready.id,"1");
+      if(typeof Notification!=="undefined" && Notification.permission==="granted"){
+        new Notification("Fred Zhang Tip Calculator",{body:"Money is ready. Please come to cashier.",icon:"icon-192.png"});
+      }
+    }
   },e=>console.error("Employee listener:",e)));
 }
 
@@ -373,6 +386,7 @@ function listenStaff(){
   }));
 
   listenApprovals();
+  listenHourlyReports();
   if(currentProfile.role==="owner"){
     listenUsers();
     listenHistory();
@@ -418,6 +432,8 @@ function renderStaff(a){
         <button class="btn red" style="padding:6px 8px" onclick="deleteSubmission('${r.id}')">Delete</button>
       </div></td>
     </tr>`).join(""):'<tr><td colspan="13">No reviewed records.</td></tr>';
+
+  renderHourlyQueue(a);
 }
 
 window.review=async function(id,status){
@@ -425,13 +441,20 @@ window.review=async function(id,status){
     const ref=doc(db,"submissions",id);
     const beforeSnap=await getDoc(ref);
     const before=beforeSnap.exists()?beforeSnap.data():null;
+    const approved=status==="approved";
+    const nextStatus=approved ? "hourly_pending" : "rejected";
     await updateDoc(ref,{
-      status,
+      status:nextStatus,
+      hourlyStatus:approved ? "waiting_manager" : "",
       reviewedBy:currentProfile.displayName||currentProfile.username,
       reviewedAt:serverTimestamp(),
       updatedAt:serverTimestamp()
     });
-    await writeAudit(status==="approved"?"approve":"reject",id,before?.employee||"",{before,after:{status}});
+    await writeAudit(approved?"approve_to_hourly":"reject",id,before?.employee||"",{before,after:{status:nextStatus}});
+    if(approved){
+      const hourlyBtn=document.querySelector('[data-stab="hourly"]');
+      if(hourlyBtn) hourlyBtn.click();
+    }
   }catch(e){ alert(`Update failed: ${e.code || e.message}`); }
 };
 
@@ -496,6 +519,7 @@ function listenUsers(){
   unsubs.push(onSnapshot(collection(db,"users"),snap=>{
     const a=snap.docs.map(d=>({uid:d.id,...d.data()}))
       .sort((a,b)=>(a.username||"").localeCompare(b.username||""));
+    userNameByUid=Object.fromEntries(a.map(u=>[u.uid,u.displayName||u.username||""]));
     $("userList").innerHTML=a.map(u=>{
       const active = u.active !== false;
       const status = active
@@ -506,7 +530,7 @@ function listenUsers(){
           ${active
             ? `<button class="btn red" style="padding:7px 10px" onclick="setUserActive('${u.uid}',false)">Disable</button>`
             : `<button class="btn green" style="padding:7px 10px" onclick="setUserActive('${u.uid}',true)">Enable</button>`}
-          <button class="btn red" style="padding:7px 10px;background:#7f1d1d;color:white" onclick="deleteAppUser('${u.uid}','${'${'}esc(u.username||u.displayName||"")${'}'}')">Delete</button>
+          <button class="btn red" style="padding:7px 10px;background:#7f1d1d;color:white" onclick="deleteAppUser(\'${u.uid}\')">Delete</button>
         </div>`;
       return `
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:9px 0">
@@ -521,13 +545,17 @@ function listenUsers(){
 }
 
 
-window.deleteAppUser=async function(uid,username){
+window.deleteAppUser=async function(uid){
   if(currentProfile.role!=="owner") return;
-  if(!confirm(`DELETE ${username || "this user"} completely?\n\nThis will remove Authentication + JUICY TIP profile + signup request. This cannot be undone.`)) return;
-
+  const username=userNameByUid[uid]||"this user";
+  if(!confirm(`DELETE ${username} completely?\n\nThis removes Firebase Authentication + app profile + signup request. This cannot be undone.`)) return;
   try{
-    await deleteUserAdmin({uid});
-    alert("User deleted completely.");
+    const result=await deleteUserAdmin({uid});
+    if(result?.data?.ok){
+      alert("User deleted completely.");
+    }else{
+      alert("Delete request completed.");
+    }
   }catch(e){
     console.error("Admin delete user:",e);
     alert(`Delete failed: ${e.message || e.code || "unknown error"}`);
@@ -697,6 +725,129 @@ window.requestNotify=async function(){
 };
 
 
+
+function parseClockParts(r){
+  const text=String(r.clock||"").replaceAll("–","-");
+  const pairs=text.split("/").map(s=>s.trim());
+  if(pairs.length>1){
+    const a=pairs[0].split("-").map(s=>s.trim());
+    const p=pairs[1].split("-").map(s=>s.trim());
+    return {amIn:a[0]||"",amOut:a[1]||"",pmIn:p[0]||"",pmOut:p[1]||""};
+  }
+  const one=pairs[0].split("-").map(s=>s.trim());
+  return {in:one[0]||"",out:one[1]||""};
+}
+
+function renderHourlyQueue(rows){
+  const el=$("hourlyQueue"); if(!el) return;
+  const q=rows.filter(r=>["hourly_pending","approved"].includes(r.status));
+  el.innerHTML=q.length?q.map(r=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:10px 0">
+      <div>
+        <b>${esc(r.employee)} — ${esc(r.shift)}</b>
+        <div class="small">${esc(r.date)} • ${esc(r.clock)} • Grand $${Number(r.grandTotal||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}</div>
+      </div>
+      <button class="btn green" onclick="loadSubmissionToHourly('${r.id}')">Open in Hourly</button>
+    </div>`).join(""):'<div class="notice good">No approved employee data waiting.</div>';
+}
+
+window.loadSubmissionToHourly=function(id){
+  const r=latestRows.find(x=>x.id===id);
+  if(!r) return;
+  currentHourlySubmissionId=id;
+  currentHourlyReportId=null;
+  $("hDate").value=r.date||todayLocal();
+  $("hEmployee").value=r.employee||"";
+  $("hPosition").value=r.position||"Server";
+  $("hShift").value=(r.shift==="LONG"?"DOUBLE":r.shift||"AM");
+  $("hMeal").value=Number(r.meal||0);
+  $("hGrandTotal").value=Number(r.grandTotal||0);
+  $("hTotalAM").value=Number(r.totalAM||0);
+  $("hCashTip").value=Number(r.cashTip||0);
+  $("hPaidTip").value=0;
+  $("hCardFee").value=0;
+  syncHourlyShift();
+  const c=parseClockParts(r);
+  if($("hShift").value==="DOUBLE"){
+    $("hAmIn").value=c.amIn||c.in||"";
+    $("hAmOut").value=c.amOut||"";
+    $("hPmIn").value=c.pmIn||"";
+    $("hPmOut").value=c.pmOut||c.out||"";
+  }else{
+    $("hIn").value=c.in||"";
+    $("hOut").value=c.out||"";
+  }
+  $("hourlyResult").classList.add("hidden");
+  window.scrollTo({top:$("hourly").offsetTop-10,behavior:"smooth"});
+};
+
+function listenHourlyReports(){
+  const q=query(collection(db,"hourlyReports"),orderBy("createdAt","desc"),limit(200));
+  unsubs.push(onSnapshot(q,snap=>{
+    latestHourlyReports=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const el=$("hourlyReportsList"); if(!el) return;
+    el.innerHTML=latestHourlyReports.length?latestHourlyReports.map(r=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:10px 0">
+        <div>
+          <b>${esc(r.date||"")} • ${esc(r.employee||"")} • ${esc(r.shift||"")}</b>
+          <div class="small">Paid Out $${Number(r.totalPaidOut||0).toFixed(2)} • <span class="status approved">money_ready</span></div>
+        </div>
+        <div class="actions">
+          <button class="btn light" onclick="editHourlyReport('${r.id}')">Edit</button>
+          <button class="btn red" onclick="deleteHourlyReport('${r.id}')">Delete</button>
+        </div>
+      </div>`).join(""):'<div class="small">No final reports yet.</div>';
+  },e=>console.error("Hourly reports:",e)));
+}
+
+window.editHourlyReport=function(id){
+  const r=latestHourlyReports.find(x=>x.id===id); if(!r) return;
+  currentHourlyReportId=id;
+  currentHourlySubmissionId=r.sourceSubmissionId||null;
+  $("hDate").value=r.date||todayLocal();
+  $("hEmployee").value=r.employee||"";
+  $("hPosition").value=r.position||"Server";
+  $("hShift").value=r.shift||"AM";
+  $("hBusserAM").value=r.busserAM||"WITH";
+  $("hMeal").value=Number(r.meal||0);
+  $("hGrandTotal").value=Number(r.grandTotal||0);
+  $("hTotalAM").value=Number(r.totalAM||0);
+  $("hPaidTip").value=Number(r.paidTip||0);
+  $("hCardFee").value=Number(r.cardFee||0);
+  $("hCashTip").value=Number(r.cashTip||0);
+  $("hAmBar").value=r.amBarSales?"yes":"no";
+  $("hPmBar").value=r.pmBarSales?"yes":"no";
+  syncHourlyShift();
+  const hrs=r.hours||{};
+  $("hIn").value=hrs.hourIn||"";
+  $("hOut").value=hrs.hourOut||"";
+  $("hAmIn").value=hrs.hourInAM||"";
+  $("hAmOut").value=hrs.hourOutAM||"";
+  $("hPmIn").value=hrs.hourInPM||"";
+  $("hPmOut").value=hrs.hourOutPM||"";
+  document.querySelector('[data-stab="hourly"]')?.click();
+};
+
+window.deleteHourlyReport=async function(id){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  if(!confirm("Delete this final hourly report?")) return;
+  try{
+    const ref=doc(db,"hourlyReports",id);
+    const s=await getDoc(ref);
+    const before=s.exists()?s.data():null;
+    await deleteDoc(ref);
+    if(before?.sourceSubmissionId){
+      await updateDoc(doc(db,"submissions",before.sourceSubmissionId),{
+        status:"hourly_pending",
+        hourlyStatus:"waiting_manager",
+        hourlyReportId:"",
+        updatedAt:serverTimestamp()
+      });
+    }
+    await writeAudit("hourly_report_delete",id,before?.employee||"",{before});
+  }catch(e){ alert(`Delete report failed: ${e.code||e.message}`); }
+};
+
 function syncHourlyShift(){
   const dbl=$("hShift").value==="DOUBLE";
   $("hSingleClock").classList.toggle("hidden",dbl);
@@ -749,15 +900,45 @@ window.saveHourlyV01=async function(){
   const r=calculateHourlyV01();
   if(!r) return;
   try{
-    const ref=doc(collection(db,"hourlyReports"));
-    await setDoc(ref,{
-      ...r,
-      createdAt:serverTimestamp(),
-      createdByUid:currentUser.uid,
-      createdBy:currentProfile.displayName||currentProfile.username
-    });
-    await writeAudit("hourly_v01_saved",ref.id,r.employee,{after:r});
-    alert("Hourly Adjustment V01 report saved.");
+    let ref;
+    if(currentHourlyReportId){
+      ref=doc(db,"hourlyReports",currentHourlyReportId);
+      const old=await getDoc(ref);
+      await updateDoc(ref,{
+        ...r,
+        sourceSubmissionId:currentHourlySubmissionId||"",
+        status:"money_ready",
+        updatedAt:serverTimestamp(),
+        updatedBy:currentProfile.displayName||currentProfile.username
+      });
+      await writeAudit("hourly_report_edit",currentHourlyReportId,r.employee,{before:old.exists()?old.data():null,after:r});
+    }else{
+      ref=doc(collection(db,"hourlyReports"));
+      await setDoc(ref,{
+        ...r,
+        sourceSubmissionId:currentHourlySubmissionId||"",
+        status:"money_ready",
+        createdAt:serverTimestamp(),
+        createdByUid:currentUser.uid,
+        createdBy:currentProfile.displayName||currentProfile.username
+      });
+      await writeAudit("hourly_final_money_ready",ref.id,r.employee,{after:r,sourceSubmissionId:currentHourlySubmissionId||""});
+    }
+
+    if(currentHourlySubmissionId){
+      await updateDoc(doc(db,"submissions",currentHourlySubmissionId),{
+        status:"money_ready",
+        hourlyStatus:"finalized",
+        hourlyReportId:ref.id,
+        finalizedBy:currentProfile.displayName||currentProfile.username,
+        finalizedAt:serverTimestamp(),
+        updatedAt:serverTimestamp()
+      });
+    }
+
+    alert("Final submitted. Employee message: Money is ready. Please come to cashier.");
+    currentHourlyReportId=null;
+    currentHourlySubmissionId=null;
   }catch(e){ alert(`Save failed: ${e.code || e.message}`); }
 };
 
@@ -791,3 +972,5 @@ function fz24(id){
 ["eGrandTotal","eTotalAM","eMeal","eCash"].forEach(id=>{
  const e=document.getElementById(id); if(e)e.addEventListener("focus",()=>{if(Number(e.value)===0)setTimeout(()=>e.select(),0);});
 });
+
+// V9.3 workflow: approve -> hourly queue -> final money ready; final report edit/delete; fixed app user delete.

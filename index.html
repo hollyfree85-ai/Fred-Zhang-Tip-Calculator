@@ -202,6 +202,9 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <h2>Hourly Adjustment V01</h2>
           <div class="notice good">Same V01 calculation engine, now integrated directly into Fred Zhang Tip Calculator. No second login and no app-inside-app screen.</div>
 
+          <h3>Approved — Waiting for Hourly Adjustment</h3>
+          <div id="hourlyQueue"><div class="small">No approved employee data waiting.</div></div>
+
           <h3>Employee & Shift</h3>
           <div class="grid3">
             <div><label>Date</label><input id="hDate" type="date"></div>
@@ -238,7 +241,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <div style="height:14px"></div>
           <div class="actions">
             <button class="btn gold" onclick="calculateHourlyV01()">Calculate V01</button>
-            <button class="btn green" onclick="saveHourlyV01()">Save to Report</button>
+            <button class="btn green" onclick="saveHourlyV01()">Submit Final & Money Ready</button>
           </div>
 
           <div id="hourlyResult" class="calc-result hidden">
@@ -249,6 +252,9 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
             <div class="kpi"><span>After Adjustment</span><b id="hrAfter">$0.00</b></div>
             <div class="kpi"><span>Total Paid Out</span><b id="hrPaidOut">$0.00</b></div>
           </div>
+
+          <h3>Final Hourly Reports</h3>
+          <div id="hourlyReportsList"><div class="small">No final reports yet.</div></div>
         </div>
       </section>
 
@@ -329,8 +335,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=12"></script>
+<script type="module" src="app.js?v=13"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
