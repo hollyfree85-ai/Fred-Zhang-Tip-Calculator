@@ -233,6 +233,25 @@ onAuthStateChanged(auth, async user=>{
   }
 });
 
+
+function updateEmployeeBusserPreview(){
+  const box=$("employeeBusserPreview"), out=$("eBusserRate");
+  if(!box||!out) return;
+  const multi=["DOUBLE","LONG"].includes(eShift);
+  box.classList.toggle("hidden",!multi);
+  if(!multi){ out.textContent="0.00%"; return; }
+  const grand=Number($("eGrandTotal").value)||0;
+  const am=Number($("eTotalAM").value)||0;
+  if(grand<=0){ out.textContent="0.00%"; return; }
+  const safeAM=Math.max(0,Math.min(am,grand));
+  // Existing V01 Double/Long effective busser formula (without AM busser):
+  // PM tip-out = (Grand Total - Total AM) × 1.5%; displayed rate = tip-out / Grand Total.
+  const rate=((grand-safeAM)*0.015/grand)*100;
+  out.textContent=rate.toFixed(2)+"%";
+}
+$("eGrandTotal").addEventListener("input",updateEmployeeBusserPreview);
+$("eTotalAM").addEventListener("input",updateEmployeeBusserPreview);
+
 // Employee shift UI
 document.querySelectorAll("[data-eshift]").forEach(btn=>{
   btn.addEventListener("click",()=>{
@@ -249,6 +268,7 @@ function refreshClockMode(){
   $("singleClock").classList.toggle("hidden",multi);
   $("longDoubleOptions").classList.toggle("hidden",!multi);
   $("totalAmWrap").classList.toggle("hidden",!multi);
+  updateEmployeeBusserPreview();
   if(!multi){
     $("continuousClock").classList.add("hidden");
     $("doubleClock").classList.add("hidden");
@@ -280,6 +300,7 @@ function clockText(){
 
 window.clearEmployeeForm=function(){
   ["eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut"].forEach(id=>$(id).value="");
+  $("ePaidTip").value=0;
   $("eMeal").value=0;
   $("eCash").value=0;
   $("eGrandTotal").value=0;
@@ -313,6 +334,7 @@ window.submitEmployee=async function(){
     clock:clockText(),
     grandTotal:Number($("eGrandTotal").value)||0,
     totalAM:isMulti ? (Number($("eTotalAM").value)||0) : 0,
+    paidTip:Number($("ePaidTip").value)||0,
     meal:Number($("eMeal").value)||0,
     cashTip:Number($("eCash").value)||0,
     status:"pending",
@@ -349,7 +371,7 @@ function listenEmployee(){
         <b>${esc(r.date)} • ${esc(r.shift)}</b>
         <div class="small">${esc(r.clock)} • Grand $${Number(r.grandTotal||0).toFixed(2)}
         ${["DOUBLE","LONG"].includes(r.shift)?` • AM $${Number(r.totalAM||0).toFixed(2)}`:""}
-        • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}
+        • Paid Tip $${Number(r.paidTip||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}
         • <span class="status ${esc(r.status)}">${esc(r.status)}</span></div>
         ${r.status==="money_ready"?'<div class="notice good" style="margin-top:8px"><b>Money is ready. Please come to cashier.</b></div>':""}
       </div>`).join(""):'<div class="small">No submissions yet.</div>';
@@ -406,17 +428,17 @@ function renderStaff(a){
       }</div>
       <div class="small" style="margin:6px 0">Grand $${Number(r.grandTotal||0).toFixed(2)}
         ${["DOUBLE","LONG"].includes(r.shift)?` • Total AM $${Number(r.totalAM||0).toFixed(2)}`:""}
-        • Meal $${Number(r.meal||0).toFixed(2)} • Cash Tip $${Number(r.cashTip||0).toFixed(2)}
+        • Paid Tip $${Number(r.paidTip||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash Tip $${Number(r.cashTip||0).toFixed(2)}
       </div>
       <div class="actions">
-        <button class="btn green" onclick="review('${r.id}','approved')">Approve</button>
+        <button class="btn green" onclick="review('${r.id}','approved')">Review / Approve</button>
         <button class="btn light" onclick="editSubmission('${r.id}')">Edit</button>
         <button class="btn red" onclick="review('${r.id}','rejected')">Reject</button>
         <button class="btn red" onclick="deleteSubmission('${r.id}')">Delete</button>
       </div>
     </div>`).join(""):'<div class="notice good">No pending submissions.</div>';
 
-  const ap=a.filter(r=>r.status!=="pending");
+  const ap=a;
   $("reportBody").innerHTML=ap.length?ap.map(r=>`
     <tr>
       <td>${esc(r.date)}</td><td>${esc(r.employee)}</td><td>${esc(r.position)}</td><td>${esc(r.shift)}</td>
@@ -424,11 +446,12 @@ function renderStaff(a){
       <td>${esc(r.clock)}</td>
       <td>$${Number(r.grandTotal||0).toFixed(2)}</td>
       <td>${["DOUBLE","LONG"].includes(r.shift)?"$"+Number(r.totalAM||0).toFixed(2):"—"}</td>
+      <td>$${Number(r.paidTip||0).toFixed(2)}</td>
       <td>$${Number(r.meal||0).toFixed(2)}</td><td>$${Number(r.cashTip||0).toFixed(2)}</td>
       <td><span class="status ${esc(r.status)}">${esc(r.status)}</span></td>
       <td>${esc(r.reviewedBy||"")}</td>
       <td><div class="actions">
-        <button class="btn light" style="padding:6px 8px" onclick="editSubmission('${r.id}')">Edit</button>
+        <button class="btn light" style="padding:6px 8px" onclick="editSubmission('${r.id}')">${r.status==="pending"?"Review / Edit":"Edit"}</button>
         <button class="btn red" style="padding:6px 8px" onclick="deleteSubmission('${r.id}')">Delete</button>
       </div></td>
     </tr>`).join(""):'<tr><td colspan="13">No reviewed records.</td></tr>';
@@ -437,24 +460,22 @@ function renderStaff(a){
 }
 
 window.review=async function(id,status){
+  if(status==="approved"){
+    document.querySelector('[data-stab="report"]')?.click();
+    setTimeout(()=>editSubmission(id),100);
+    return;
+  }
   try{
     const ref=doc(db,"submissions",id);
     const beforeSnap=await getDoc(ref);
     const before=beforeSnap.exists()?beforeSnap.data():null;
-    const approved=status==="approved";
-    const nextStatus=approved ? "hourly_pending" : "rejected";
     await updateDoc(ref,{
-      status:nextStatus,
-      hourlyStatus:approved ? "waiting_manager" : "",
+      status:"rejected",
       reviewedBy:currentProfile.displayName||currentProfile.username,
       reviewedAt:serverTimestamp(),
       updatedAt:serverTimestamp()
     });
-    await writeAudit(approved?"approve_to_hourly":"reject",id,before?.employee||"",{before,after:{status:nextStatus}});
-    if(approved){
-      const hourlyBtn=document.querySelector('[data-stab="hourly"]');
-      if(hourlyBtn) hourlyBtn.click();
-    }
+    await writeAudit("reject",id,before?.employee||"",{before,after:{status:"rejected"}});
   }catch(e){ alert(`Update failed: ${e.code || e.message}`); }
 };
 
@@ -628,6 +649,7 @@ window.openAddSubmission=function(){
   $("mClock").value="";
   $("mGrandTotal").value=0;
   $("mTotalAM").value=0;
+  $("mPaidTip").value=0;
   $("mMeal").value=0;
   $("mCash").value=0;
   $("editModal").classList.remove("hidden");
@@ -647,6 +669,7 @@ window.editSubmission=function(id){
   $("mClock").value=r.clock||"";
   $("mGrandTotal").value=r.grandTotal||0;
   $("mTotalAM").value=r.totalAM||0;
+  $("mPaidTip").value=r.paidTip||0;
   $("mMeal").value=r.meal||0;
   $("mCash").value=r.cashTip||0;
   $("editModal").classList.remove("hidden");
@@ -657,7 +680,6 @@ window.saveStaffSubmission=async function(){
   const id=$("mId").value.trim();
   const payload={
     employee:$("mEmployee").value.trim(),
-    employeeUid:"",
     date:$("mDate").value,
     position:$("mPosition").value,
     shift:$("mShift").value,
@@ -665,26 +687,38 @@ window.saveStaffSubmission=async function(){
     clock:$("mClock").value.trim(),
     grandTotal:Number($("mGrandTotal").value)||0,
     totalAM:Number($("mTotalAM").value)||0,
+    paidTip:Number($("mPaidTip").value)||0,
     meal:Number($("mMeal").value)||0,
     cashTip:Number($("mCash").value)||0,
+    status:"hourly_pending",
+    hourlyStatus:"waiting_manager",
+    reviewedBy:currentProfile.displayName||currentProfile.username,
+    reviewedAt:serverTimestamp(),
     updatedAt:serverTimestamp()
   };
   if(!payload.employee || !payload.date){ alert("Employee and date required."); return; }
 
   try{
+    let targetId=id;
     if(id){
       const ref=doc(db,"submissions",id);
       const s=await getDoc(ref);
       const before=s.exists()?s.data():null;
+      // Preserve employeeUid from original record by updating only manager-review fields.
       await updateDoc(ref,payload);
-      await writeAudit("edit",id,payload.employee,{before,after:payload});
+      await writeAudit("manager_review_to_hourly",id,payload.employee,{before,after:payload});
     }else{
       const ref=doc(collection(db,"submissions"));
-      const full={...payload,status:"approved",reviewedBy:currentProfile.displayName||currentProfile.username,reviewedAt:serverTimestamp(),createdAt:serverTimestamp()};
+      targetId=ref.id;
+      const full={...payload,employeeUid:"",createdAt:serverTimestamp()};
       await setDoc(ref,full);
-      await writeAudit("manager_add",ref.id,payload.employee,{after:full});
+      await writeAudit("manager_add_to_hourly",ref.id,payload.employee,{after:full});
     }
     closeEditModal();
+    setTimeout(()=>{
+      document.querySelector('[data-stab="hourly"]')?.click();
+      setTimeout(()=>window.loadSubmissionToHourly?.(targetId),150);
+    },100);
   }catch(e){ alert(`Save failed: ${e.code || e.message}`); }
 };
 
@@ -745,7 +779,7 @@ function renderHourlyQueue(rows){
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:10px 0">
       <div>
         <b>${esc(r.employee)} — ${esc(r.shift)}</b>
-        <div class="small">${esc(r.date)} • ${esc(r.clock)} • Grand $${Number(r.grandTotal||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}</div>
+        <div class="small">${esc(r.date)} • ${esc(r.clock)} • Grand $${Number(r.grandTotal||0).toFixed(2)} • Paid Tip $${Number(r.paidTip||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}</div>
       </div>
       <button class="btn green" onclick="loadSubmissionToHourly('${r.id}')">Open in Hourly</button>
     </div>`).join(""):'<div class="notice good">No approved employee data waiting.</div>';
@@ -764,7 +798,7 @@ window.loadSubmissionToHourly=function(id){
   $("hGrandTotal").value=Number(r.grandTotal||0);
   $("hTotalAM").value=Number(r.totalAM||0);
   $("hCashTip").value=Number(r.cashTip||0);
-  $("hPaidTip").value=0;
+  $("hPaidTip").value=Number(r.paidTip||0);
   $("hCardFee").value=0;
   syncHourlyShift();
   const c=parseClockParts(r);
@@ -969,8 +1003,12 @@ function fz24(id){
  e.addEventListener("input",()=>{let d=e.value.replace(/\D/g,"").slice(0,4);e.value=d.length>2?d.slice(0,2)+":"+d.slice(2):d;});
 }
 ["eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut"].forEach(fz24);
-["eGrandTotal","eTotalAM","eMeal","eCash"].forEach(id=>{
+["eGrandTotal","eTotalAM","ePaidTip","eMeal","eCash"].forEach(id=>{
  const e=document.getElementById(id); if(e)e.addEventListener("focus",()=>{if(Number(e.value)===0)setTimeout(()=>e.select(),0);});
 });
 
 // V9.3 workflow: approve -> hourly queue -> final money ready; final report edit/delete; fixed app user delete.
+
+// V9.4: employee Paid Tip field added; Total AM remains conditional for DOUBLE/LONG; formulas unchanged.
+
+// V9.5: employee live busser % for DOUBLE/LONG; Manager Review/Report submit routes same record into Hourly; final save triggers money_ready notification. V01 formulas unchanged.

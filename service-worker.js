@@ -1,5 +1,5 @@
-const CACHE='fz-tip-v13';
-const ASSETS=['./','./index.html','./app.js?v=13','./firebase-config.js','./hourly-logic.js','./manifest.webmanifest','./icon-180.png','./icon-192.png','./icon-512.png','./hourly-v01.html'];
+const CACHE='fz-tip-v15';
+const ASSETS=['./','./index.html','./app.js?v=15','./firebase-config.js','./hourly-logic.js','./manifest.webmanifest','./icon-180.png','./icon-192.png','./icon-512.png','./hourly-v01.html'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));
 self.addEventListener('fetch',e=>{

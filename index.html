@@ -153,9 +153,14 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <div id="totalAmWrap" class="hidden"><label>Total AM ($) — Double / Longshift</label><input id="eTotalAM" type="number" step=".01" min="0" value="0"></div>
         </div>
         <div class="small" style="margin-top:7px">User Report note: for <b>Total AM</b>, use the AM selection. For <b>Grand Total</b>, do not select AM/PM.</div>
+        <div id="employeeBusserPreview" class="notice hidden" style="margin-top:10px">
+          <b>Busser Tip Out % (Auto): <span id="eBusserRate">0.00%</span></b>
+          <div class="small">Calculated automatically from Grand Total and Total AM using the existing V01 busser formula.</div>
+        </div>
 
-        <h3>Meal & Cash Tip</h3>
+        <h3>Paid Tip, Meal & Cash Tip</h3>
         <div class="grid">
+          <div><label>Paid Tip ($)</label><input id="ePaidTip" type="number" step=".01" min="0" value="0"></div>
           <div><label>Meal ($)</label><input id="eMeal" type="number" step=".01" min="0" value="0"></div>
           <div><label>Cash Tip ($)</label><input id="eCash" type="number" step=".01" min="0" value="0"></div>
         </div>
@@ -169,7 +174,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
       <div class="tabs">
         <button class="tab on" data-stab="pending">Pending Data <span id="pendingBadge" class="badge">0</span></button>
         <button class="tab" data-stab="approvals">Employee Approvals <span id="approvalBadge" class="badge">0</span></button>
-        <button class="tab" data-stab="report">Report</button>
+        <button class="tab" data-stab="report">Manager Review / Report</button>
         <button class="tab" data-stab="hourly">Hourly Adjustment V01</button>
         <button class="tab ownerOnly" data-stab="users">Users</button>
         <button class="tab ownerOnly" data-stab="history">History</button>
@@ -190,9 +195,11 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 
       <section id="report" class="staffPanel hidden">
         <div class="card">
+          <h2>Manager Review / Report</h2>
+          <div class="notice">Employee submissions appear here. Edit/check the data, then submit it to Hourly Adjustment V01.</div>
           <div class="actions"><button class="btn green" onclick="openAddSubmission()">Add Submission</button><button class="btn light" onclick="exportCSV()">Export CSV</button><button class="btn light" onclick="window.print()">Print / PDF</button></div>
           <div style="height:12px"></div>
-          <div class="tablewrap"><table><thead><tr><th>Date</th><th>Employee</th><th>Position</th><th>Shift</th><th>Break</th><th>Clock</th><th>Grand Total</th><th>Total AM</th><th>Meal</th><th>Cash Tip</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr></thead><tbody id="reportBody"></tbody></table></div>
+          <div class="tablewrap"><table><thead><tr><th>Date</th><th>Employee</th><th>Position</th><th>Shift</th><th>Break</th><th>Clock</th><th>Grand Total</th><th>Total AM</th><th>Paid Tip</th><th>Meal</th><th>Cash Tip</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr></thead><tbody id="reportBody"></tbody></table></div>
         </div>
       </section>
 
@@ -307,11 +314,12 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
       <div><label>Clock</label><input id="mClock" placeholder="10:30–22:00"></div>
       <div><label>Grand Total ($)</label><input id="mGrandTotal" type="number" step=".01"></div>
       <div><label>Total AM ($)</label><input id="mTotalAM" type="number" step=".01"></div>
+      <div><label>Paid Tip ($)</label><input id="mPaidTip" type="number" step=".01"></div>
       <div><label>Meal ($)</label><input id="mMeal" type="number" step=".01"></div>
       <div><label>Cash Tip ($)</label><input id="mCash" type="number" step=".01"></div>
     </div>
     <div style="height:12px"></div>
-    <div class="actions"><button class="btn light" onclick="closeEditModal()">Cancel</button><button class="btn green" onclick="saveStaffSubmission()">Save</button></div>
+    <div class="actions"><button class="btn light" onclick="closeEditModal()">Cancel</button><button class="btn green" onclick="saveStaffSubmission()">Submit to Hourly Adjustment</button></div>
   </div>
 </div>
 
@@ -335,7 +343,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=13"></script>
+<script type="module" src="app.js?v=15"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
