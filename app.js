@@ -8,11 +8,15 @@ import {
   collection, query, where, orderBy, limit, onSnapshot,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
 import { FIREBASE_CONFIG } from "./firebase-config.js";
 
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
+const functions = getFunctions(firebaseApp, "us-central1");
+const createUserAdmin = httpsCallable(functions, "createAppUser");
+const deleteUserAdmin = httpsCallable(functions, "deleteAppUser");
 
 let currentUser = null;
 let currentProfile = null;
@@ -519,29 +523,14 @@ function listenUsers(){
 
 window.deleteAppUser=async function(uid,username){
   if(currentProfile.role!=="owner") return;
-  if(!confirm(`Delete ${username || "this user"} from JUICY TIP?\n\nThis removes the app profile and access. The Firebase Authentication identity may still remain and can be removed manually in Firebase Console if you want to reuse the same username.`)) return;
+  if(!confirm(`DELETE ${username || "this user"} completely?\n\nThis will remove Authentication + JUICY TIP profile + signup request. This cannot be undone.`)) return;
+
   try{
-    const ref=doc(db,"users",uid);
-    const s=await getDoc(ref);
-    const before=s.exists()?s.data():null;
-
-    // Remove optional signup request first.
-    try{
-      const sr=doc(db,"signupRequests",uid);
-      const ss=await getDoc(sr);
-      if(ss.exists()) await deleteDoc(sr);
-    }catch(e){ console.warn("signup request cleanup:",e); }
-
-    if(s.exists()) await deleteDoc(ref);
-
-    try{
-      await writeAudit("user_deleted_from_app",uid,before?.displayName||before?.username||username||"",{before});
-    }catch(e){ console.warn("audit log after delete:",e); }
-
-    alert("User removed from JUICY TIP.");
+    await deleteUserAdmin({uid});
+    alert("User deleted completely.");
   }catch(e){
-    console.error("Delete app user:",e);
-    alert(`Delete failed: ${e.code || e.message}`);
+    console.error("Admin delete user:",e);
+    alert(`Delete failed: ${e.message || e.code || "unknown error"}`);
   }
 };
 
@@ -549,32 +538,29 @@ window.createUserByOwner=async function(){
   if(currentProfile.role!=="owner") return;
   const username=$("uName").value.trim();
   const role=$("uRole").value;
-  const enteredSecret=$("uPass").value.trim();
-  if(!username || !enteredSecret){ alert("Username and PIN/password required."); return; }
+  const secret=$("uPass").value.trim();
 
-  let secondaryApp=null;
+  if(!username || !secret){
+    alert("Username and PIN/password required.");
+    return;
+  }
+  if(role==="employee" && !/^\d{4}$/.test(secret)){
+    alert("Employee PIN must be exactly 4 digits.");
+    return;
+  }
+  if(role==="manager" && secret.length<6){
+    alert("Manager password must be at least 6 characters.");
+    return;
+  }
+
   try{
-    const authPassword = role==="employee" ? employeeAuthPassword(enteredSecret) : enteredSecret;
-    secondaryApp=initializeApp(FIREBASE_CONFIG,"create-user-"+Date.now());
-    const secondaryAuth=getAuth(secondaryApp);
-    const cred=await createUserWithEmailAndPassword(secondaryAuth,emailFor(username),authPassword);
-    await setDoc(doc(db,"users",cred.user.uid),{
-      username:username.toLowerCase(),
-      displayName:username,
-      role,
-      active:true,
-      createdAt:serverTimestamp(),
-      createdBy:currentUser.uid
-    });
-    await writeAudit("user_create",cred.user.uid,username,{role});
-    await signOut(secondaryAuth);
-    $("uName").value=""; $("uPass").value="";
-    alert(`Created ${role}: ${username}`);
+    const result=await createUserAdmin({username,role,secret});
+    $("uName").value="";
+    $("uPass").value="";
+    alert(`Created ${role}: ${result.data.displayName}`);
   }catch(e){
-    console.error("Create user:",e);
-    alert(`Create user failed: ${e.code || e.message}`);
-  }finally{
-    if(secondaryApp) try{await deleteApp(secondaryApp)}catch(e){}
+    console.error("Admin create user:",e);
+    alert(`Create user failed: ${e.message || e.code || "unknown error"}`);
   }
 };
 

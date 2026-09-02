@@ -1,6 +1,6 @@
 {
-  "name": "JUICY TIP REPORT",
-  "short_name": "JUICY TIP",
+  "name": "Fred Zhang Tip Calculator",
+  "short_name": "FZ Tip",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

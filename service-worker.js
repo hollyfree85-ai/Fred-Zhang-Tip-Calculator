@@ -1,5 +1,5 @@
-const CACHE='juicy-tip-prod-v8-selfsignup';
-const ASSETS=['./','./index.html','./app.js?v=8','./firebase-config.js','./hourly-logic.js','./manifest.webmanifest','./icon-180.png','./icon-192.png','./icon-512.png','./hourly-v01.html'];
+const CACHE='fz-tip-calculator-v11';
+const ASSETS=['./','./index.html','./app.js?v=11','./firebase-config.js','./hourly-logic.js','./manifest.webmanifest','./icon-180.png','./icon-192.png','./icon-512.png','./hourly-v01.html'];
 self.addEventListener('install',e=>e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))));
 self.addEventListener('activate',e=>e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))));
 self.addEventListener('fetch',e=>{

@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Juicy Tip">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icon-180.png">
-<title>JUICY TIP REPORT</title>
+<title>Fred Zhang Tip Calculator</title>
 <style>
 :root{--navy:#101a30;--navy2:#1b2946;--gold:#f59e0b;--bg:#f4f6f8;--card:#fff;--line:#dde3ea;--ink:#111827;--muted:#6b7280;--green:#0f9d58;--red:#d93025;--blue:#2563eb}
 *{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Arial,sans-serif}
@@ -49,12 +49,12 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>JUICY TIP</b><small id="whoText"></small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
     <div class="logo">JT</div>
-    <h2 style="text-align:center;margin-bottom:4px">JUICY TIP REPORT</h2>
+    <h2 style="text-align:center;margin-bottom:4px">Fred Zhang Tip Calculator</h2>
     <div class="small" style="text-align:center;margin-bottom:18px">One App • Employee • Manager • Owner</div>
     <div class="mode">
       <button id="employeeModeBtn" class="on" onclick="setLoginMode('employee')">Employee</button>
@@ -200,7 +200,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
       <section id="hourly" class="staffPanel hidden">
         <div class="card">
           <h2>Hourly Adjustment V01</h2>
-          <div class="notice good">Same V01 calculation engine, now integrated directly into JUICY TIP. No second login and no app-inside-app screen.</div>
+          <div class="notice good">Same V01 calculation engine, now integrated directly into Fred Zhang Tip Calculator. No second login and no app-inside-app screen.</div>
 
           <h3>Employee & Shift</h3>
           <div class="grid3">
@@ -330,7 +330,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 
 <script src="hourly-logic.js"></script>
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=8"></script>
+<script type="module" src="app.js?v=11"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
