@@ -56,9 +56,10 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
     <div class="logo">JT</div>
     <h2 style="text-align:center;margin-bottom:4px">Fred Zhang Tip Calculator</h2>
     <div class="small" style="text-align:center;margin-bottom:18px">One App • Employee • Manager • Owner</div>
-    <div class="mode">
+    <div class="mode" style="grid-template-columns:repeat(3,1fr)">
       <button id="employeeModeBtn" class="on" onclick="setLoginMode('employee')">Employee</button>
       <button id="staffModeBtn" onclick="setLoginMode('staff')">Manager / Owner</button>
+      <button id="boardModeBtn" onclick="openServerRoomBoard()">Server Room Board</button>
     </div>
     <div id="employeeLogin">
       <label>Employee Name</label>
@@ -97,11 +98,39 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
   </div>
 </div>
 
+
+<div id="serverRoomBoard" class="hidden" style="min-height:100vh;background:#07111f;color:white;padding:calc(22px + env(safe-area-inset-top)) 18px calc(22px + env(safe-area-inset-bottom))">
+  <div style="max-width:1100px;margin:auto">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:18px">
+      <div>
+        <div style="font-size:28px;font-weight:1000">SERVER ROOM — MONEY READY</div>
+        <div style="opacity:.7">Fred Zhang Tip Calculator</div>
+      </div>
+      <button class="btn light" onclick="closeServerRoomBoard()">Back</button>
+    </div>
+    <div id="boardSetup" class="notice" style="background:#fff7df;color:#7a5200;margin-bottom:16px">
+      Tap <b>Enable Board</b> once on this tablet. After that, no Employee/Manager login is needed.
+      <div style="margin-top:10px"><button class="btn gold" onclick="enableServerRoomBoard()">Enable Board + Sound</button></div>
+    </div>
+    <div id="boardStatus" class="notice good hidden" style="margin-bottom:16px"><b>Board is active.</b> Waiting for Money Ready...</div>
+    <div id="moneyReadyList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px"></div>
+  </div>
+</div>
+<div id="moneyReadyOverlay" class="hidden" style="position:fixed;inset:0;z-index:9999;background:#07111f;color:white;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center">
+  <div>
+    <div style="font-size:22px;letter-spacing:.12em;opacity:.75">MONEY READY</div>
+    <div id="moneyReadyName" style="font-size:clamp(42px,9vw,96px);font-weight:1000;margin:12px 0"></div>
+    <div style="font-size:clamp(24px,4vw,44px);font-weight:800">Please come to Cashier</div>
+    <button class="btn gold" style="margin-top:28px;font-size:20px" onclick="dismissMoneyReadyOverlay()">OK</button>
+  </div>
+</div>
+
 <div id="appView" class="hidden">
   <div class="wrap">
 
     <div id="employeeApp" class="hidden">
-      <div class="card">
+      <div id="employeeReadyReport" class="card hidden"></div>
+      <div id="employeeEntryCard" class="card">
         <h2>My Shift Submission</h2>
         <div class="grid">
           <div><label>Date</label><input id="eDate" type="date"></div>
@@ -154,20 +183,28 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         </div>
         <div class="small" style="margin-top:7px">User Report note: for <b>Total AM</b>, use the AM selection. For <b>Grand Total</b>, do not select AM/PM.</div>
         <div id="employeeBusserPreview" class="notice hidden" style="margin-top:10px">
-          <b>Busser Tip Out % (Auto): <span id="eBusserRate">0.00%</span></b>
-          <div class="small">Calculated automatically from Grand Total and Total AM using the existing V01 busser formula.</div>
+          <b>Busser Tip Out (Auto): <span id="eBusserRate">0.00%</span> • <span id="eBusserAmount">$0.00</span></b>
+          <div class="small">Calculated automatically from the work date, shift, Grand Total and Total AM.</div>
+          <div class="small" style="margin-top:6px"><b>Double / Longshift note:</b> Total Tips shown in the POS report may not be final. If there is no AM busser, the system automatically adjusts Busser Tip Out using only the PM portion.</div>
         </div>
 
-        <h3>Paid Tip, Meal & Cash Tip</h3>
+        <h3>Meal & Cash Tip</h3>
         <div class="grid">
-          <div><label>Paid Tip ($)</label><input id="ePaidTip" type="number" step=".01" min="0" value="0"></div>
           <div><label>Meal ($)</label><input id="eMeal" type="number" step=".01" min="0" value="0"></div>
           <div><label>Cash Tip ($)</label><input id="eCash" type="number" step=".01" min="0" value="0"></div>
+        </div>
+
+        <h3>Bar Sales</h3>
+        <div id="eBarAMWrap" class="hidden">
+          <label><input id="eBarAM" type="checkbox"> WITH BAR AM</label>
+        </div>
+        <div id="eBarPMWrap" class="hidden">
+          <label><input id="eBarPM" type="checkbox"> WITH BAR PM</label>
         </div>
         <div style="height:12px"></div>
         <div class="notice good">Your submission is stored in the shared Firestore database and appears on Manager/Owner devices in realtime.</div>
       </div>
-      <div class="card"><h2>My Recent Submissions</h2><div id="mySubmissions"></div></div>
+      <div class="card"><h2>Current / Pending Report</h2><div id="mySubmissions"></div></div>
     </div>
 
     <div id="staffApp" class="hidden">
@@ -199,7 +236,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <div class="notice">Employee submissions appear here. Edit/check the data, then submit it to Hourly Adjustment V01.</div>
           <div class="actions"><button class="btn green" onclick="openAddSubmission()">Add Submission</button><button class="btn light" onclick="exportCSV()">Export CSV</button><button class="btn light" onclick="window.print()">Print / PDF</button></div>
           <div style="height:12px"></div>
-          <div class="tablewrap"><table><thead><tr><th>Date</th><th>Employee</th><th>Position</th><th>Shift</th><th>Break</th><th>Clock</th><th>Grand Total</th><th>Total AM</th><th>Paid Tip</th><th>Meal</th><th>Cash Tip</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr></thead><tbody id="reportBody"></tbody></table></div>
+          <div class="tablewrap"><table><thead><tr><th>Date</th><th>Employee</th><th>Position</th><th>Shift</th><th>Break</th><th>Clock</th><th>Grand Total</th><th>Total AM</th><th>Bar</th><th>Meal</th><th>Cash Tip</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr></thead><tbody id="reportBody"></tbody></table></div>
         </div>
       </section>
 
@@ -210,15 +247,19 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <div class="notice good">Same V01 calculation engine, now integrated directly into Fred Zhang Tip Calculator. No second login and no app-inside-app screen.</div>
 
           <h3>Approved — Waiting for Hourly Adjustment</h3>
+          <div class="notice">Use <b>Delete</b> if the same employee report was submitted twice. Deleting here removes only that duplicate submission, not the employee account.</div>
           <div id="hourlyQueue"><div class="small">No approved employee data waiting.</div></div>
 
+          <div class="notice" style="margin-top:12px">
+            <b>Automatic Busser Rule:</b> Mon–Fri AM = no busser; Mon–Fri PM = 1.5%; Mon–Fri Double/Long = PM portion only at 1.5%; Sat–Sun all shifts = 1.5%.
+          </div>
           <h3>Employee & Shift</h3>
           <div class="grid3">
             <div><label>Date</label><input id="hDate" type="date"></div>
             <div><label>Employee</label><select id="hEmployee"></select></div>
             <div><label>Position</label><select id="hPosition"><option>Server</option><option>Bartender</option></select></div>
             <div><label>Shift</label><select id="hShift"><option>AM</option><option>PM</option><option>DOUBLE</option></select></div>
-            <div><label>Busser AM</label><select id="hBusserAM"><option value="WITH">With Busser</option><option value="WITHOUT">Without Busser</option></select></div>
+            <div><label>Busser AM</label><select id="hBusserAM"><option value="WITHOUT">WITHOUT BUSSER AM</option><option value="WITH">WITH BUSSER AM</option></select></div>
             <div><label>Meal ($)</label><input id="hMeal" type="number" step=".01" value="0"></div>
           </div>
 
@@ -241,8 +282,8 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
             <div><label>Paid Tip ($)</label><input id="hPaidTip" type="number" step=".01" value="0"></div>
             <div><label>Pay Card Tip Fee ($)</label><input id="hCardFee" type="number" step=".01" value="0"></div>
             <div><label>Cash Tip ($)</label><input id="hCashTip" type="number" step=".01" value="0"></div>
-            <div><label>AM Bar Sales?</label><select id="hAmBar"><option value="no">No</option><option value="yes">Yes</option></select></div>
-            <div><label>PM Bar Sales?</label><select id="hPmBar"><option value="no">No</option><option value="yes">Yes</option></select></div>
+            <div><label>CHECK AM BAR SALES</label><select id="hAmBar"><option value="no">NO</option><option value="yes">YES — 0.6% Total AM</option></select></div>
+            <div><label>CHECK PM BAR SALES</label><select id="hPmBar"><option value="no">NO</option><option value="yes">YES — 0.6% Total PM</option></select></div>
           </div>
 
           <div style="height:14px"></div>
@@ -251,16 +292,43 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
             <button class="btn green" onclick="saveHourlyV01()">Submit Final & Money Ready</button>
           </div>
 
-          <div id="hourlyResult" class="calc-result hidden">
-            <div class="kpi"><span>Total Hours</span><b id="hrHours">0.00</b></div>
-            <div class="kpi"><span>Hourly Minimum</span><b id="hrMinimum">$0.00</b></div>
-            <div class="kpi"><span>Adjustment</span><b id="hrAdjustment">$0.00</b></div>
-            <div class="kpi"><span>Grand Total Tip</span><b id="hrGrandTip">$0.00</b></div>
-            <div class="kpi"><span>After Adjustment</span><b id="hrAfter">$0.00</b></div>
-            <div class="kpi"><span>Total Paid Out</span><b id="hrPaidOut">$0.00</b></div>
+          <div id="hourlyResult" class="hidden" style="margin-top:18px">
+            <div class="card" style="box-shadow:none;border:1px solid #d7dfeb">
+              <h2>EMPLOYEE REPORT — HOURLY ADJUSTMENT V01</h2>
+              <div class="grid3">
+                <div class="kpi"><span>Total Hours Work</span><b id="hrHours">0.00</b></div>
+                <div class="kpi"><span>Grand Total</span><b id="hrGrandTotal">$0.00</b></div>
+                <div class="kpi"><span>Total AM</span><b id="hrTotalAM">$0.00</b></div>
+                <div class="kpi"><span>Total PM</span><b id="hrTotalPM">$0.00</b></div>
+                <div class="kpi"><span>Total Tips</span><b id="hrTotalTips">$0.00</b></div>
+                <div class="kpi"><span>Pay Card Tip Fee</span><b id="hrCardFee">$0.00</b></div>
+                <div class="kpi"><span>Paid Tip</span><b id="hrPaidTip">$0.00</b></div>
+                <div class="kpi"><span>Busser Rate</span><b id="hrBusserRate">0.00%</b></div>
+                <div class="kpi"><span>Busser Tip Out</span><b id="hrBusserTip">$0.00</b></div>
+                <div class="kpi"><span>AM Bar Tip</span><b id="hrBarAM">$0.00</b></div>
+                <div class="kpi"><span>PM Bar Tip</span><b id="hrBarPM">$0.00</b></div>
+                <div class="kpi"><span>Bar Tip Out</span><b id="hrBarOut">$0.00</b></div>
+                <div class="kpi"><span>Total Before Meal</span><b id="hrBeforeMeal">$0.00</b></div>
+                <div class="kpi"><span>Cash Tip</span><b id="hrCashTip">$0.00</b></div>
+                <div class="kpi"><span>Grand Total Tip</span><b id="hrGrandTip">$0.00</b></div>
+                <div class="kpi"><span>Hourly Rate</span><b id="hrHourlyRate">$0.00</b></div>
+                <div class="kpi"><span>Hourly Minimum</span><b id="hrMinimum">$0.00</b></div>
+                <div class="kpi"><span>Adjustment Salary Hourly</span><b id="hrAdjustment">$0.00</b></div>
+                <div class="kpi"><span>Grand Total After Adjustment</span><b id="hrAfter">$0.00</b></div>
+                <div class="kpi"><span>Meal</span><b id="hrMeal">$0.00</b></div>
+                <div class="kpi"><span>TOTAL PAID OUT</span><b id="hrPaidOut">$0.00</b></div>
+              </div>
+            </div>
           </div>
 
           <h3>Final Hourly Reports</h3>
+          <div class="actions" style="margin:8px 0 14px">
+            <button class="btn light" type="button" onclick="shareAllReportsXls('whatsapp')">Send XLS to WhatsApp</button>
+            <button class="btn light" type="button" onclick="shareAllReportsPdf('whatsapp')">Send PDF to WhatsApp</button>
+            <button class="btn light" type="button" onclick="shareAllReportsXls('email')">Send XLS to Email</button>
+            <button class="btn light" type="button" onclick="shareAllReportsPdf('email')">Send PDF to Email</button>
+          </div>
+          <div class="small" style="margin-bottom:10px">On phones/tablets, the system uses the device Share Sheet so you can choose WhatsApp or your email app and send the actual XLS/PDF file.</div>
           <div id="hourlyReportsList"><div class="small">No final reports yet.</div></div>
         </div>
       </section>
@@ -314,7 +382,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
       <div><label>Clock</label><input id="mClock" placeholder="10:30–22:00"></div>
       <div><label>Grand Total ($)</label><input id="mGrandTotal" type="number" step=".01"></div>
       <div><label>Total AM ($)</label><input id="mTotalAM" type="number" step=".01"></div>
-      <div><label>Paid Tip ($)</label><input id="mPaidTip" type="number" step=".01"></div>
+      <div><label>Paid Tip ($) — Manager</label><input id="mPaidTip" type="number" step=".01"></div>
       <div><label>Meal ($)</label><input id="mMeal" type="number" step=".01"></div>
       <div><label>Cash Tip ($)</label><input id="mCash" type="number" step=".01"></div>
     </div>
@@ -323,7 +391,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
   </div>
 </div>
 
-<div id="employeeBottom" class="bottom hidden"><div class="inner"><button class="btn light" onclick="clearEmployeeForm()">Clear</button><button class="btn gold" onclick="submitEmployee()">Submit to Manager</button></div></div>
+<div id="employeeBottom" class="bottom hidden"><div class="inner"><button id="employeeClearBtn" class="btn light" type="button" onclick="clearEmployeeForm()">Clear</button><button class="btn gold" type="button" onclick="submitEmployee()">Submit to Manager</button></div></div>
 
 
 <script>
@@ -343,7 +411,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=15"></script>
+<script type="module" src="app.js?v=19"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>

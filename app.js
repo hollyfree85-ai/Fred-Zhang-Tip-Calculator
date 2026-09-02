@@ -17,6 +17,7 @@ const db = getFirestore(firebaseApp);
 const functions = getFunctions(firebaseApp, "us-central1");
 const createUserAdmin = httpsCallable(functions, "createAppUser");
 const deleteUserAdmin = httpsCallable(functions, "deleteAppUser");
+const resendMoneyReadySms = httpsCallable(functions, "resendMoneyReadySms");
 
 let currentUser = null;
 let currentProfile = null;
@@ -29,6 +30,10 @@ let currentHourlySubmissionId = null;
 let currentHourlyReportId = null;
 let latestHourlyReports = [];
 let userNameByUid = {};
+let boardUnsub=null;
+let boardAudioCtx=null;
+let boardKnownReady=new Set();
+let boardMode=false;
 const EMPLOYEE_ROSTER = Object.freeze(["Adrieanna Walker", "Aida Gonzales", "Alainna Montalvo", "Angela Grizzad", "Ariana Garner", "Ashley Garcia", "Brandi Copeland", "Caitlin Dillon", "Christina Gurley", "Dorothy Makovicka", "Fred Zhang", "Hannah Dempsey", "Jesus Ovalle-Munoz", "Libby Lane", "Megan Meadows", "Megan Sisk", "Mia Burress", "Sara Swift", "Sarah Kibler"]);
 
 
@@ -58,6 +63,7 @@ window.setLoginMode = function(mode){
   $("staffLogin").classList.toggle("hidden", mode !== "staff");
   $("employeeModeBtn").classList.toggle("on", mode === "employee");
   $("staffModeBtn").classList.toggle("on", mode === "staff");
+  $("boardModeBtn")?.classList.remove("on");
   loginMsg("");
 };
 
@@ -143,6 +149,77 @@ window.employeeSignup=async function(){
   }
 };
 
+
+window.openServerRoomBoard=function(){
+  boardMode=true;
+  $("loginView").classList.add("hidden");
+  $("appView").classList.add("hidden");
+  $("top").classList.add("hidden");
+  $("serverRoomBoard").classList.remove("hidden");
+};
+window.closeServerRoomBoard=async function(){
+  boardMode=false;
+  if(boardUnsub){try{boardUnsub()}catch(e){} boardUnsub=null;}
+  $("serverRoomBoard").classList.add("hidden");
+  $("loginView").classList.remove("hidden");
+};
+window.enableServerRoomBoard=async function(){
+  try{
+    boardMode=true;
+    if(!auth.currentUser){
+      await signInAnonymously(auth);
+    }
+    boardAudioCtx = boardAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    if(boardAudioCtx.state==="suspended") await boardAudioCtx.resume();
+    $("boardSetup").classList.add("hidden");
+    $("boardStatus").classList.remove("hidden");
+    listenMoneyReadyBoard();
+  }catch(e){
+    alert("Could not enable Server Room Board: "+(e.code||e.message));
+  }
+};
+function boardChime(){
+  if(!boardAudioCtx)return;
+  const now=boardAudioCtx.currentTime;
+  [659.25,783.99,987.77].forEach((freq,i)=>{
+    const o=boardAudioCtx.createOscillator(), g=boardAudioCtx.createGain();
+    o.frequency.value=freq; o.type="sine";
+    g.gain.setValueAtTime(0.0001,now+i*.22);
+    g.gain.exponentialRampToValueAtTime(.18,now+i*.22+.03);
+    g.gain.exponentialRampToValueAtTime(.0001,now+i*.22+.45);
+    o.connect(g);g.connect(boardAudioCtx.destination);
+    o.start(now+i*.22);o.stop(now+i*.22+.5);
+  });
+}
+function showMoneyReadyOverlay(name){
+  $("moneyReadyName").textContent=name||"Employee";
+  $("moneyReadyOverlay").classList.remove("hidden");
+  boardChime();
+}
+window.dismissMoneyReadyOverlay=function(){
+  $("moneyReadyOverlay").classList.add("hidden");
+};
+function listenMoneyReadyBoard(){
+  if(boardUnsub){try{boardUnsub()}catch(e){}}
+  const q=query(collection(db,"moneyReadyBoard"),where("active","==",true),limit(100));
+  boardUnsub=onSnapshot(q,snap=>{
+    const rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    $("moneyReadyList").innerHTML=rows.length?rows.map(r=>`
+      <div style="background:#0f243d;border:1px solid #28445f;border-radius:18px;padding:18px">
+        <div style="font-size:12px;opacity:.7;letter-spacing:.12em">MONEY READY</div>
+        <div style="font-size:30px;font-weight:1000;margin:8px 0">${esc(r.employee||"")}</div>
+        <div style="font-size:18px;font-weight:700">Please come to Cashier</div>
+      </div>`).join(""):'<div style="opacity:.65">No employees waiting for pickup.</div>';
+    for(const r of rows){
+      if(!boardKnownReady.has(r.id)){
+        boardKnownReady.add(r.id);
+        showMoneyReadyOverlay(r.employee);
+        break;
+      }
+    }
+  },e=>console.error("Money Ready board:",e));
+}
+
 window.loginEmployee = async function(){
   const username = $("employeeUsername").value.trim();
   const pin = $("employeePin").value.trim();
@@ -206,7 +283,14 @@ function showApp(){
 onAuthStateChanged(auth, async user=>{
   clearListeners();
   if(!user){
-    currentUser=null; currentProfile=null; hideApp(); return;
+    currentUser=null; currentProfile=null;
+    if(!boardMode) hideApp();
+    return;
+  }
+  if(user.isAnonymous){
+    currentUser=user; currentProfile={role:"board",active:true,displayName:"Server Room Board"};
+    if(boardMode) listenMoneyReadyBoard();
+    return;
   }
   try{
     const profile=await loadProfile(user.uid);
@@ -234,23 +318,44 @@ onAuthStateChanged(auth, async user=>{
 });
 
 
+function isWeekendDate(dateStr){
+  if(!dateStr)return false;
+  const d=new Date(dateStr+"T12:00:00");
+  const day=d.getDay();
+  return day===0 || day===6;
+}
+function employeeAutoBusser(grand,totalAM,shift,dateStr){
+  grand=Math.max(0,Number(grand)||0);
+  totalAM=Math.max(0,Math.min(Number(totalAM)||0,grand));
+  const weekend=isWeekendDate(dateStr);
+  let amount=0, rate=0;
+  if(weekend){
+    amount=grand*0.015;
+    rate=grand>0?0.015:0;
+  }else if(shift==="PM"){
+    amount=grand*0.015;
+    rate=grand>0?0.015:0;
+  }else if(shift==="AM"){
+    amount=0; rate=0;
+  }else if(["DOUBLE","LONG"].includes(shift)){
+    amount=Math.max(0,grand-totalAM)*0.015;
+    rate=grand>0?amount/grand:0;
+  }
+  return {amount,rate,weekend};
+}
 function updateEmployeeBusserPreview(){
-  const box=$("employeeBusserPreview"), out=$("eBusserRate");
-  if(!box||!out) return;
+  const box=$("employeeBusserPreview"), out=$("eBusserRate"), amt=$("eBusserAmount");
+  if(!box||!out||!amt) return;
   const multi=["DOUBLE","LONG"].includes(eShift);
   box.classList.toggle("hidden",!multi);
-  if(!multi){ out.textContent="0.00%"; return; }
-  const grand=Number($("eGrandTotal").value)||0;
-  const am=Number($("eTotalAM").value)||0;
-  if(grand<=0){ out.textContent="0.00%"; return; }
-  const safeAM=Math.max(0,Math.min(am,grand));
-  // Existing V01 Double/Long effective busser formula (without AM busser):
-  // PM tip-out = (Grand Total - Total AM) × 1.5%; displayed rate = tip-out / Grand Total.
-  const rate=((grand-safeAM)*0.015/grand)*100;
-  out.textContent=rate.toFixed(2)+"%";
+  if(!multi){ out.textContent="0.00%"; amt.textContent="$0.00"; return; }
+  const x=employeeAutoBusser($("eGrandTotal").value,$("eTotalAM").value,eShift,$("eDate").value);
+  out.textContent=(x.rate*100).toFixed(2)+"%";
+  amt.textContent="$"+x.amount.toFixed(2);
 }
 $("eGrandTotal").addEventListener("input",updateEmployeeBusserPreview);
 $("eTotalAM").addEventListener("input",updateEmployeeBusserPreview);
+$("eDate").addEventListener("change",updateEmployeeBusserPreview);
 
 // Employee shift UI
 document.querySelectorAll("[data-eshift]").forEach(btn=>{
@@ -268,6 +373,10 @@ function refreshClockMode(){
   $("singleClock").classList.toggle("hidden",multi);
   $("longDoubleOptions").classList.toggle("hidden",!multi);
   $("totalAmWrap").classList.toggle("hidden",!multi);
+  $("eBarAMWrap").classList.toggle("hidden",!(eShift==="AM"||multi));
+  $("eBarPMWrap").classList.toggle("hidden",!(eShift==="PM"||multi));
+  if(eShift==="AM") $("eBarPM").checked=false;
+  if(eShift==="PM") $("eBarAM").checked=false;
   updateEmployeeBusserPreview();
   if(!multi){
     $("continuousClock").classList.add("hidden");
@@ -299,12 +408,22 @@ function clockText(){
 }
 
 window.clearEmployeeForm=function(){
-  ["eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut"].forEach(id=>$(id).value="");
-  $("ePaidTip").value=0;
-  $("eMeal").value=0;
-  $("eCash").value=0;
-  $("eGrandTotal").value=0;
-  $("eTotalAM").value=0;
+  try{
+    ["eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut"].forEach(id=>{ const e=$(id); if(e)e.value=""; });
+    ["eMeal","eCash","eGrandTotal","eTotalAM"].forEach(id=>{ const e=$(id); if(e)e.value="0"; });
+    ["eBarAM","eBarPM"].forEach(id=>{ const e=$(id); if(e)e.checked=false; });
+    if($("eDate")) $("eDate").value=todayLocal();
+    if($("ePosition")) $("ePosition").value="Server";
+    eShift="AM";
+    document.querySelectorAll("[data-eshift]").forEach(b=>b.classList.toggle("on",b.dataset.eshift==="AM"));
+    if($("eBreakMode")) $("eBreakMode").value="without";
+    refreshClockMode();
+    updateEmployeeBusserPreview();
+    const first=$("eIn"); if(first) first.focus();
+  }catch(e){
+    console.error("Clear employee form:",e);
+    alert("Could not clear the form. Please refresh once and try again.");
+  }
 };
 
 async function writeAudit(action,submissionId,employee,details={}){
@@ -334,7 +453,8 @@ window.submitEmployee=async function(){
     clock:clockText(),
     grandTotal:Number($("eGrandTotal").value)||0,
     totalAM:isMulti ? (Number($("eTotalAM").value)||0) : 0,
-    paidTip:Number($("ePaidTip").value)||0,
+    barSalesAM:$("eBarAM").checked,
+    barSalesPM:$("eBarPM").checked,
     meal:Number($("eMeal").value)||0,
     cashTip:Number($("eCash").value)||0,
     status:"pending",
@@ -356,6 +476,46 @@ window.submitEmployee=async function(){
   }
 };
 
+
+function employeeFinalReportHTML(r){
+  const f=r.finalReport||{};
+  const money=v=>"$"+Number(v||0).toFixed(2);
+  const pct=v=>(Number(v||0)*100).toFixed(2)+"%";
+  return `
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+      <div>
+        <h2 style="margin:0">My Final Tip Report</h2>
+        <div class="small">${esc(r.date||"")} • ${esc(r.position||"")} • ${esc(r.shift||"")}</div>
+      </div>
+      <span class="status approved">MONEY READY</span>
+    </div>
+    <div class="notice good" style="margin-top:14px">
+      <b>Money is ready. Please come to cashier.</b>
+    </div>
+    <div class="grid3" style="margin-top:14px">
+      <div class="kpi"><span>Grand Total</span><b>${money(f.grandTotal ?? r.grandTotal)}</b></div>
+      ${["DOUBLE","LONG"].includes(r.shift)?`<div class="kpi"><span>Total AM</span><b>${money(f.totalAM ?? r.totalAM)}</b></div>`:""}
+      <div class="kpi"><span>Meal</span><b>${money(f.meal ?? r.meal)}</b></div>
+      <div class="kpi"><span>Cash Tip</span><b>${money(f.cashTip ?? r.cashTip)}</b></div>
+      <div class="kpi"><span>Busser Rate</span><b>${pct(f.busserRate)}</b></div>
+      <div class="kpi"><span>Busser Tip Out</span><b>${money(f.busserTipOut)}</b></div>
+      <div class="kpi"><span>Bar Tip Out</span><b>${money(f.barTipOut)}</b></div>
+      <div class="kpi"><span>Hourly Adjustment</span><b>${money(f.adjustmentSalaryHourly)}</b></div>
+      <div class="kpi"><span>TOTAL PAID OUT</span><b>${money(f.totalPaidOut)}</b></div>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn light" type="button" onclick="startNewEmployeeReport('${r.id}')">New Tip Report</button>
+    </div>`;
+}
+
+window.startNewEmployeeReport=function(finalSubmissionId){
+  sessionStorage.setItem("employeeFinalSeen:"+finalSubmissionId,"1");
+  $("employeeReadyReport")?.classList.add("hidden");
+  $("employeeEntryCard")?.classList.remove("hidden");
+  $("employeeBottom")?.classList.remove("hidden");
+  clearEmployeeForm();
+};
+
 function listenEmployee(){
   // Avoid composite-index requirement; sort client-side.
   const q=query(collection(db,"submissions"),where("employeeUid","==",currentUser.uid),limit(50));
@@ -365,20 +525,38 @@ function listenEmployee(){
       const aa=a.createdAt?.seconds||0, bb=b.createdAt?.seconds||0;
       return bb-aa;
     });
-    const a=rows.slice(0,10);
-    $("mySubmissions").innerHTML=a.length?a.map(r=>`
+
+    const latestFinal=rows.find(r=>r.status==="money_ready");
+    const finalBox=$("employeeReadyReport");
+    const entry=$("employeeEntryCard");
+    const bottom=$("employeeBottom");
+
+    if(latestFinal && !sessionStorage.getItem("employeeFinalSeen:"+latestFinal.id)){
+      if(finalBox){
+        finalBox.innerHTML=employeeFinalReportHTML(latestFinal);
+        finalBox.classList.remove("hidden");
+      }
+      entry?.classList.add("hidden");
+      bottom?.classList.add("hidden");
+    }else{
+      finalBox?.classList.add("hidden");
+      entry?.classList.remove("hidden");
+      bottom?.classList.remove("hidden");
+    }
+
+    // Employee current list contains only items still in process.
+    const active=rows.filter(r=>r.status!=="money_ready").slice(0,10);
+    $("mySubmissions").innerHTML=active.length?active.map(r=>`
       <div style="padding:10px 0;border-bottom:1px solid #edf0f4">
         <b>${esc(r.date)} • ${esc(r.shift)}</b>
         <div class="small">${esc(r.clock)} • Grand $${Number(r.grandTotal||0).toFixed(2)}
         ${["DOUBLE","LONG"].includes(r.shift)?` • AM $${Number(r.totalAM||0).toFixed(2)}`:""}
-        • Paid Tip $${Number(r.paidTip||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}
+        • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}
         • <span class="status ${esc(r.status)}">${esc(r.status)}</span></div>
-        ${r.status==="money_ready"?'<div class="notice good" style="margin-top:8px"><b>Money is ready. Please come to cashier.</b></div>':""}
-      </div>`).join(""):'<div class="small">No submissions yet.</div>';
+      </div>`).join(""):'<div class="small">No report currently in process.</div>';
 
-    const ready=a.find(r=>r.status==="money_ready" && !sessionStorage.getItem("moneyReady:"+r.id));
-    if(ready){
-      sessionStorage.setItem("moneyReady:"+ready.id,"1");
+    if(latestFinal && !sessionStorage.getItem("moneyReady:"+latestFinal.id)){
+      sessionStorage.setItem("moneyReady:"+latestFinal.id,"1");
       if(typeof Notification!=="undefined" && Notification.permission==="granted"){
         new Notification("Fred Zhang Tip Calculator",{body:"Money is ready. Please come to cashier.",icon:"icon-192.png"});
       }
@@ -428,7 +606,7 @@ function renderStaff(a){
       }</div>
       <div class="small" style="margin:6px 0">Grand $${Number(r.grandTotal||0).toFixed(2)}
         ${["DOUBLE","LONG"].includes(r.shift)?` • Total AM $${Number(r.totalAM||0).toFixed(2)}`:""}
-        • Paid Tip $${Number(r.paidTip||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash Tip $${Number(r.cashTip||0).toFixed(2)}
+        • Meal $${Number(r.meal||0).toFixed(2)} • Cash Tip $${Number(r.cashTip||0).toFixed(2)}
       </div>
       <div class="actions">
         <button class="btn green" onclick="review('${r.id}','approved')">Review / Approve</button>
@@ -446,7 +624,7 @@ function renderStaff(a){
       <td>${esc(r.clock)}</td>
       <td>$${Number(r.grandTotal||0).toFixed(2)}</td>
       <td>${["DOUBLE","LONG"].includes(r.shift)?"$"+Number(r.totalAM||0).toFixed(2):"—"}</td>
-      <td>$${Number(r.paidTip||0).toFixed(2)}</td>
+      <td>${esc(employeeBarText(r))}</td>
       <td>$${Number(r.meal||0).toFixed(2)}</td><td>$${Number(r.cashTip||0).toFixed(2)}</td>
       <td><span class="status ${esc(r.status)}">${esc(r.status)}</span></td>
       <td>${esc(r.reviewedBy||"")}</td>
@@ -688,6 +866,8 @@ window.saveStaffSubmission=async function(){
     grandTotal:Number($("mGrandTotal").value)||0,
     totalAM:Number($("mTotalAM").value)||0,
     paidTip:Number($("mPaidTip").value)||0,
+    barSalesAM:(latestRows.find(x=>x.id===id)?.barSalesAM)||false,
+    barSalesPM:(latestRows.find(x=>x.id===id)?.barSalesPM)||false,
     meal:Number($("mMeal").value)||0,
     cashTip:Number($("mCash").value)||0,
     status:"hourly_pending",
@@ -760,6 +940,21 @@ window.requestNotify=async function(){
 
 
 
+
+window.deleteHourlyQueueSubmission=async function(id){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  const r=latestRows.find(x=>x.id===id);
+  const label=r?`${r.employee} • ${r.date} • ${r.shift}`:"this report";
+  if(!confirm(`DELETE duplicate report?\n\n${label}\n\nThis removes this submission from Hourly Adjustment queue. It does NOT delete the employee account.`)) return;
+  try{
+    const ref=doc(db,"submissions",id);
+    const s=await getDoc(ref);
+    const before=s.exists()?s.data():null;
+    await deleteDoc(ref);
+    await writeAudit("hourly_queue_duplicate_delete",id,before?.employee||"",{before});
+  }catch(e){ alert(`Delete failed: ${e.code||e.message}`); }
+};
+
 function parseClockParts(r){
   const text=String(r.clock||"").replaceAll("–","-");
   const pairs=text.split("/").map(s=>s.trim());
@@ -779,9 +974,12 @@ function renderHourlyQueue(rows){
     <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:10px 0">
       <div>
         <b>${esc(r.employee)} — ${esc(r.shift)}</b>
-        <div class="small">${esc(r.date)} • ${esc(r.clock)} • Grand $${Number(r.grandTotal||0).toFixed(2)} • Paid Tip $${Number(r.paidTip||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}</div>
+        <div class="small">${esc(r.date)} • ${esc(r.clock)} • Grand $${Number(r.grandTotal||0).toFixed(2)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}</div>
       </div>
-      <button class="btn green" onclick="loadSubmissionToHourly('${r.id}')">Open in Hourly</button>
+      <div class="actions">
+        <button class="btn green" onclick="loadSubmissionToHourly('${r.id}')">Open in Hourly</button>
+        <button class="btn red" onclick="deleteHourlyQueueSubmission('${r.id}')">Delete</button>
+      </div>
     </div>`).join(""):'<div class="notice good">No approved employee data waiting.</div>';
 }
 
@@ -799,7 +997,9 @@ window.loadSubmissionToHourly=function(id){
   $("hTotalAM").value=Number(r.totalAM||0);
   $("hCashTip").value=Number(r.cashTip||0);
   $("hPaidTip").value=Number(r.paidTip||0);
-  $("hCardFee").value=0;
+  $("hCardFee").value=Number(r.cardFee||0);
+  $("hAmBar").value=r.barSalesAM?"yes":"no";
+  $("hPmBar").value=r.barSalesPM?"yes":"no";
   syncHourlyShift();
   const c=parseClockParts(r);
   if($("hShift").value==="DOUBLE"){
@@ -815,24 +1015,130 @@ window.loadSubmissionToHourly=function(id){
   window.scrollTo({top:$("hourly").offsetTop-10,behavior:"smooth"});
 };
 
+
+function reportRowsForExport(){
+  return latestHourlyReports.map(r=>({
+    Date:r.date||"",Employee:r.employee||"",Position:r.position||"",Shift:r.shift||"",
+    "Grand Total":Number(r.grandTotal||0).toFixed(2),
+    "Total AM":Number(r.totalAM||0).toFixed(2),
+    "Total PM":Number(r.totalPM||0).toFixed(2),
+    "Paid Tip":Number(r.paidTip||0).toFixed(2),
+    "Cash Tip":Number(r.cashTip||0).toFixed(2),
+    "Meal":Number(r.meal||0).toFixed(2),
+    "Busser Rate":(Number(r.busserRate||0)*100).toFixed(2)+"%",
+    "Busser Tip Out":Number(r.busserTipOut||0).toFixed(2),
+    "Bar Tip Out":Number(r.barTipOut||0).toFixed(2),
+    "Hourly Adjustment":Number(r.adjustmentSalaryHourly||0).toFixed(2),
+    "Total Paid Out":Number(r.totalPaidOut||0).toFixed(2),
+    Status:"MONEY READY"
+  }));
+}
+function xlsBlob(rows){
+  const keys=Object.keys(rows[0]||{});
+  const escX=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const table=`<table><thead><tr>${keys.map(k=>`<th>${escX(k)}</th>`).join("")}</tr></thead><tbody>${
+    rows.map(r=>`<tr>${keys.map(k=>`<td>${escX(r[k])}</td>`).join("")}</tr>`).join("")
+  }</tbody></table>`;
+  const html=`<html><head><meta charset="UTF-8"></head><body>${table}</body></html>`;
+  return new Blob([html],{type:"application/vnd.ms-excel"});
+}
+function pdfEscape(s){return String(s??"").replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)");}
+function simplePdfBlob(rows){
+  // Compact, dependency-free PDF report. One line per report; valid PDF file.
+  const lines=["FRED ZHANG TIP CALCULATOR - FINAL TIP REPORTS"];
+  rows.forEach(r=>{
+    lines.push(`${r.Date} | ${r.Employee} | ${r.Shift} | Grand $${r["Grand Total"]} | Busser $${r["Busser Tip Out"]} | Bar $${r["Bar Tip Out"]} | Adjustment $${r["Hourly Adjustment"]} | PAID OUT $${r["Total Paid Out"]}`);
+  });
+  const pageLines=lines.slice(0,45);
+  let content="BT\n/F1 10 Tf\n40 760 Td\n";
+  pageLines.forEach((line,i)=>{ content+=`(${pdfEscape(line.slice(0,118))}) Tj\n0 -16 Td\n`; });
+  content+="ET";
+  const objects=[];
+  objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
+  objects[2]="<< /Type /Pages /Kids [3 0 R] /Count 1 >>";
+  objects[3]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>";
+  objects[4]=`<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
+  objects[5]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  let pdf="%PDF-1.4\n", offsets=[0];
+  for(let i=1;i<=5;i++){ offsets[i]=pdf.length; pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`; }
+  const xref=pdf.length;
+  pdf+="xref\n0 6\n0000000000 65535 f \n";
+  for(let i=1;i<=5;i++) pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
+  pdf+=`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Blob([pdf],{type:"application/pdf"});
+}
+async function shareReportFile(blob,filename,target){
+  const file=new File([blob],filename,{type:blob.type});
+  if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({
+        files:[file],
+        title:"Fred Zhang Tip Calculator Report",
+        text: target==="whatsapp" ? "Tip report — please send via WhatsApp." : "Tip report — please send via email."
+      });
+      return;
+    }catch(e){
+      if(e.name==="AbortError") return;
+      console.warn("Share files fallback:",e);
+    }
+  }
+  // Desktop fallback: download actual file. Browsers do not permit silent attachment
+  // to WhatsApp Web or email; user can attach the downloaded file.
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+  alert(`Report downloaded as ${filename}. On this browser, automatic file attachment to ${target==="whatsapp"?"WhatsApp":"email"} is blocked; attach the downloaded file.`);
+}
+window.shareAllReportsXls=async function(target){
+  const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to send.");return;}
+  await shareReportFile(xlsBlob(rows),`Fred_Zhang_Tip_Report_${todayLocal()}.xls`,target);
+};
+window.shareAllReportsPdf=async function(target){
+  const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to send.");return;}
+  await shareReportFile(simplePdfBlob(rows),`Fred_Zhang_Tip_Report_${todayLocal()}.pdf`,target);
+};
+
 function listenHourlyReports(){
   const q=query(collection(db,"hourlyReports"),orderBy("createdAt","desc"),limit(200));
   unsubs.push(onSnapshot(q,snap=>{
     latestHourlyReports=snap.docs.map(d=>({id:d.id,...d.data()}));
     const el=$("hourlyReportsList"); if(!el) return;
     el.innerHTML=latestHourlyReports.length?latestHourlyReports.map(r=>`
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:10px 0">
-        <div>
-          <b>${esc(r.date||"")} • ${esc(r.employee||"")} • ${esc(r.shift||"")}</b>
-          <div class="small">Paid Out $${Number(r.totalPaidOut||0).toFixed(2)} • <span class="status approved">money_ready</span></div>
+      <article class="card" style="box-shadow:none;border:1px solid #d7dfeb;margin:10px 0">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+          <div><h3 style="margin:0">${esc(r.employee||"")}</h3><div class="small">${esc(r.date||"")} • ${esc(r.position||"")} • ${esc(r.shift||"")}</div></div>
+          <span class="status approved">MONEY READY</span>
         </div>
-        <div class="actions">
-          <button class="btn light" onclick="editHourlyReport('${r.id}')">Edit</button>
-          <button class="btn red" onclick="deleteHourlyReport('${r.id}')">Delete</button>
+        <div class="grid3" style="margin-top:10px">
+          <div class="kpi"><span>Grand Total</span><b>$${Number(r.grandTotal||0).toFixed(2)}</b></div>
+          <div class="kpi"><span>Total AM</span><b>$${Number(r.totalAM||0).toFixed(2)}</b></div>
+          <div class="kpi"><span>Total PM</span><b>$${Number(r.totalPM||0).toFixed(2)}</b></div>
+          <div class="kpi"><span>Paid Tip</span><b>$${Number(r.paidTip||0).toFixed(2)}</b></div>
+          <div class="kpi"><span>Busser Rate</span><b>${(Number(r.busserRate||0)*100).toFixed(2)}%</b></div>
+          <div class="kpi"><span>Busser Tip Out</span><b>$${Number(r.busserTipOut||0).toFixed(2)}</b></div>
+          <div class="kpi"><span>Bar Tip Out</span><b>$${Number(r.barTipOut||0).toFixed(2)}</b></div>
+          <div class="kpi"><span>Hourly Adjustment</span><b>$${Number(r.adjustmentSalaryHourly||0).toFixed(2)}</b></div>
+          <div class="kpi"><span>TOTAL PAID OUT</span><b>$${Number(r.totalPaidOut||0).toFixed(2)}</b></div>
         </div>
-      </div>`).join(""):'<div class="small">No final reports yet.</div>';
+        <div class="actions" style="margin-top:10px">
+          <button class="btn light" onclick="editHourlyReport('${r.id}')">EDIT</button>
+          <button class="btn light" onclick="resendReportSms('${r.sourceSubmissionId||""}')">SMS REPORT</button>
+          <button class="btn red" onclick="deleteHourlyReport('${r.id}')">DELETE</button>
+        </div>
+      </article>`).join(""):'<div class="small">No final reports yet.</div>';
   },e=>console.error("Hourly reports:",e)));
 }
+
+
+window.resendReportSms=async function(submissionId){
+  if(!submissionId){alert("This report is not linked to an employee submission.");return;}
+  try{
+    const result=await resendMoneyReadySms({submissionId});
+    if(result?.data?.ok) alert(`SMS sent to ${result.data.phoneMasked||"employee"}.`);
+  }catch(e){
+    alert(`SMS failed: ${e.message||e.code}. Check Twilio setup.`);
+  }
+};
 
 window.editHourlyReport=function(id){
   const r=latestHourlyReports.find(x=>x.id===id); if(!r) return;
@@ -849,8 +1155,8 @@ window.editHourlyReport=function(id){
   $("hPaidTip").value=Number(r.paidTip||0);
   $("hCardFee").value=Number(r.cardFee||0);
   $("hCashTip").value=Number(r.cashTip||0);
-  $("hAmBar").value=r.amBarSales?"yes":"no";
-  $("hPmBar").value=r.pmBarSales?"yes":"no";
+  $("hAmBar").value=(r.barSalesAM||r.amBarSales)?"yes":"no";
+  $("hPmBar").value=(r.barSalesPM||r.pmBarSales)?"yes":"no";
   syncHourlyShift();
   const hrs=r.hours||{};
   $("hIn").value=hrs.hourIn||"";
@@ -882,13 +1188,35 @@ window.deleteHourlyReport=async function(id){
   }catch(e){ alert(`Delete report failed: ${e.code||e.message}`); }
 };
 
+
+function applyAutomaticBusserRule(){
+  const date=$("hDate").value, shift=$("hShift").value;
+  const weekend=isWeekendDate(date);
+  if(shift==="AM"){
+    $("hBusserAM").value=weekend?"WITH":"WITHOUT";
+  }else if(shift==="DOUBLE"){
+    $("hBusserAM").value=weekend?"WITH":"WITHOUT";
+  }else{
+    $("hBusserAM").value="WITHOUT";
+  }
+}
+
 function syncHourlyShift(){
-  const dbl=$("hShift").value==="DOUBLE";
+  const shift=$("hShift").value;
+  const dbl=shift==="DOUBLE";
   $("hSingleClock").classList.toggle("hidden",dbl);
   $("hDoubleClock").classList.toggle("hidden",!dbl);
   $("hTotalAMWrap").classList.toggle("hidden",!dbl);
+  const busser=$("hBusserAM")?.closest("div");
+  if(busser) busser.classList.toggle("hidden",shift==="PM" || $("hPosition").value==="Bartender");
+  const am=$("hAmBar")?.closest("div"), pm=$("hPmBar")?.closest("div");
+  if(am) am.classList.toggle("hidden",!(shift==="AM"||dbl));
+  if(pm) pm.classList.toggle("hidden",!(shift==="PM"||dbl));
+  applyAutomaticBusserRule();
 }
 $("hShift").addEventListener("change",syncHourlyShift);
+$("hPosition").addEventListener("change",syncHourlyShift);
+$("hDate").addEventListener("change",applyAutomaticBusserRule);
 
 window.calculateHourlyV01=function(){
   const L=window.FredTipCalculatorLogic;
@@ -920,12 +1248,28 @@ window.calculateHourlyV01=function(){
     pmBarSales:$("hPmBar").value==="yes"
   });
   const r=lastHourlyResult;
+  const m=v=>"$"+Number(v||0).toFixed(2), p=v=>(Number(v||0)*100).toFixed(2)+"%";
   $("hrHours").textContent=r.totalHoursWork==null?"—":Number(r.totalHoursWork).toFixed(2);
-  $("hrMinimum").textContent="$"+Number(r.hourlyMinimum||0).toFixed(2);
-  $("hrAdjustment").textContent="$"+Number(r.adjustmentSalaryHourly||0).toFixed(2);
-  $("hrGrandTip").textContent="$"+Number(r.grandTotalTip||0).toFixed(2);
-  $("hrAfter").textContent="$"+Number(r.grandTotalAfterAdjustment||0).toFixed(2);
-  $("hrPaidOut").textContent="$"+Number(r.totalPaidOut||0).toFixed(2);
+  $("hrGrandTotal").textContent=m(r.grandTotal);
+  $("hrTotalAM").textContent=m(r.totalAM);
+  $("hrTotalPM").textContent=m(r.totalPM);
+  $("hrTotalTips").textContent=m(r.totalTips);
+  $("hrCardFee").textContent=m(r.cardFee);
+  $("hrPaidTip").textContent=m(r.paidTip);
+  $("hrBusserRate").textContent=p(r.busserRate);
+  $("hrBusserTip").textContent=m(r.busserTipOut);
+  $("hrBarAM").textContent=m(r.barTipAM);
+  $("hrBarPM").textContent=m(r.barTipPM);
+  $("hrBarOut").textContent=m(r.barTipOut);
+  $("hrBeforeMeal").textContent=m(r.totalBeforeMeal);
+  $("hrCashTip").textContent=m(r.cashTip);
+  $("hrGrandTip").textContent=m(r.grandTotalTip);
+  $("hrHourlyRate").textContent=m(r.hourlyRate);
+  $("hrMinimum").textContent=m(r.hourlyMinimum);
+  $("hrAdjustment").textContent=m(r.adjustmentSalaryHourly);
+  $("hrAfter").textContent=m(r.grandTotalAfterAdjustment);
+  $("hrMeal").textContent=m(r.meal);
+  $("hrPaidOut").textContent=m(r.totalPaidOut);
   $("hourlyResult").classList.remove("hidden");
   return r;
 };
@@ -964,9 +1308,36 @@ window.saveHourlyV01=async function(){
         status:"money_ready",
         hourlyStatus:"finalized",
         hourlyReportId:ref.id,
+        finalReport:{
+          grandTotal:Number(r.grandTotal||0),
+          totalAM:Number(r.totalAM||0),
+          totalPM:Number(r.totalPM||0),
+          meal:Number(r.meal||0),
+          cashTip:Number(r.cashTip||0),
+          paidTip:Number(r.paidTip||0),
+          busserRate:Number(r.busserRate||0),
+          busserTipOut:Number(r.busserTipOut||0),
+          barTipOut:Number(r.barTipOut||0),
+          grandTotalTip:Number(r.grandTotalTip||0),
+          hourlyRate:Number(r.hourlyRate||0),
+          hourlyMinimum:Number(r.hourlyMinimum||0),
+          adjustmentSalaryHourly:Number(r.adjustmentSalaryHourly||0),
+          grandTotalAfterAdjustment:Number(r.grandTotalAfterAdjustment||0),
+          totalPaidOut:Number(r.totalPaidOut||0)
+        },
         finalizedBy:currentProfile.displayName||currentProfile.username,
         finalizedAt:serverTimestamp(),
         updatedAt:serverTimestamp()
+      });
+
+      await setDoc(doc(db,"moneyReadyBoard",currentHourlySubmissionId),{
+        employee:r.employee||"",
+        submissionId:currentHourlySubmissionId,
+        reportId:ref.id,
+        message:"Money is ready. Please come to cashier.",
+        active:true,
+        createdAt:serverTimestamp(),
+        finalizedBy:currentProfile.displayName||currentProfile.username
       });
     }
 
@@ -1003,7 +1374,7 @@ function fz24(id){
  e.addEventListener("input",()=>{let d=e.value.replace(/\D/g,"").slice(0,4);e.value=d.length>2?d.slice(0,2)+":"+d.slice(2):d;});
 }
 ["eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut"].forEach(fz24);
-["eGrandTotal","eTotalAM","ePaidTip","eMeal","eCash"].forEach(id=>{
+["eGrandTotal","eTotalAM","eMeal","eCash"].forEach(id=>{
  const e=document.getElementById(id); if(e)e.addEventListener("focus",()=>{if(Number(e.value)===0)setTimeout(()=>e.select(),0);});
 });
 
@@ -1012,3 +1383,11 @@ function fz24(id){
 // V9.4: employee Paid Tip field added; Total AM remains conditional for DOUBLE/LONG; formulas unchanged.
 
 // V9.5: employee live busser % for DOUBLE/LONG; Manager Review/Report submit routes same record into Hourly; final save triggers money_ready notification. V01 formulas unchanged.
+
+// V9.6: Paid Tip removed from employee; shift-sensitive WITH BAR AM/PM; Hourly result/report restored to V01-style fields and original FredTipCalculatorLogic engine.
+
+// V9.7: robust Employee Clear; finalized manager hourly calculation becomes employee-only final report with MONEY READY status.
+
+// V9.8: Server Room Money Ready Board + anonymous kiosk mode + automatic weekday/weekend busser rules.
+
+// V9.9: Hourly queue duplicate delete; XLS/PDF sharing; automatic Money Ready SMS backend support.
