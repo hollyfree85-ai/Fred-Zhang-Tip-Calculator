@@ -14,16 +14,35 @@ const fcmMessaging=firebase.messaging();
 
 fcmMessaging.onBackgroundMessage(payload=>{
   const data=payload.data||{};
+  const type=String(data.type||"").toLowerCase();
   const title=data.title||"Fred Zhang Tip Calculator";
   const body=data.body||"You have a new notification.";
+
+  let vibrate=[250,120,250,120,500];
+  let requireInteraction=false;
+
+  if(type==="employee_submit"){
+    vibrate=[300,140,300,140,700];
+  }else if(type==="tip_approved"){
+    vibrate=[420,160,420];
+  }else if(type==="tip_rejected"){
+    vibrate=[450,120,220,120,450];
+    requireInteraction=true;
+  }else if(type==="money_ready"){
+    vibrate=[700,180,700,180,1100];
+    requireInteraction=true;
+  }
+
   self.registration.showNotification(title,{
     body,
     icon:"./icon-192.png",
     badge:"./icon-192.png",
     tag:data.tag||data.type||"fred-tip",
     renotify:true,
+    silent:false,
+    requireInteraction,
     data:{url:data.url||"./",type:data.type||""},
-    vibrate:[250,120,250,120,500]
+    vibrate
   });
 });
 
@@ -43,7 +62,7 @@ self.addEventListener("notificationclick",event=>{
   })());
 });
 
-const CACHE="fz-tip-v1300";
+const CACHE="fz-tip-v1310";
 const CORE=["./","./index.html","./app-v1300.js","./firebase-config.js","./push-config.js","./hourly-logic.js","./manifest.webmanifest", "./money-ready-chime.wav"];
 
 self.addEventListener("install",event=>{
