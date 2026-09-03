@@ -91,7 +91,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.1.1</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.1.2</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -613,13 +613,13 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1211.js"></script>
+<script type="module" src="app-v1212.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
 <script type="module" src="./board-hotfix.js?v=1160"></script>
 
-<div id="pickupSignatureModal" class="hidden" style="position:fixed;inset:0;background:rgba(3,13,27,.72);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px">
+<div id="pickupSignatureModal" class="hidden" style="position:fixed;inset:0;background:rgba(3,13,27,.72);z-index:99999;display:none;align-items:center;justify-content:center;padding:18px">
   <div style="background:white;color:#0b1830;border-radius:20px;width:min(760px,96vw);padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.35)">
     <h2 style="margin:0 0 6px">Money Picked Up — Employee Signature</h2>
     <div id="pickupSignatureEmployee" class="small" style="margin-bottom:14px"></div>
