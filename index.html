@@ -91,7 +91,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.0</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.1</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -171,7 +171,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
   <div>
     <div style="font-size:22px;letter-spacing:.12em;opacity:.75">MONEY READY</div>
     <div id="moneyReadyName" style="font-size:clamp(42px,9vw,96px);font-weight:1000;margin:12px 0"></div>
-    <div style="font-size:clamp(24px,4vw,44px);font-weight:800">Please come to Cashier</div><div id="moneyReadyQueueInfo" style="margin-top:10px;opacity:.72;font-size:16px"></div>
+    <div style="font-size:clamp(24px,4vw,44px);font-weight:800">Please come to the Cashier</div><div id="moneyReadyQueueInfo" style="margin-top:10px;opacity:.72;font-size:16px"></div>
     <button class="btn gold" style="margin-top:28px;font-size:20px" onclick="dismissMoneyReadyOverlay()">Close</button>
   </div>
 </div>
@@ -560,7 +560,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <div style="height:12px"></div>
           <button class="btn blue" onclick="requestNotify()">Enable Sound + Vibration + Notifications</button>
           <div class="small" style="margin-top:10px">
-            On this phone/tablet, Employee Submit alerts Manager/Owner with sound + vibration. Manager/Owner approval, rejection, and Money Ready alert the Employee the same way while the web app is open.
+            On this phone/tablet, Employee Submit alerts Manager/Owner with sound + vibration. Manager/Owner approval, rejection, and Money Ready alert the Employee the same way while the web app is open. Server Room Money Ready also speaks the employee name aloud.
           </div>
         </div>
       </section>
@@ -613,7 +613,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1200.js"></script>
+<script type="module" src="app-v1210.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>

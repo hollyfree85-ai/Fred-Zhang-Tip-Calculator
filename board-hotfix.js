@@ -23,6 +23,34 @@ function toMillis(v){
     return new Date(v).getTime()||0;
   }catch(e){return 0;}
 }
+
+function chooseBoardVoice(){
+  if(!("speechSynthesis" in window)) return null;
+  const voices=window.speechSynthesis.getVoices()||[];
+  const english=voices.filter(v=>/^en[-_]/i.test(v.lang||""));
+  const preferred=["Samantha","Ava","Victoria","Karen","Zira","Jenny","Aria","Emma","Michelle","Salli","Joanna"];
+  for(const name of preferred){
+    const v=english.find(x=>String(x.name||"").toLowerCase().includes(name.toLowerCase()));
+    if(v) return v;
+  }
+  return english[0]||voices[0]||null;
+}
+
+function speakBoardMoneyReady(name){
+  if(!("speechSynthesis" in window)) return;
+  try{
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(`${String(name||"Employee").trim()}, please come to the cashier. Your tip money is ready.`);
+    const v=chooseBoardVoice();
+    if(v) u.voice=v;
+    u.lang=v?.lang||"en-US";
+    u.rate=.90;
+    u.pitch=1.08;
+    u.volume=1;
+    window.speechSynthesis.speak(u);
+  }catch(e){ console.warn("Board speech:",e); }
+}
+
 function chime(){
   ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();
   if(ctx.state==="suspended") ctx.resume();
@@ -44,6 +72,7 @@ function showNext(){
   if($("moneyReadyQueueInfo")) $("moneyReadyQueueInfo").textContent=qAnnouncements.length>1?`${qAnnouncements.length-1} more announcement(s) waiting`:"";
   $("moneyReadyOverlay").classList.remove("hidden");
   chime();
+  setTimeout(()=>speakBoardMoneyReady(qAnnouncements[0]),650);
 }
 function announce(name){qAnnouncements.push(name||"Employee");showNext();}
 window.dismissMoneyReadyOverlay=()=>{
