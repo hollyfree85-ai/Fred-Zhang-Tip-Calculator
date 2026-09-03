@@ -52,8 +52,19 @@ window.enableBoardHotfix=async function(){
     if(unsub) unsub();
     const q=query(collection(db,"moneyReadyBoard"),where("active","==",true),limit(100));
     unsub=onSnapshot(q,snap=>{
-      const rows=snap.docs.map(d=>({id:d.id,...d.data()}))
+      const cutoff=Math.floor(Date.now()/1000)-86400;
+      const rawRows=snap.docs.map(d=>({id:d.id,...d.data()}))
+        .filter(r=>(r.createdAt?.seconds||Math.floor(Date.now()/1000))>=cutoff)
         .sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+
+      const seenEmployees=new Set();
+      const rows=rawRows.filter(r=>{
+        const key=String(r.employee||"").trim().toLowerCase();
+        if(!key) return true;
+        if(seenEmployees.has(key)) return false;
+        seenEmployees.add(key);
+        return true;
+      });
       $("boardLiveInfo").textContent=`LIVE • ${rows.length} money-ready report(s) • ${new Date().toLocaleTimeString()}`;
       $("moneyReadyList").innerHTML=rows.length?rows.map(r=>`
         <div style="background:#0f243d;border:1px solid #28445f;border-radius:18px;padding:18px">

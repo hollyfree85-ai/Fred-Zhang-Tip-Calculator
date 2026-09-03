@@ -1,7 +1,7 @@
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
-  createUserWithEmailAndPassword, signInAnonymously
+  createUserWithEmailAndPassword, signInAnonymously, setPersistence, inMemoryPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
@@ -13,6 +13,20 @@ import { FIREBASE_CONFIG } from "./firebase-config.js";
 
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
+
+// V11.1 shared-link security: Owner, Manager, and Employee sessions live only in this tab.
+const authSecurityReady=(async()=>{
+  try{
+    await setPersistence(auth,inMemoryPersistence);
+    // Remove any account session left behind by older versions before this page is usable.
+    if(auth.currentUser && !auth.currentUser.isAnonymous){
+      await signOut(auth);
+    }
+  }catch(e){
+    console.warn("Auth security init:",e);
+  }
+})();
+
 const db = getFirestore(firebaseApp);
 const functions = getFunctions(firebaseApp, "us-central1");
 const createUserAdmin = httpsCallable(functions, "createAppUser");
@@ -169,6 +183,7 @@ window.closeServerRoomBoard=async function(){
 };
 window.enableServerRoomBoard=async function(auto=false){
   try{
+    await authSecurityReady;
     boardMode=true;
     $("boardError").textContent="";
     if(!auth.currentUser){
@@ -272,6 +287,7 @@ function listenMoneyReadyBoard(){
 }
 
 window.loginEmployee = async function(){
+  await authSecurityReady;
   const username = $("employeeUsername").value.trim();
   const pin = $("employeePin").value.trim();
   if(!username || !pin){ loginMsg("Enter username and PIN."); return; }
@@ -285,6 +301,7 @@ window.loginEmployee = async function(){
 };
 
 window.loginStaff = async function(){
+  await authSecurityReady;
   const username = $("staffUsername").value.trim();
   const password = $("staffPassword").value;
   if(!username || !password){ loginMsg("Enter username and password."); return; }
@@ -332,6 +349,9 @@ function showApp(){
 }
 
 onAuthStateChanged(auth, async user=>{
+  await authSecurityReady;
+  // If this callback came from a stale persisted session that was just cleared, ignore it.
+  if(user && !auth.currentUser) return;
   clearListeners();
   if(!user){
     currentUser=null; currentProfile=null;
@@ -549,7 +569,12 @@ window.submitEmployee=async function(){
     await writeAudit("employee_submit",ref.id,r.employee,{after:r});
     localStorage.removeItem(EMPLOYEE_DRAFT_KEY);
     clearEmployeeForm();
-    alert("Submitted to Manager.");
+    alert("Employee submission sent. This shared tablet is now signed out.");
+    try{
+      localStorage.removeItem(EMPLOYEE_DRAFT_KEY);
+      sessionStorage.clear();
+      await signOut(auth);
+    }catch(e){ console.warn("Post-submit logout:",e); }
   }catch(e){
     console.error(e);
     alert(`Submit failed: ${e.code || e.message}`);
@@ -1577,6 +1602,46 @@ window.clearAllFinalDailyReports=async function(){
   }
 };
 
+
+window.markMoneyPickedUp=async function(reportId,submissionId,employee){
+  if(!["manager","owner"].includes(currentProfile?.role||"")){
+    alert("Manager/Owner only.");
+    return;
+  }
+  if(!confirm(`Mark ${employee||"this employee"} as PAID / PICKED UP?\n\nThis removes the employee from the Server Room Money Ready board.`)) return;
+
+  try{
+    if(submissionId){
+      try{ await deleteDoc(doc(db,"moneyReadyBoard",submissionId)); }catch(e){ console.warn(e); }
+      try{
+        await updateDoc(doc(db,"submissions",submissionId),{
+          pickupStatus:"picked_up",
+          pickedUpAt:serverTimestamp(),
+          pickedUpBy:currentProfile.displayName||currentProfile.username,
+          updatedAt:serverTimestamp()
+        });
+      }catch(e){ console.warn(e); }
+    }
+    if(reportId){
+      try{
+        await updateDoc(doc(db,"hourlyReports",reportId),{
+          pickupStatus:"picked_up",
+          pickedUpAt:serverTimestamp(),
+          pickedUpBy:currentProfile.displayName||currentProfile.username
+        });
+      }catch(e){ console.warn(e); }
+    }
+    try{
+      await writeAudit("money_picked_up",reportId||submissionId||"",employee||"",{
+        submissionId:submissionId||""
+      });
+    }catch(e){}
+    alert("Marked as picked up. Server Room board will update automatically.");
+  }catch(e){
+    alert(`Picked Up failed: ${e.code||e.message}`);
+  }
+};
+
 function renderFinalDailyByName(){
   syncOwnerFinalControls();
   const el=$("finalDailyByName");
@@ -1618,6 +1683,7 @@ function renderFinalDailyByName(){
               <div class="actions">
                 <button class="btn light" type="button" onclick="editHourlyReport('${r.id}')">Edit</button>
                 <button class="btn light" type="button" onclick="republishMoneyReady('${r.id}')">Announce Again</button>
+                <button class="btn light" type="button" onclick="markMoneyPickedUp('${r.id}','${r.sourceSubmissionId||""}','${esc(r.employee||"")}')">Picked Up</button>
                 <button class="btn light" type="button" onclick="resendReportSms('${r.sourceSubmissionId||""}')">SMS Report</button>
                 <button class="btn red" type="button" onclick="deleteHourlyReport('${r.id}')">Delete</button>
               </div>
@@ -2045,3 +2111,7 @@ document.addEventListener("change",e=>{
 });
 
 // V10.9: Bartender-only Bar Tip Out Received is additional tip income and is included in final totals/reports.
+
+// V11.0 shared-tablet security and Money Ready cleanup.
+
+// V11.1: ALL authenticated roles use memory-only auth. Refresh/new tab/new window/shared link always requires fresh login.

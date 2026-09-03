@@ -125,7 +125,8 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
       <div style="height:10px"></div><label>Password</label><input id="staffPassword" type="password" autocomplete="current-password">
       <div style="height:14px"></div><button class="btn gold" style="width:100%" onclick="loginStaff()">Login</button>
     </div>
-    <div id="loginMessage" class="small" style="margin-top:12px"></div>
+    <div class="notice" style="margin-bottom:12px"><b>Shared device security:</b> every new tab, refresh, or reopened link requires a fresh login. Sharing this website link does not share the Owner/Manager account.</div>
+<div id="loginMessage" class="small" style="margin-top:12px"></div>
   </div>
 </div>
 
@@ -149,7 +150,8 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
     </div>
     <div id="boardStatus" class="notice good hidden" style="margin-bottom:16px">
       <b>Board is active.</b> Waiting for Money Ready...
-      <div id="boardLiveInfo" class="small" style="margin-top:6px"></div>
+      <div class="small" style="margin-top:4px;opacity:.72">Picked Up removes the employee automatically. Old items are hidden after 24 hours as a safety fallback.</div>
+<div id="boardLiveInfo" class="small" style="margin-top:6px"></div>
     </div>
     <div id="moneyReadyList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px"></div>
   </div>
@@ -474,10 +476,10 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=29"></script>
+<script type="module" src="app.js?v=31"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1070"></script>
+<script type="module" src="./board-hotfix.js?v=1110"></script>
 </body>
 </html>
