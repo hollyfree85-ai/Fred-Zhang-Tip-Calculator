@@ -1173,6 +1173,7 @@ function reportRowsForExport(){
     pmBarSales:Boolean(r.pmBarSales??r.barSalesPM),
     pmBarTip:Number(r.pmBarTipOut??r.barTipPM??0),
     barTipOut:Number(r.barTipOut||0),
+    bartenderBarTipReceived:Number(r.bartenderBarTipReceived||0),
     totalBeforeMeal:Number(r.totalBeforeMeal||0),
     cashTip:Number(r.cashTip||0),
     grandTotalTip:Number(r.grandTotalTip||0),
@@ -1208,7 +1209,7 @@ function xlsBlob(rows){
     "Hour In AM","Hour Out AM","Hour In PM","Hour Out PM","Total Hours Work",
     "Grand Total","Total AM","Total PM","Total Tips","Pay Card Tip Fee","Paid Tip",
     "Busser Rate %","Busser Tip Out","AM Bar Sales","AM Bar Tip","PM Bar Sales","PM Bar Tip",
-    "Bar Tip Out","Total Before Meal","Cash Tip","Grand Total Tip","Hourly Rate","Hourly Minimum",
+    "Bar Tip Out","Bar Tip Out Received","Total Before Meal","Cash Tip","Grand Total Tip","Hourly Rate","Hourly Minimum",
     "Adjustment Salary Hourly","Adjustment Decision","Grand Total After Adjustment","Meal",
     "Total Paid Out","Signature Status","Signed At","Status","Finalized By"
   ];
@@ -1218,7 +1219,7 @@ function xlsBlob(rows){
     100,100,100,100,115,
     110,105,105,105,120,105,
     105,110,100,105,100,105,
-    105,125,105,120,100,115,
+    105,135,125,105,120,100,115,
     145,160,150,95,
     125,125,180,115,150
   ];
@@ -1262,6 +1263,7 @@ function xlsBlob(rows){
         xlsCellString(r.pmBarSales?"YES":"NO","Body"),
         xlsCellNumber(r.pmBarTip,"Money14"),
         xlsCellNumber(r.barTipOut,"Money14"),
+        xlsCellNumber(r.bartenderBarTipReceived,"Money14"),
         xlsCellNumber(r.totalBeforeMeal,"Money14"),
         xlsCellNumber(r.cashTip,"Money14"),
         xlsCellNumber(r.grandTotalTip,"Money14"),
@@ -1381,6 +1383,7 @@ function pdfReportContent(r,index,total){
     ["PM Bar Sales",pdfBool(r.pmBarSales)],
     ["PM Bar Tip",pdfMoney(r.pmBarTip)],
     ["Bar Tip Out",pdfMoney(r.barTipOut)],
+    ["Bar Tip Out Received",pdfMoney(r.bartenderBarTipReceived)],
     ["Total Before Meal",pdfMoney(r.totalBeforeMeal)],
     ["Cash Tip",pdfMoney(r.cashTip)],
     ["Grand Total Tip",pdfMoney(r.grandTotalTip)],
@@ -1628,6 +1631,7 @@ function renderFinalDailyByName(){
               <div class="kpi"><span>Busser Rate</span><b>${fmtPct(r.busserRate)}</b></div>
               <div class="kpi"><span>Busser Tip Out</span><b>${fmtMoney(r.busserTipOut)}</b></div>
               <div class="kpi"><span>Bar Tip Out</span><b>${fmtMoney(r.barTipOut)}</b></div>
+              ${String(r.position||"").toLowerCase()==="bartender"?`<div class="kpi"><span>Bar Tip Out Received</span><b>${fmtMoney(r.bartenderBarTipReceived)}</b></div>`:""}
               <div class="kpi"><span>Meal</span><b>${fmtMoney(r.meal)}</b></div>
               <div class="kpi"><span>Hourly Adjustment</span><b>${fmtMoney(r.adjustmentSalaryHourly)}</b></div>
               <div class="kpi"><span>TOTAL PAID OUT</span><b>${fmtMoney(r.totalPaidOut)}</b></div>
@@ -1768,10 +1772,20 @@ function syncHourlyShift(){
   if(am) am.classList.toggle("hidden",!(shift==="AM"||dbl));
   if(pm) pm.classList.toggle("hidden",!(shift==="PM"||dbl));
   applyAutomaticBusserRule();
+  syncBartenderBarReceivedField();
 }
 $("hShift").addEventListener("change",syncHourlyShift);
 $("hPosition").addEventListener("change",syncHourlyShift);
 $("hDate").addEventListener("change",applyAutomaticBusserRule);
+
+
+function syncBartenderBarReceivedField(){
+  const wrap=$("hBartenderBarReceivedWrap");
+  if(!wrap) return;
+  const isBartender=String($("hPosition")?.value||"").toLowerCase()==="bartender";
+  wrap.classList.toggle("hidden",!isBartender);
+  if(!isBartender && $("hBartenderBarReceived")) $("hBartenderBarReceived").value="";
+}
 
 window.calculateHourlyV01=function(){
   const L=window.FredTipCalculatorLogic;
@@ -1802,6 +1816,24 @@ window.calculateHourlyV01=function(){
     amBarSales:$("hAmBar").value==="yes",
     pmBarSales:$("hPmBar").value==="yes"
   });
+
+  // Bartender receives server bar tip-outs as additional tip income.
+  // The original V01 engine remains untouched; this is added after its normal calculation.
+  const bartenderBarTipReceived=
+    String($("hPosition").value||"").toLowerCase()==="bartender"
+      ? Number($("hBartenderBarReceived")?.value||0)
+      : 0;
+
+  if(bartenderBarTipReceived>0){
+    lastHourlyResult.bartenderBarTipReceived=bartenderBarTipReceived;
+    lastHourlyResult.grandTotalTip=Number(lastHourlyResult.grandTotalTip||0)+bartenderBarTipReceived;
+    lastHourlyResult.totalBeforeMeal=Number(lastHourlyResult.totalBeforeMeal||0)+bartenderBarTipReceived;
+    lastHourlyResult.grandTotalAfterAdjustment=Number(lastHourlyResult.grandTotalAfterAdjustment||0)+bartenderBarTipReceived;
+    lastHourlyResult.totalPaidOut=Number(lastHourlyResult.totalPaidOut||0)+bartenderBarTipReceived;
+  }else{
+    lastHourlyResult.bartenderBarTipReceived=0;
+  }
+
   const r=lastHourlyResult;
   const m=fmtMoney, p=fmtPct;
   $("hrHours").textContent=r.totalHoursWork==null?"—":Number(r.totalHoursWork).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1816,6 +1848,19 @@ window.calculateHourlyV01=function(){
   $("hrBarAM").textContent=m(r.barTipAM);
   $("hrBarPM").textContent=m(r.barTipPM);
   $("hrBarOut").textContent=m(r.barTipOut);
+  let bartenderReceivedLine=$("hrBartenderReceivedLine");
+  if(String(r.position||"").toLowerCase()==="bartender"){
+    if(!bartenderReceivedLine){
+      bartenderReceivedLine=document.createElement("div");
+      bartenderReceivedLine.id="hrBartenderReceivedLine";
+      bartenderReceivedLine.innerHTML='Bar Tip Out Received <b id="hrBartenderReceived"></b>';
+      $("hrBarOut").parentElement.insertAdjacentElement("afterend",bartenderReceivedLine);
+    }
+    $("hrBartenderReceived").textContent=m(r.bartenderBarTipReceived);
+    bartenderReceivedLine.classList.remove("hidden");
+  }else if(bartenderReceivedLine){
+    bartenderReceivedLine.classList.add("hidden");
+  }
   $("hrBeforeMeal").textContent=m(r.totalBeforeMeal);
   $("hrCashTip").textContent=m(r.cashTip);
   $("hrGrandTip").textContent=m(r.grandTotalTip);
@@ -1870,6 +1915,7 @@ window.saveHourlyV01=async function(){
           busserRate:Number(r.busserRate||0),
           busserTipOut:Number(r.busserTipOut||0),
           barTipOut:Number(r.barTipOut||0),
+    bartenderBarTipReceived:Number(r.bartenderBarTipReceived||0),
           grandTotalTip:Number(r.grandTotalTip||0),
           hourlyRate:Number(r.hourlyRate||0),
           hourlyMinimum:Number(r.hourlyMinimum||0),
@@ -1993,3 +2039,9 @@ function selectZeroOnFocus(el){
 // V10.7 REPORT STYLE: original Fred Zhang report layout restored; main PDF values 14pt; Excel Arial 14; network-first code cache.
 
 // V10.8: Employee can delete only their own non-final submission from Current / Pending Report.
+
+document.addEventListener("change",e=>{
+  if(e.target?.id==="hPosition") syncBartenderBarReceivedField();
+});
+
+// V10.9: Bartender-only Bar Tip Out Received is additional tip income and is included in final totals/reports.

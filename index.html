@@ -326,7 +326,14 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           </div>
 
           <div style="height:14px"></div>
-          <div class="actions">
+          
+          <div id="hBartenderBarReceivedWrap" class="hidden" style="margin-top:12px">
+            <label>Bar Tip Out Received ($)
+              <input id="hBartenderBarReceived" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+            </label>
+            <div class="small" style="margin-top:5px">Bartender only — additional tip received from server bar tip-outs.</div>
+          </div>
+<div class="actions">
             <button class="btn gold" onclick="calculateHourlyV01()">Calculate V01</button>
             <button class="btn green" onclick="saveHourlyV01()">Submit Final & Money Ready</button>
           </div>
@@ -467,7 +474,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=28"></script>
+<script type="module" src="app.js?v=29"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
