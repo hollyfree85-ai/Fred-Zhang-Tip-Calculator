@@ -135,7 +135,11 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
     </div>
     <div id="boardSetup" class="notice" style="background:#fff7df;color:#7a5200;margin-bottom:16px">
       Tap <b>Enable Board</b> once on this tablet. After that, no Employee/Manager login is needed.
-      <div style="margin-top:10px"><button class="btn gold" onclick="enableServerRoomBoard()">Enable Board + Sound</button></div>
+      <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+  <button class="btn gold" type="button" onclick="enableBoardHotfix()">Enable Board + Sound</button>
+  <button class="btn light" type="button" onclick="testServerRoomChime()">Test Chime</button>
+</div>
+<div id="boardError" class="small" style="margin-top:10px;color:#a61b1b;font-weight:700"></div>
     </div>
     <div id="boardStatus" class="notice good hidden" style="margin-bottom:16px">
       <b>Board is active.</b> Waiting for Money Ready...
@@ -446,5 +450,6 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
+<script type="module" src="./board-hotfix.js?v=1021"></script>
 </body>
 </html>
