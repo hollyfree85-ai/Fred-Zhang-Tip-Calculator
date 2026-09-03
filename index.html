@@ -46,6 +46,12 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 @media(max-width:760px){.calc-result{grid-template-columns:1fr 1fr}}
 .approval-card{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:#fff}
 .phone{font-variant-numeric:tabular-nums}
+
+.tip-check-table input{min-width:105px;padding:9px 10px}
+.tip-check-table td,.tip-check-table th{white-space:nowrap}
+.tip-check-sheet{border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0;background:#fff}
+.tip-check-row-done{background:#eefaf2}
+@media(max-width:700px){.tip-check-table{min-width:650px}}
 </style>
 
 <style>
@@ -91,7 +97,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.1 NOTIFICATION PATTERNS</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.2 CHECK TIP + CASHIER</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -104,7 +110,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </div>
 <div class="mode" style="grid-template-columns:repeat(3,1fr)">
       <button id="employeeModeBtn" class="on" onclick="setLoginMode('employee')">Employee</button>
-      <button id="staffModeBtn" onclick="setLoginMode('staff')">Manager / Owner</button>
+      <button id="staffModeBtn" onclick="setLoginMode('staff')">Manager / Owner / Cashier</button>
       <button id="boardModeBtn" onclick="openServerRoomBoard()">Server Room Board</button>
     </div>
     <div id="employeeLogin">
@@ -190,6 +196,11 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
   <div class="wrap">
 
     <div id="employeeApp" class="hidden">
+      <div class="tabs" style="margin-bottom:12px">
+        <button class="tab on" data-etab="shift">Tip Report</button>
+        <button class="tab" data-etab="tipcheck">Check Tip</button>
+      </div>
+      <div id="employeeShiftContent">
       <div id="employeeReadyReport" class="card hidden"></div>
       <div id="employeeEntryCard" class="card">
         <h2>My Shift Submission</h2>
@@ -266,6 +277,26 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         <div class="notice good">Your submission is stored in the shared Firestore database and appears on Manager/Owner devices in realtime.</div>
       </div>
       <div class="card"><h2>Current / Pending Report</h2><div id="mySubmissions"></div></div>
+      </div>
+
+      <div id="employeeTipCheckContent" class="hidden">
+        <div class="card">
+          <h2>Check Tip</h2>
+          <div class="notice">Enter the date and up to 50 lines from your paper: Check Number, Table, and Tip. Leave unused lines blank.</div>
+          <div class="grid" style="margin-top:12px">
+            <div><label>Date</label><input id="eTipCheckDate" type="date"></div>
+            <div><label>Employee</label><input id="eTipCheckEmployee" readonly></div>
+          </div>
+          <div class="tablewrap" style="margin-top:12px;max-height:600px">
+            <table class="tip-check-table"><thead><tr><th>#</th><th>Check Number</th><th>Table</th><th>Tip ($)</th></tr></thead><tbody id="eTipCheckRows"></tbody></table>
+          </div>
+          <div class="actions" style="margin-top:14px">
+            <button class="btn light" type="button" onclick="clearEmployeeTipCheck()">Clear</button>
+            <button class="btn green" type="button" onclick="submitEmployeeTipCheck()">Submit to Cashier</button>
+          </div>
+        </div>
+        <div class="card"><h2>My Check Tip Status</h2><div id="employeeTipCheckStatus"></div></div>
+      </div>
     </div>
 
     <div id="staffApp" class="hidden">
@@ -277,6 +308,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         <button class="tab" data-stab="finalDaily">Final Daily Report</button>
         <button class="tab ownerOnly" data-stab="users">Users</button>
         <button class="tab ownerOnly" data-stab="history">History</button>
+        <button class="tab tipCheckTab" data-stab="tipCheck">Check Tip</button>
         <button class="tab" data-stab="setup">Setup</button>
       </div>
 
@@ -517,12 +549,50 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         </div>
       </section>
 
+<section id="tipCheck" class="staffPanel hidden">
+        <div id="tipCheckManagerBlock" class="card managerOwnerOnly">
+          <h2>Check Tip - Employee / Manager Entry</h2>
+          <div class="notice">Manager/Owner may enter a sheet for an employee. Employee can also submit the same sheet from the Employee tab.</div>
+          <input id="staffTipCheckEditId" type="hidden">
+          <div class="grid3" style="margin-top:12px">
+            <div><label>Date</label><input id="sTipCheckDate" type="date"></div>
+            <div><label>Employee</label><select id="sTipCheckEmployee"></select></div>
+            <div><label>Status</label><input id="sTipCheckMode" value="NEW SHEET" readonly></div>
+          </div>
+          <div class="tablewrap" style="margin-top:12px;max-height:600px">
+            <table class="tip-check-table"><thead><tr><th>#</th><th>Check Number</th><th>Table</th><th>Tip ($)</th></tr></thead><tbody id="sTipCheckRows"></tbody></table>
+          </div>
+          <div class="actions" style="margin-top:14px">
+            <button class="btn light" type="button" onclick="clearStaffTipCheckForm()">Clear</button>
+            <button class="btn green" id="staffTipCheckSubmitBtn" type="button" onclick="submitStaffTipCheck()">Submit to Cashier</button>
+          </div>
+        </div>
+
+        <div id="tipCheckCashierBlock" class="card cashierOnly hidden">
+          <h2>Cashier - Tip Checklist</h2>
+          <div class="notice good">Compare every line with the paper submitted by the server. Check a line only after the tip has been entered into the system. Submit only when every active line is checked.</div>
+          <div id="cashierTipCheckQueue"></div>
+        </div>
+
+        <div id="tipCheckOwnerBlock" class="card ownerOnly hidden">
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
+            <div><h2 style="margin-bottom:4px">Owner - Check Tip Records</h2><div class="small">Owner can edit, delete, clear all, and download PDF/XLS.</div></div>
+            <div class="actions">
+              <button class="btn light" type="button" onclick="downloadTipCheckXls()">Download XLS</button>
+              <button class="btn light" type="button" onclick="downloadTipCheckPdf()">Download PDF</button>
+              <button class="btn red" type="button" onclick="clearAllTipCheckSheets()">Clear All</button>
+            </div>
+          </div>
+          <div id="ownerTipCheckRecords" style="margin-top:12px"></div>
+        </div>
+      </section>
+
 <section id="users" class="staffPanel hidden">
         <div class="card">
           <h2>User Management</h2>
           <div class="grid3">
             <div><label>Username</label><input id="uName" placeholder="john"></div>
-            <div><label>Role</label><select id="uRole"><option value="employee">Employee</option><option value="manager">Manager</option></select></div>
+            <div><label>Role</label><select id="uRole"><option value="employee">Employee</option><option value="manager">Manager</option><option value="cashier">Cashier</option></select></div>
             <div><label>PIN / Password</label><input id="uPass" placeholder="4-digit PIN or password"></div>
           </div>
           <div style="height:10px"></div><button class="btn green" onclick="createUserByOwner()">Create User</button>
@@ -570,7 +640,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <div style="height:12px"></div>
           <button class="btn blue" onclick="requestNotify()">Enable Background Notifications</button>
           <div class="small" style="margin-top:10px">
-            Enable once on each Manager/Owner device to receive push notifications even when the app is in the background or the phone is locked. Realtime in-app alerts and Server Room announcements remain active as before.
+            Enable once on each Manager/Owner/Cashier device to receive push notifications even when the app is in the background or the phone is locked. Realtime in-app alerts and Server Room announcements remain active as before.
           </div>
         </div>
       </section>
@@ -623,11 +693,11 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1300.js"></script>
+<script type="module" src="app-v1320.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1300"></script>
+<script type="module" src="./board-hotfix.js?v=1320"></script>
 
 
 <div id="globalMoneyReadyDialog" class="hidden" style="position:fixed;inset:0;z-index:120000;background:rgba(3,13,27,.82);display:none;align-items:center;justify-content:center;padding:20px">

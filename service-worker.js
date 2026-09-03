@@ -31,6 +31,11 @@ fcmMessaging.onBackgroundMessage(payload=>{
   }else if(type==="money_ready"){
     vibrate=[700,180,700,180,1100];
     requireInteraction=true;
+  }else if(type==="tip_check_cashier"){
+    vibrate=[350,130,350,130,750];
+    requireInteraction=true;
+  }else if(type==="tip_check_completed"){
+    vibrate=[450,150,450];
   }
 
   self.registration.showNotification(title,{
@@ -62,8 +67,8 @@ self.addEventListener("notificationclick",event=>{
   })());
 });
 
-const CACHE="fz-tip-v1310";
-const CORE=["./","./index.html","./app-v1300.js","./firebase-config.js","./push-config.js","./hourly-logic.js","./manifest.webmanifest", "./money-ready-chime.wav"];
+const CACHE="fz-tip-v1320";
+const CORE=["./","./index.html","./app-v1320.js","./firebase-config.js","./push-config.js","./hourly-logic.js","./manifest.webmanifest", "./money-ready-chime.wav"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();
