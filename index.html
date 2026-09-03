@@ -101,7 +101,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.2.1 CHECK TIP RESULTS</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.2.2 REVIEW HISTORY</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -572,8 +572,8 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           </div>
         </div>
 
-        <div id="tipCheckCashierBlock" class="card cashierOnly hidden">
-          <h2>Cashier - Tip Checklist</h2>
+        <div id="tipCheckCashierBlock" class="card tipReviewBlock hidden">
+          <h2>Tip Checklist Review</h2>
           <div class="notice good">Compare every line with the paper submitted by the server. For each row choose Done, No Signature, or Ticket Not Found. Submit only after every active row has a result.</div>
           <div id="cashierTipCheckQueue"></div>
         </div>
@@ -697,11 +697,11 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1321.js"></script>
+<script type="module" src="app-v1322.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1321"></script>
+<script type="module" src="./board-hotfix.js?v=1322"></script>
 
 
 <div id="globalMoneyReadyDialog" class="hidden" style="position:fixed;inset:0;z-index:120000;background:rgba(3,13,27,.82);display:none;align-items:center;justify-content:center;padding:20px">
