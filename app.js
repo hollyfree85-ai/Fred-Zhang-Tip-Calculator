@@ -1345,6 +1345,9 @@ function reportRowsForExport(){
     status:"MONEY READY",
     signatureStatus:r.signatureStatus||r.employeeSignatureStatus||"",
     signedAt:r.signedAt||r.employeeSignedAt||"",
+    pickupSignature:r.pickupSignature||null,
+    pickedUpBy:r.pickedUpBy||"",
+    pickedUpAt:r.pickedUpAt||null,
     finalizedBy:r.updatedBy||r.createdBy||r.finalizedBy||"",
     createdAt:r.createdAt||null
   }));
@@ -1510,6 +1513,26 @@ function pdfField(label,value,x,y){
          `BT /F2 14 Tf ${x} ${y-15} Td (${pdfEscape(value)}) Tj ET\n`;
 }
 
+
+function pdfSignatureCommands(signature,x,y,w,h){
+  const strokes=signature?.strokes;
+  if(!Array.isArray(strokes) || !strokes.length) return "";
+  let c="0.8 w\n";
+  for(const stroke of strokes){
+    if(!Array.isArray(stroke) || stroke.length<2) continue;
+    const pts=stroke.map(p=>({
+      x:x+Math.max(0,Math.min(1,Number(p.x||0)))*w,
+      y:y+(1-Math.max(0,Math.min(1,Number(p.y||0))))*h
+    }));
+    c+=`${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} m\n`;
+    for(let i=1;i<pts.length;i++){
+      c+=`${pts[i].x.toFixed(2)} ${pts[i].y.toFixed(2)} l\n`;
+    }
+    c+="S\n";
+  }
+  return c;
+}
+
 function pdfReportContent(r,index,total){
   const shift=String(r.shift||"").toUpperCase();
   const isDouble=shift==="DOUBLE"||shift==="LONG";
@@ -1590,9 +1613,15 @@ function pdfReportContent(r,index,total){
 
   const status=String(r.status||"MONEY READY").toUpperCase();
   c+="BT /F2 13 Tf 322 82 Td (FINAL REPORT - MONEY READY) Tj ET\n";
+  c+="BT /F1 8.5 Tf 430 82 Td (EMPLOYEE PICKUP SIGNATURE) Tj ET\n";
+  c+="0.7 w 430 32 m 575 32 l 575 76 l 430 76 l 430 32 l S\n";
+  c+=pdfSignatureCommands(r.pickupSignature,434,36,137,36);
   c+=`BT /F1 9.5 Tf 322 64 Td (Status: ${pdfEscape(status)}) Tj ET\n`;
   if(r.finalizedBy){
     c+=`BT /F1 9.5 Tf 322 49 Td (Finalized By: ${pdfEscape(r.finalizedBy)}) Tj ET\n`;
+  }
+  if(r.pickedUpBy){
+    c+=`BT /F1 8.5 Tf 322 34 Td (Picked Up By: ${pdfEscape(r.pickedUpBy)}) Tj ET\n`;
   }
 
   c+=`BT /F1 8 Tf 28 20 Td (Generated ${pdfEscape(new Date().toLocaleString())} | Page ${index+1}) Tj ET\n`;
@@ -1747,16 +1776,115 @@ window.clearAllFinalDailyReports=async function(){
 
 
 
-window.markMoneyPickedUp=async function(reportId,submissionId,employee){
+
+let pendingPickup=null;
+let pickupSignatureStrokes=[];
+let pickupDrawing=false;
+let pickupCurrentStroke=null;
+
+function pickupCanvas(){
+  return $("pickupSignatureCanvas");
+}
+function pickupCanvasPoint(evt){
+  const c=pickupCanvas();
+  const rect=c.getBoundingClientRect();
+  const clientX=evt.touches?.[0]?.clientX ?? evt.clientX;
+  const clientY=evt.touches?.[0]?.clientY ?? evt.clientY;
+  return {
+    x:Math.max(0,Math.min(1,(clientX-rect.left)/rect.width)),
+    y:Math.max(0,Math.min(1,(clientY-rect.top)/rect.height))
+  };
+}
+function redrawPickupSignature(){
+  const c=pickupCanvas();
+  if(!c) return;
+  const ctx=c.getContext("2d");
+  ctx.clearRect(0,0,c.width,c.height);
+  ctx.lineWidth=3;
+  ctx.lineCap="round";
+  ctx.lineJoin="round";
+  ctx.strokeStyle="#10213c";
+  pickupSignatureStrokes.forEach(stroke=>{
+    if(!stroke?.length) return;
+    ctx.beginPath();
+    stroke.forEach((p,i)=>{
+      const x=p.x*c.width, y=p.y*c.height;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  });
+}
+function initPickupSignatureCanvas(){
+  const c=pickupCanvas();
+  if(!c || c.dataset.ready==="1") return;
+  c.dataset.ready="1";
+
+  const startDraw=e=>{
+    e.preventDefault();
+    pickupDrawing=true;
+    pickupCurrentStroke=[pickupCanvasPoint(e)];
+    pickupSignatureStrokes.push(pickupCurrentStroke);
+    redrawPickupSignature();
+  };
+  const moveDraw=e=>{
+    if(!pickupDrawing) return;
+    e.preventDefault();
+    pickupCurrentStroke.push(pickupCanvasPoint(e));
+    redrawPickupSignature();
+  };
+  const endDraw=e=>{
+    if(!pickupDrawing) return;
+    e?.preventDefault?.();
+    pickupDrawing=false;
+    pickupCurrentStroke=null;
+  };
+
+  c.addEventListener("pointerdown",startDraw);
+  c.addEventListener("pointermove",moveDraw);
+  window.addEventListener("pointerup",endDraw);
+  c.addEventListener("touchstart",startDraw,{passive:false});
+  c.addEventListener("touchmove",moveDraw,{passive:false});
+  c.addEventListener("touchend",endDraw,{passive:false});
+}
+
+window.clearPickupSignature=function(){
+  pickupSignatureStrokes=[];
+  redrawPickupSignature();
+};
+
+window.cancelPickupSignature=function(){
+  pendingPickup=null;
+  pickupSignatureStrokes=[];
+  $("pickupSignatureModal")?.classList.add("hidden");
+};
+
+window.markMoneyPickedUp=function(reportId,submissionId,employee){
   if(!["manager","owner"].includes(currentProfile?.role||"")){
     alert("Manager/Owner only.");
     return;
   }
-  if(!confirm(`Mark ${employee||"this employee"} as PAID / PICKED UP?\n\nThis will immediately remove this employee from the Server Room board.`)) return;
+
+  pendingPickup={reportId,submissionId,employee};
+  pickupSignatureStrokes=[];
+  $("pickupSignatureEmployee").textContent=`Employee: ${employee||""}`;
+  $("pickupSignatureModal").classList.remove("hidden");
+  initPickupSignatureCanvas();
+  setTimeout(redrawPickupSignature,30);
+};
+
+window.submitPickupSignature=async function(){
+  if(!pendingPickup) return;
+
+  const pointCount=pickupSignatureStrokes.reduce((n,s)=>n+(s?.length||0),0);
+  if(pointCount<4){
+    alert("Please sign before submitting Picked Up.");
+    return;
+  }
+
+  const {reportId,submissionId,employee}=pendingPickup;
 
   try{
-    // Delete every active board document that belongs to this employee/report/submission.
-    // Older versions used different document IDs, so deleting only submissionId was not enough.
+    // Remove every board item matching this employee/report/submission.
     const boardSnap=await getDocs(query(collection(db,"moneyReadyBoard"),limit(100)));
     const employeeKey=String(employee||"").trim().toLowerCase();
     const matches=boardSnap.docs.filter(d=>{
@@ -1772,12 +1900,18 @@ window.markMoneyPickedUp=async function(reportId,submissionId,employee){
       await deleteDoc(doc(db,"moneyReadyBoard",d.id));
     }
 
+    const signaturePayload={
+      strokes:pickupSignatureStrokes,
+      signedAtLocal:new Date().toISOString()
+    };
+
     if(submissionId){
       try{
         await updateDoc(doc(db,"submissions",submissionId),{
           pickupStatus:"picked_up",
           pickedUpAt:serverTimestamp(),
           pickedUpBy:currentProfile.displayName||currentProfile.username,
+          pickupSignature:signaturePayload,
           updatedAt:serverTimestamp()
         });
       }catch(e){ console.warn("Submission pickup update:",e); }
@@ -1788,19 +1922,26 @@ window.markMoneyPickedUp=async function(reportId,submissionId,employee){
         await updateDoc(doc(db,"hourlyReports",reportId),{
           pickupStatus:"picked_up",
           pickedUpAt:serverTimestamp(),
-          pickedUpBy:currentProfile.displayName||currentProfile.username
+          pickedUpBy:currentProfile.displayName||currentProfile.username,
+          pickupSignature:signaturePayload,
+          signatureStatus:"SIGNED"
         });
       }catch(e){ console.warn("Report pickup update:",e); }
     }
 
     try{
-      await writeAudit("money_picked_up",reportId||submissionId||"",employee||"",{
+      await writeAudit("money_picked_up_signed",reportId||submissionId||"",employee||"",{
         submissionId:submissionId||"",
-        deletedBoardDocs:matches.length
+        deletedBoardDocs:matches.length,
+        signaturePoints:pointCount
       });
     }catch(e){}
 
-    alert(`Picked Up complete. Removed ${matches.length} Server Room board item(s).`);
+    $("pickupSignatureModal").classList.add("hidden");
+    pendingPickup=null;
+    pickupSignatureStrokes=[];
+
+    alert(`Picked Up complete. Signature saved. Removed ${matches.length} Server Room board item(s).`);
   }catch(e){
     console.error("Picked Up:",e);
     alert(`Picked Up failed: ${e.code||e.message}`);
@@ -1843,7 +1984,7 @@ function renderFinalDailyByName(){
             <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
               <div>
                 <b style="font-size:18px">${esc(r.date||"")} • ${esc(r.shift||"")}</b>
-                <div class="small">${esc(r.position||"")} • MONEY READY</div>
+                <div class="small">${esc(r.position||"")} • MONEY READY ${r.pickupSignature?.strokes?.length?"• Pickup Signature: SIGNED":""}</div>
               </div>
               <div class="actions">
                 <button class="btn light" type="button" onclick="editHourlyReport('${r.id}')">Edit</button>
@@ -2381,3 +2522,5 @@ document.addEventListener("change",e=>{
 // V11.3.1: fixed missing getDocs import for Picked Up and History Delete All/Undo All.
 
 // V11.4: bartender AM / 2PM-4PM / PM server 1-9 Grand Total calculator using Fred formula at 0.6%; cash tip remains excluded from payout.
+
+// V11.5: Picked Up opens employee signature pad; signature strokes are stored and rendered into Final Report PDF.
