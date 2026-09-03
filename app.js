@@ -1419,6 +1419,7 @@ window.shareAllReportsPdf=async function(target){
 
 
 
+
 function finalGroupId(name){
   return "finalName_"+Array.from(new TextEncoder().encode(name))
     .map(b=>b.toString(16).padStart(2,"0")).join("");
@@ -1430,9 +1431,16 @@ function syncOwnerFinalControls(){
 }
 
 window.clearAllFinalDailyReports=async function(){
-  if(currentProfile?.role!=="owner"){ alert("Owner only."); return; }
-  if(!latestHourlyReports.length){ alert("No Final Daily Reports to clear."); return; }
-  if(!confirm(`CLEAR ALL FINAL DAILY REPORTS?\n\nThis permanently deletes ${latestHourlyReports.length} finalized report(s).\n\nOwner only. This cannot be undone.`)) return;
+  if(currentProfile?.role!=="owner"){
+    alert("Owner only.");
+    return;
+  }
+  if(!latestHourlyReports.length){
+    alert("No Final Daily Reports to clear.");
+    return;
+  }
+  if(!confirm(`CLEAR ALL FINAL DAILY REPORTS?\n\nDelete ${latestHourlyReports.length} finalized report(s)?\n\nOWNER ONLY — this cannot be undone.`)) return;
+
   try{
     const rows=[...latestHourlyReports];
     for(const r of rows){
@@ -1460,19 +1468,23 @@ function renderFinalDailyByName(){
   syncOwnerFinalControls();
   const el=$("finalDailyByName");
   if(!el) return;
+
   const rows=[...latestHourlyReports].sort((a,b)=>{
     const n=(a.employee||"").localeCompare(b.employee||"");
     return n || String(b.date||"").localeCompare(String(a.date||""));
   });
+
   if(!rows.length){
     el.innerHTML='<div class="notice">No finalized reports yet.</div>';
     return;
   }
+
   const groups={};
   rows.forEach(r=>{
     const name=r.employee||"Unknown Employee";
     (groups[name]||(groups[name]=[])).push(r);
   });
+
   el.innerHTML=Object.entries(groups).map(([name,list])=>`
     <div class="final-name-card">
       <button class="final-name-row" type="button" onclick="toggleFinalEmployee('${encodeURIComponent(name)}')">
@@ -1501,10 +1513,12 @@ function renderFinalDailyByName(){
               <div class="kpi"><span>Grand Total</span><b>${fmtMoney(r.grandTotal)}</b></div>
               <div class="kpi"><span>Total AM</span><b>${fmtMoney(r.totalAM)}</b></div>
               <div class="kpi"><span>Total PM</span><b>${fmtMoney(r.totalPM)}</b></div>
+              <div class="kpi"><span>Total Tips</span><b>${fmtMoney(r.totalTips)}</b></div>
               <div class="kpi"><span>Paid Tip</span><b>${fmtMoney(r.paidTip)}</b></div>
               <div class="kpi"><span>Busser Rate</span><b>${fmtPct(r.busserRate)}</b></div>
               <div class="kpi"><span>Busser Tip Out</span><b>${fmtMoney(r.busserTipOut)}</b></div>
               <div class="kpi"><span>Bar Tip Out</span><b>${fmtMoney(r.barTipOut)}</b></div>
+              <div class="kpi"><span>Meal</span><b>${fmtMoney(r.meal)}</b></div>
               <div class="kpi"><span>Hourly Adjustment</span><b>${fmtMoney(r.adjustmentSalaryHourly)}</b></div>
               <div class="kpi"><span>TOTAL PAID OUT</span><b>${fmtMoney(r.totalPaidOut)}</b></div>
             </div>
@@ -1529,12 +1543,10 @@ function listenHourlyReports(){
   unsubs.push(onSnapshot(q,snap=>{
     latestHourlyReports=snap.docs.map(d=>({id:d.id,...d.data()}));
     renderFinalDailyByName();
-
-    // Legacy container, if an older cached HTML still has it, keep it hidden.
-    const old=$("hourlyReportsList");
-    if(old){
-      old.classList.add("hidden");
-      old.innerHTML="";
+    const legacy=$("hourlyReportsList");
+    if(legacy){
+      legacy.innerHTML="";
+      legacy.classList.add("hidden");
     }
   },e=>console.error("Hourly reports:",e)));
 }

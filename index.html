@@ -362,13 +362,12 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         </div>
       </section>
 
-      
       <section id="finalDaily" class="staffPanel hidden">
         <div class="card">
           <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap">
             <div>
               <h2 style="margin:0 0 4px">Final Daily Report</h2>
-              <div class="small">Finalized reports are grouped by employee name. Click a name to view the report details.</div>
+              <div class="small">Finalized reports only. Grouped by employee name — click a name to open the details.</div>
             </div>
             <div class="actions" style="gap:8px;flex-wrap:wrap">
               <button id="clearAllFinalBtn" class="btn red hidden" type="button" onclick="clearAllFinalDailyReports()">Clear All</button>
@@ -380,7 +379,12 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
               <button class="btn light" type="button" onclick="shareAllReportsPdf('email')">Send PDF to Email</button>
             </div>
           </div>
-          <div class="notice good" style="margin-top:14px">Only Manager/Owner finalized reports appear here. <b>Clear All</b> is available to Owner only.</div>
+
+          <div class="notice good" style="margin-top:14px">
+            Final Submit from Hourly Adjustment V01 automatically moves the report here.
+            <b>Clear All</b> is Owner only.
+          </div>
+
           <div id="finalDailyByName" style="margin-top:14px"></div>
         </div>
       </section>
@@ -463,10 +467,10 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=25"></script>
+<script type="module" src="app.js?v=26"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1050"></script>
+<script type="module" src="./board-hotfix.js?v=1060"></script>
 </body>
 </html>
