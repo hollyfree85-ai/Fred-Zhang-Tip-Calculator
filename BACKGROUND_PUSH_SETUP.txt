@@ -1,0 +1,52 @@
+FRED ZHANG TIP CALCULATOR - V13.0 BACKGROUND PUSH STAGING
+
+IMPORTANT
+- BUILD 12.4.3 remains the stable production baseline.
+- Do NOT replace production until the push test is successful.
+
+STEP 1 - GET THE WEB PUSH PUBLIC VAPID KEY
+Firebase Console
+> Project Settings
+> Cloud Messaging
+> Web configuration
+> Web Push certificates
+> Generate key pair (if none exists)
+
+Copy the PUBLIC key only.
+Open push-config.js and replace:
+PASTE_WEB_PUSH_PUBLIC_VAPID_KEY_HERE
+
+STEP 2 - DEPLOY THE SEPARATE PUSH FUNCTIONS CODEBASE
+This staging pack does not replace the existing createAppUser/deleteAppUser/SMS functions.
+
+Use Firebase CLI from the folder containing functions-push:
+firebase login
+firebase use juicy-tip-all-in-one
+npm --prefix functions-push install
+firebase deploy --only functions:push --config firebase.push.json
+
+STEP 3 - UPLOAD WEB FILES TO A TEST/STAGING BRANCH OR TEST REPOSITORY FIRST
+Important files:
+index.html
+app-v1300.js
+push-config.js
+service-worker.js
+firebase-config.js
+hourly-logic.js
+board-hotfix.js
+manifest.webmanifest
+icons/audio files
+
+STEP 4 - TEST
+A) Login Manager/Owner on phone.
+B) Tap Enable Background Notifications and Allow.
+C) Login Employee on another phone.
+D) Tap Enable Background Notifications and Allow.
+E) Lock both phones.
+F) Employee submits report -> Manager/Owner should receive a push.
+G) Manager processes to Money Ready -> Employee should receive a push.
+
+iPhone/iPad:
+Install the website to Home Screen first, open it from the Home Screen icon, then enable notifications.
+
+If push setup fails, keep production BUILD 12.4.3 unchanged.

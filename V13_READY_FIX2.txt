@@ -1,0 +1,12 @@
+V13.0 Background Push READY - FIX2
+
+Fixes the Firebase deploy discovery timeout:
+- firebase-functions updated to ^7.3.0
+- firebase-admin updated to ^14.2.0
+- Admin/Firestore/Messaging initialization deferred with onInit()
+- Runtime remains Node.js 22
+
+Use a fresh extracted folder.
+Run:
+npm --prefix functions-push install
+firebase deploy --only functions:push --config firebase.push.json --project juicy-tip-all-in-one

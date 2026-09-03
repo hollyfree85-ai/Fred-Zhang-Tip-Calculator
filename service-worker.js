@@ -1,5 +1,50 @@
-const CACHE="fz-tip-v1243";
-const CORE=["./","./index.html","./app-v1243.js","./firebase-config.js","./hourly-logic.js","./manifest.webmanifest", "./money-ready-chime.wav"];
+importScripts("https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js");
+importScripts("https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js");
+
+firebase.initializeApp({
+  apiKey: "AIzaSyB7yIl1T6ufniDAhed1vGNzi8c1d-ghfFI",
+  authDomain: "juicy-tip-all-in-one.firebaseapp.com",
+  projectId: "juicy-tip-all-in-one",
+  storageBucket: "juicy-tip-all-in-one.firebasestorage.app",
+  messagingSenderId: "1018030638724",
+  appId: "1:1018030638724:web:19b945d908229f622664d1"
+});
+
+const fcmMessaging=firebase.messaging();
+
+fcmMessaging.onBackgroundMessage(payload=>{
+  const data=payload.data||{};
+  const title=data.title||"Fred Zhang Tip Calculator";
+  const body=data.body||"You have a new notification.";
+  self.registration.showNotification(title,{
+    body,
+    icon:"./icon-192.png",
+    badge:"./icon-192.png",
+    tag:data.tag||data.type||"fred-tip",
+    renotify:true,
+    data:{url:data.url||"./",type:data.type||""},
+    vibrate:[250,120,250,120,500]
+  });
+});
+
+self.addEventListener("notificationclick",event=>{
+  event.notification.close();
+  const target=new URL(event.notification.data?.url||"./",self.location.href).href;
+  event.waitUntil((async()=>{
+    const all=await clients.matchAll({type:"window",includeUncontrolled:true});
+    for(const client of all){
+      if(client.url.startsWith(self.location.origin) && "focus" in client){
+        await client.focus();
+        if("navigate" in client) await client.navigate(target);
+        return;
+      }
+    }
+    if(clients.openWindow) await clients.openWindow(target);
+  })());
+});
+
+const CACHE="fz-tip-v1300";
+const CORE=["./","./index.html","./app-v1300.js","./firebase-config.js","./push-config.js","./hourly-logic.js","./manifest.webmanifest", "./money-ready-chime.wav"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();

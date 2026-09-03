@@ -1,0 +1,2 @@
+V13.0 Background Push READY - dependency fix 1
+firebase-admin changed from ^14.0.0 to ^13.0.0 for compatibility with firebase-functions 6.6.x.

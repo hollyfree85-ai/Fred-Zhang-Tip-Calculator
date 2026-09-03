@@ -1,0 +1,3 @@
+Fred Zhang Tip Calculator V13.0 Background Push READY
+Public Web Push VAPID key inserted.
+Next step: deploy push Cloud Functions, then upload the web staging files and test on real devices.
