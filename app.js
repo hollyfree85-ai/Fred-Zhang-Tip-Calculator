@@ -1067,21 +1067,127 @@ window.deleteSubmission=async function(id){
   }catch(e){ alert(`Delete failed: ${e.code || e.message}`); }
 };
 
+
+const HISTORY_UNDO_MS=3*24*60*60*1000;
+
+function tsMillis(v){
+  try{
+    if(!v) return 0;
+    if(typeof v.toMillis==="function") return v.toMillis();
+    if(typeof v.toDate==="function") return v.toDate().getTime();
+    if(v instanceof Date) return v.getTime();
+    if(typeof v.seconds==="number") return v.seconds*1000;
+    const n=new Date(v).getTime();
+    return Number.isFinite(n)?n:0;
+  }catch(e){ return 0; }
+}
+
+function historyTime(v){
+  const ms=tsMillis(v);
+  return ms?new Date(ms).toLocaleString():"";
+}
+
+window.deleteHistoryEntry=async function(id){
+  if(currentProfile?.role!=="owner"){
+    alert("Owner only.");
+    return;
+  }
+  if(!confirm("Delete this history entry?\n\nYou can Undo for 3 days. After that it will be permanently deleted.")) return;
+
+  try{
+    await updateDoc(doc(db,"auditLogs",id),{
+      deletedAt:serverTimestamp(),
+      deletedBy:currentProfile.displayName||currentProfile.username||"Owner",
+      purgeAfter:new Date(Date.now()+HISTORY_UNDO_MS)
+    });
+  }catch(e){
+    alert(`History delete failed: ${e.code||e.message}`);
+  }
+};
+
+window.undoHistoryDelete=async function(id){
+  if(currentProfile?.role!=="owner"){
+    alert("Owner only.");
+    return;
+  }
+  try{
+    const ref=doc(db,"auditLogs",id);
+    const s=await getDoc(ref);
+    if(!s.exists()){
+      alert("This history entry has already been permanently deleted.");
+      return;
+    }
+    const r=s.data();
+    const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
+    if(r.deletedAt && purgeAt && Date.now()>purgeAt){
+      await deleteDoc(ref);
+      alert("The 3-day Undo period has expired. This entry is permanently deleted.");
+      return;
+    }
+    await updateDoc(ref,{
+      deletedAt:null,
+      deletedBy:"",
+      purgeAfter:null,
+      restoredAt:serverTimestamp(),
+      restoredBy:currentProfile.displayName||currentProfile.username||"Owner"
+    });
+  }catch(e){
+    alert(`Undo failed: ${e.code||e.message}`);
+  }
+};
+
+async function purgeExpiredHistory(rows){
+  if(currentProfile?.role!=="owner") return;
+  const now=Date.now();
+  const expired=rows.filter(r=>{
+    if(!r.deletedAt) return false;
+    const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
+    return purgeAt>0 && purgeAt<=now;
+  });
+  for(const r of expired){
+    try{ await deleteDoc(doc(db,"auditLogs",r.id)); }
+    catch(e){ console.warn("History permanent cleanup:",r.id,e); }
+  }
+}
+
 function listenHistory(){
   if(currentProfile.role!=="owner") return;
   const q=query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500));
-  unsubs.push(onSnapshot(q,snap=>{
+  unsubs.push(onSnapshot(q,async snap=>{
     const rows=snap.docs.map(d=>({id:d.id,...d.data()}));
-    $("historyBody").innerHTML=rows.length?rows.map(r=>{
-      let time="";
-      try{ time=r.createdAt?.toDate ? r.createdAt.toDate().toLocaleString() : ""; }catch(e){}
+
+    // Permanently purge soft-deleted history after the 3-day Undo window.
+    await purgeExpiredHistory(rows);
+
+    const active=rows.filter(r=>!r.deletedAt);
+    const trash=rows.filter(r=>!!r.deletedAt).filter(r=>{
+      const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
+      return !purgeAt || purgeAt>Date.now();
+    });
+
+    $("historyBody").innerHTML=active.length?active.map(r=>{
+      const time=historyTime(r.createdAt);
       return `<tr>
         <td>${esc(time)}</td><td>${esc(r.actor||"")}</td><td>${esc(r.actorRole||"")}</td>
         <td>${esc(r.action||"")}</td><td>${esc(r.employee||"")}</td>
         <td>${esc(r.submissionId||"")}</td>
         <td>${esc(JSON.stringify(r.details||{}).slice(0,300))}</td>
+        <td><button class="btn red" type="button" onclick="deleteHistoryEntry('${r.id}')">Delete</button></td>
       </tr>`;
-    }).join(""):'<tr><td colspan="7">No history yet.</td></tr>';
+    }).join(""):'<tr><td colspan="8">No active history.</td></tr>';
+
+    $("historyTrashBody").innerHTML=trash.length?trash.map(r=>{
+      const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
+      return `<tr>
+        <td>${esc(historyTime(r.deletedAt))}</td>
+        <td>${esc(historyTime(r.createdAt))}</td>
+        <td>${esc(r.actor||"")}</td>
+        <td>${esc(r.action||"")}</td>
+        <td>${esc(r.employee||"")}</td>
+        <td>${esc(purgeAt?new Date(purgeAt).toLocaleString():"")}</td>
+        <td><button class="btn green" type="button" onclick="undoHistoryDelete('${r.id}')">Undo</button></td>
+      </tr>`;
+    }).join(""):'<tr><td colspan="7">Recently Deleted is empty.</td></tr>';
   },e=>console.error("History listener:",e)));
 }
 
@@ -2115,3 +2221,5 @@ document.addEventListener("change",e=>{
 // V11.0 shared-tablet security and Money Ready cleanup.
 
 // V11.1: ALL authenticated roles use memory-only auth. Refresh/new tab/new window/shared link always requires fresh login.
+
+// V11.2: History soft delete + 3-day Undo/purge; Server Room cards auto-expire after 30 minutes.

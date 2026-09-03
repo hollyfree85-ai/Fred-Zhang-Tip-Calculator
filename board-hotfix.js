@@ -7,9 +7,22 @@ const app = getApps()[0] || initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const $ = id => document.getElementById(id);
+
+const BOARD_EXPIRE_MS=30*60*1000;
 let unsub=null, ctx=null, known=new Map(), initialized=false;
+let latestBoardRows=[];
+let expiryTimer=null;
 
 function esc(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+function toMillis(v){
+  try{
+    if(!v) return 0;
+    if(typeof v.toMillis==="function") return v.toMillis();
+    if(typeof v.toDate==="function") return v.toDate().getTime();
+    if(typeof v.seconds==="number") return v.seconds*1000;
+    return new Date(v).getTime()||0;
+  }catch(e){return 0;}
+}
 function chime(){
   ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();
   if(ctx.state==="suspended") ctx.resume();
@@ -28,7 +41,7 @@ function showNext(){
   if(showing||!qAnnouncements.length)return;
   showing=true;
   $("moneyReadyName").textContent=qAnnouncements[0]||"Employee";
-  if($("moneyReadyQueueInfo"))$("moneyReadyQueueInfo").textContent=qAnnouncements.length>1?`${qAnnouncements.length-1} more announcement(s) waiting`:"";
+  if($("moneyReadyQueueInfo")) $("moneyReadyQueueInfo").textContent=qAnnouncements.length>1?`${qAnnouncements.length-1} more announcement(s) waiting`:"";
   $("moneyReadyOverlay").classList.remove("hidden");
   chime();
 }
@@ -38,6 +51,59 @@ window.dismissMoneyReadyOverlay=()=>{
   qAnnouncements.shift();showing=false;setTimeout(showNext,200);
 };
 window.testServerRoomChime=()=>chime();
+
+function currentVisibleRows(){
+  const now=Date.now();
+  const raw=latestBoardRows
+    .filter(r=>{
+      const created=toMillis(r.createdAt)||now;
+      return (now-created)<BOARD_EXPIRE_MS;
+    })
+    .sort((a,b)=>toMillis(b.createdAt)-toMillis(a.createdAt));
+
+  // Only one card per employee.
+  const seen=new Set();
+  return raw.filter(r=>{
+    const key=String(r.employee||"").trim().toLowerCase();
+    if(!key) return true;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function renderBoard(checkAnnouncements=false){
+  const rows=currentVisibleRows();
+  if($("boardLiveInfo")){
+    $("boardLiveInfo").textContent=`LIVE • ${rows.length} employee(s) waiting • Auto-remove after 30 min • ${new Date().toLocaleTimeString()}`;
+  }
+  if($("moneyReadyList")){
+    $("moneyReadyList").innerHTML=rows.length?rows.map(r=>{
+      const created=toMillis(r.createdAt)||Date.now();
+      const expiresAt=created+BOARD_EXPIRE_MS;
+      const mins=Math.max(0,Math.ceil((expiresAt-Date.now())/60000));
+      return `<div style="background:#0f243d;border:1px solid #28445f;border-radius:18px;padding:18px">
+        <div style="font-size:12px;opacity:.7;letter-spacing:.12em">MONEY READY</div>
+        <div style="font-size:30px;font-weight:1000;margin:8px 0">${esc(r.employee||"")}</div>
+        <div style="font-size:18px;font-weight:700">Please come to Cashier</div>
+        <div style="font-size:12px;opacity:.65;margin-top:8px">Auto-removes in about ${mins} min</div>
+      </div>`;
+    }).join(""):'<div style="opacity:.65">No employees waiting for pickup.</div>';
+  }
+
+  const current=new Map(rows.map(r=>[r.id,Number(r.announceNonce||toMillis(r.createdAt)||0)]));
+  if(checkAnnouncements && initialized){
+    for(const r of rows){
+      const token=Number(r.announceNonce||toMillis(r.createdAt)||0);
+      if(!known.has(r.id) || known.get(r.id)!==token){
+        announce(r.employee);
+        break;
+      }
+    }
+  }
+  known=current;
+  initialized=true;
+}
 
 window.enableBoardHotfix=async function(){
   const err=$("boardError");
@@ -49,43 +115,23 @@ window.enableBoardHotfix=async function(){
     $("boardSetup").classList.add("hidden");
     $("boardStatus").classList.remove("hidden");
     localStorage.setItem("serverRoomBoardEnabled","1");
+
     if(unsub) unsub();
+    if(expiryTimer) clearInterval(expiryTimer);
+
     const q=query(collection(db,"moneyReadyBoard"),where("active","==",true),limit(100));
     unsub=onSnapshot(q,snap=>{
-      const cutoff=Math.floor(Date.now()/1000)-86400;
-      const rawRows=snap.docs.map(d=>({id:d.id,...d.data()}))
-        .filter(r=>(r.createdAt?.seconds||Math.floor(Date.now()/1000))>=cutoff)
-        .sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
-
-      const seenEmployees=new Set();
-      const rows=rawRows.filter(r=>{
-        const key=String(r.employee||"").trim().toLowerCase();
-        if(!key) return true;
-        if(seenEmployees.has(key)) return false;
-        seenEmployees.add(key);
-        return true;
-      });
-      $("boardLiveInfo").textContent=`LIVE • ${rows.length} money-ready report(s) • ${new Date().toLocaleTimeString()}`;
-      $("moneyReadyList").innerHTML=rows.length?rows.map(r=>`
-        <div style="background:#0f243d;border:1px solid #28445f;border-radius:18px;padding:18px">
-          <div style="font-size:12px;opacity:.7;letter-spacing:.12em">MONEY READY</div>
-          <div style="font-size:30px;font-weight:1000;margin:8px 0">${esc(r.employee||"")}</div>
-          <div style="font-size:18px;font-weight:700">Please come to Cashier</div>
-        </div>`).join(""):'<div style="opacity:.65">No employees waiting for pickup.</div>';
-
-      const current=new Map(rows.map(r=>[r.id,Number(r.announceNonce||r.createdAt?.seconds||0)]));
-      if(initialized){
-        for(const r of rows){
-          const token=Number(r.announceNonce||r.createdAt?.seconds||0);
-          if(!known.has(r.id) || known.get(r.id)!==token){ announce(r.employee); break; }
-        }
-      }
-      known=current; initialized=true;
+      latestBoardRows=snap.docs.map(d=>({id:d.id,...d.data()}));
+      renderBoard(true);
       if(err) err.textContent="";
     },e=>{
       if(err) err.textContent=`Realtime error: ${e.code||e.message}`;
       $("boardLiveInfo").textContent="NOT CONNECTED";
     });
+
+    // Even if Firestore has no new snapshot, cards disappear automatically at 30 minutes.
+    expiryTimer=setInterval(()=>renderBoard(false),15000);
+
   }catch(e){
     if(err) err.textContent=`Board failed: ${e.code||e.message}`;
     alert(`Board failed: ${e.code||e.message}`);
