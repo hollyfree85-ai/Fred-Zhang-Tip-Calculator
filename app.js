@@ -1276,6 +1276,11 @@ window.loadSubmissionToHourly=function(id){
   $("hCardFee").value=Number(r.cardFee||0);
   $("hAmBar").value=r.barSalesAM?"yes":"no";
   $("hPmBar").value=r.barSalesPM?"yes":"no";
+  for(let i=1;i<=9;i++){
+    if($(`hBtServerName${i}`)) $(`hBtServerName${i}`).value="";
+    if($(`hBtServerGrand${i}`)) $(`hBtServerGrand${i}`).value="";
+  }
+  if($("hBartenderShiftType")) $("hBartenderShiftType").value="AM";
   syncHourlyShift();
   const c=parseClockParts(r);
   if($("hShift").value==="DOUBLE"){
@@ -1321,6 +1326,11 @@ function reportRowsForExport(){
     pmBarSales:Boolean(r.pmBarSales??r.barSalesPM),
     pmBarTip:Number(r.pmBarTipOut??r.barTipPM??0),
     barTipOut:Number(r.barTipOut||0),
+    bartenderShiftType:r.bartenderShiftType||"",
+    bartenderServerGrandTotalSummary:Number(r.bartenderServerGrandTotalSummary||0),
+    bartenderGrossBarTipOut:Number(r.bartenderGrossBarTipOut||0),
+    bartenderLessAM:Number(r.bartenderLessAM||0),
+    bartenderLess24:Number(r.bartenderLess24||0),
     bartenderBarTipReceived:Number(r.bartenderBarTipReceived||0),
     totalBeforeMeal:Number(r.totalBeforeMeal||0),
     cashTip:Number(r.cashTip||0),
@@ -1357,7 +1367,7 @@ function xlsBlob(rows){
     "Hour In AM","Hour Out AM","Hour In PM","Hour Out PM","Total Hours Work",
     "Grand Total","Total AM","Total PM","Total Tips","Pay Card Tip Fee","Paid Tip",
     "Busser Rate %","Busser Tip Out","AM Bar Sales","AM Bar Tip","PM Bar Sales","PM Bar Tip",
-    "Bar Tip Out","Bar Tip Out Received","Total Before Meal","Cash Tip","Grand Total Tip","Hourly Rate","Hourly Minimum",
+    "Bar Tip Out","Bartender Shift","Server Sales Summary","Gross @ 0.6%","Less Bartender AM","Less Bartender 2-4","Bar Tip Out Received","Total Before Meal","Cash Tip","Grand Total Tip","Hourly Rate","Hourly Minimum",
     "Adjustment Salary Hourly","Adjustment Decision","Grand Total After Adjustment","Meal",
     "Total Paid Out","Signature Status","Signed At","Status","Finalized By"
   ];
@@ -1411,6 +1421,11 @@ function xlsBlob(rows){
         xlsCellString(r.pmBarSales?"YES":"NO","Body"),
         xlsCellNumber(r.pmBarTip,"Money14"),
         xlsCellNumber(r.barTipOut,"Money14"),
+        xlsCellString((r.bartenderShiftType||"").replace("2PM_4PM","2 PM - 4 PM"),"Body"),
+        xlsCellNumber(r.bartenderServerGrandTotalSummary,"Money14"),
+        xlsCellNumber(r.bartenderGrossBarTipOut,"Money14"),
+        xlsCellNumber(r.bartenderLessAM,"Money14"),
+        xlsCellNumber(r.bartenderLess24,"Money14"),
         xlsCellNumber(r.bartenderBarTipReceived,"Money14"),
         xlsCellNumber(r.totalBeforeMeal,"Money14"),
         xlsCellNumber(r.cashTip,"Money14"),
@@ -1531,6 +1546,11 @@ function pdfReportContent(r,index,total){
     ["PM Bar Sales",pdfBool(r.pmBarSales)],
     ["PM Bar Tip",pdfMoney(r.pmBarTip)],
     ["Bar Tip Out",pdfMoney(r.barTipOut)],
+    ["Bartender Shift",String(r.bartenderShiftType||"").replace("2PM_4PM","2 PM - 4 PM")],
+    ["Server Sales Summary",pdfMoney(r.bartenderServerGrandTotalSummary)],
+    ["Gross @ 0.6%",pdfMoney(r.bartenderGrossBarTipOut)],
+    ["Less Bartender AM",pdfMoney(r.bartenderLessAM)],
+    ["Less Bartender 2-4",pdfMoney(r.bartenderLess24)],
     ["Bar Tip Out Received",pdfMoney(r.bartenderBarTipReceived)],
     ["Total Before Meal",pdfMoney(r.totalBeforeMeal)],
     ["Cash Tip",pdfMoney(r.cashTip)],
@@ -1842,7 +1862,13 @@ function renderFinalDailyByName(){
               <div class="kpi"><span>Busser Rate</span><b>${fmtPct(r.busserRate)}</b></div>
               <div class="kpi"><span>Busser Tip Out</span><b>${fmtMoney(r.busserTipOut)}</b></div>
               <div class="kpi"><span>Bar Tip Out</span><b>${fmtMoney(r.barTipOut)}</b></div>
-              ${String(r.position||"").toLowerCase()==="bartender"?`<div class="kpi"><span>Bar Tip Out Received</span><b>${fmtMoney(r.bartenderBarTipReceived)}</b></div>`:""}
+              ${String(r.position||"").toLowerCase()==="bartender"?`
+              <div class="kpi"><span>Bartender Shift</span><b>${esc((r.bartenderShiftType||"").replace("2PM_4PM","2 PM - 4 PM"))}</b></div>
+              <div class="kpi"><span>Server Sales Summary</span><b>${fmtMoney(r.bartenderServerGrandTotalSummary)}</b></div>
+              <div class="kpi"><span>Gross @ 0.6%</span><b>${fmtMoney(r.bartenderGrossBarTipOut)}</b></div>
+              <div class="kpi"><span>Less Bartender AM</span><b>${fmtMoney(r.bartenderLessAM)}</b></div>
+              <div class="kpi"><span>Less Bartender 2-4</span><b>${fmtMoney(r.bartenderLess24)}</b></div>
+              <div class="kpi"><span>Bar Tip Out Received</span><b>${fmtMoney(r.bartenderBarTipReceived)}</b></div>`:""}
               <div class="kpi"><span>Meal</span><b>${fmtMoney(r.meal)}</b></div>
               <div class="kpi"><span>Hourly Adjustment</span><b>${fmtMoney(r.adjustmentSalaryHourly)}</b></div>
               <div class="kpi"><span>TOTAL PAID OUT</span><b>${fmtMoney(r.totalPaidOut)}</b></div>
@@ -1928,6 +1954,16 @@ window.editHourlyReport=function(id){
   $("hAmBar").value=(r.barSalesAM||r.amBarSales)?"yes":"no";
   $("hPmBar").value=(r.barSalesPM||r.pmBarSales)?"yes":"no";
   syncHourlyShift();
+  if(String(r.position||"").toLowerCase()==="bartender"){
+    if($("hBartenderShiftType")) $("hBartenderShiftType").value=r.bartenderShiftType||"AM";
+    const entries=Array.isArray(r.bartenderServerEntries)?r.bartenderServerEntries:[];
+    for(let i=1;i<=9;i++){
+      const e=entries.find(x=>Number(x.slot)===i)||entries[i-1]||{};
+      if($(`hBtServerName${i}`)) $(`hBtServerName${i}`).value=e.name||"";
+      if($(`hBtServerGrand${i}`)) $(`hBtServerGrand${i}`).value=Number(e.grandTotal||0)||"";
+    }
+    calculateBartenderBarTipOut();
+  }
   const hrs=r.hours||{};
   $("hIn").value=hrs.hourIn||"";
   $("hOut").value=hrs.hourOut||"";
@@ -1990,12 +2026,83 @@ $("hPosition").addEventListener("change",syncHourlyShift);
 $("hDate").addEventListener("change",applyAutomaticBusserRule);
 
 
+
+function bartenderServerEntries(){
+  const out=[];
+  for(let i=1;i<=9;i++){
+    const name=String($(`hBtServerName${i}`)?.value||"").trim();
+    const grandTotal=Number($(`hBtServerGrand${i}`)?.value||0);
+    out.push({slot:i,name,grandTotal:Number.isFinite(grandTotal)?grandTotal:0});
+  }
+  return out;
+}
+
+function previousBartenderReceived(date,type){
+  const matches=(latestHourlyReports||[])
+    .filter(r=>String(r.position||"").toLowerCase()==="bartender")
+    .filter(r=>String(r.date||"")===String(date||""))
+    .filter(r=>String(r.bartenderShiftType||"")===type)
+    .sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+  return Number(matches[0]?.bartenderBarTipReceived||0);
+}
+
+function calculateBartenderBarTipOut(){
+  const isBartender=String($("hPosition")?.value||"").toLowerCase()==="bartender";
+  if(!isBartender) return {
+    bartenderShiftType:"",serverEntries:[],serverGrandTotalSummary:0,
+    grossBarTipOut:0,lessBartenderAM:0,lessBartender24:0,bartenderBarTipReceived:0
+  };
+
+  const type=$("hBartenderShiftType")?.value||"AM";
+  const date=$("hDate")?.value||"";
+  const serverEntries=bartenderServerEntries();
+  const summary=serverEntries.reduce((s,r)=>s+Number(r.grandTotal||0),0);
+  const gross=summary*0.006;
+
+  const lessAM=type==="AM"?0:previousBartenderReceived(date,"AM");
+  const less24=type==="PM"?previousBartenderReceived(date,"2PM_4PM"):0;
+
+  let finalReceived=type==="AM" ? gross
+    : type==="2PM_4PM" ? gross-lessAM
+    : gross-lessAM-less24;
+
+  finalReceived=Math.max(0,finalReceived);
+
+  if($("hBtServerSummary")) $("hBtServerSummary").textContent=fmtMoney(summary);
+  if($("hBtGross")) $("hBtGross").textContent=fmtMoney(gross);
+  if($("hBtLessAM")) $("hBtLessAM").textContent=fmtMoney(lessAM);
+  if($("hBtLess24")) $("hBtLess24").textContent=fmtMoney(less24);
+  if($("hBtFinal")) $("hBtFinal").textContent=fmtMoney(finalReceived);
+  if($("hBartenderBarReceived")) $("hBartenderBarReceived").value=finalReceived.toFixed(2);
+
+  return {
+    bartenderShiftType:type,
+    serverEntries,
+    serverGrandTotalSummary:summary,
+    grossBarTipOut:gross,
+    lessBartenderAM:lessAM,
+    lessBartender24:less24,
+    bartenderBarTipReceived:finalReceived
+  };
+}
+
 function syncBartenderBarReceivedField(){
   const wrap=$("hBartenderBarReceivedWrap");
   if(!wrap) return;
   const isBartender=String($("hPosition")?.value||"").toLowerCase()==="bartender";
   wrap.classList.toggle("hidden",!isBartender);
-  if(!isBartender && $("hBartenderBarReceived")) $("hBartenderBarReceived").value="";
+  if(!isBartender){
+    if($("hBartenderBarReceived")) $("hBartenderBarReceived").value="0";
+    return;
+  }
+  calculateBartenderBarTipOut();
+}
+
+
+$("hBartenderShiftType")?.addEventListener("change",calculateBartenderBarTipOut);
+for(let i=1;i<=9;i++){
+  $(`hBtServerGrand${i}`)?.addEventListener("input",calculateBartenderBarTipOut);
+  $(`hBtServerName${i}`)?.addEventListener("input",calculateBartenderBarTipOut);
 }
 
 window.calculateHourlyV01=function(){
@@ -2028,21 +2135,27 @@ window.calculateHourlyV01=function(){
     pmBarSales:$("hPmBar").value==="yes"
   });
 
-  // Bartender receives server bar tip-outs as additional tip income.
-  // The original V01 engine remains untouched; this is added after its normal calculation.
+  // Bartender Bar Tip Out Received: Fred's AM / 2 PM-4 PM / PM formula.
+  const bt=calculateBartenderBarTipOut();
   const bartenderBarTipReceived=
     String($("hPosition").value||"").toLowerCase()==="bartender"
-      ? Number($("hBartenderBarReceived")?.value||0)
+      ? Number(bt.bartenderBarTipReceived||0)
       : 0;
 
+  lastHourlyResult.bartenderShiftType=bt.bartenderShiftType||"";
+  lastHourlyResult.bartenderServerEntries=bt.serverEntries||[];
+  lastHourlyResult.bartenderServerGrandTotalSummary=Number(bt.serverGrandTotalSummary||0);
+  lastHourlyResult.bartenderGrossBarTipOut=Number(bt.grossBarTipOut||0);
+  lastHourlyResult.bartenderLessAM=Number(bt.lessBartenderAM||0);
+  lastHourlyResult.bartenderLess24=Number(bt.lessBartender24||0);
+  lastHourlyResult.bartenderBarTipReceived=bartenderBarTipReceived;
+
   if(bartenderBarTipReceived>0){
-    lastHourlyResult.bartenderBarTipReceived=bartenderBarTipReceived;
+    // Added to bartender payout. Cash Tip is still excluded from TOTAL PAID OUT.
     lastHourlyResult.grandTotalTip=Number(lastHourlyResult.grandTotalTip||0)+bartenderBarTipReceived;
     lastHourlyResult.totalBeforeMeal=Number(lastHourlyResult.totalBeforeMeal||0)+bartenderBarTipReceived;
     lastHourlyResult.grandTotalAfterAdjustment=Number(lastHourlyResult.grandTotalAfterAdjustment||0)+bartenderBarTipReceived;
     lastHourlyResult.totalPaidOut=Number(lastHourlyResult.totalPaidOut||0)+bartenderBarTipReceived;
-  }else{
-    lastHourlyResult.bartenderBarTipReceived=0;
   }
 
   const r=lastHourlyResult;
@@ -2266,3 +2379,5 @@ document.addEventListener("change",e=>{
 // V11.3: Owner History Delete All/Undo All; Picked Up deletes all matching board docs; board documents are physically deleted after 30 minutes.
 
 // V11.3.1: fixed missing getDocs import for Picked Up and History Delete All/Undo All.
+
+// V11.4: bartender AM / 2PM-4PM / PM server 1-9 Grand Total calculator using Fred formula at 0.6%; cash tip remains excluded from payout.
