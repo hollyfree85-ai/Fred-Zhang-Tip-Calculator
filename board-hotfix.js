@@ -25,8 +25,18 @@ function toMillis(v){
 }
 
 
+
 let boardVoiceUnlocked=false;
+let boardAudioUnlocked=false;
 let boardVoicesReady=false;
+
+function setBoardAudioStatus(msg,ok=true){
+  const el=document.getElementById("boardAudioStatus");
+  if(el){
+    el.textContent=msg;
+    el.style.color=ok?"#08723c":"#a61b1b";
+  }
+}
 
 function warmBoardVoices(){
   if(!("speechSynthesis" in window)) return;
@@ -38,36 +48,11 @@ function warmBoardVoices(){
   window.speechSynthesis.onvoiceschanged=load;
 }
 
-function unlockBoardVoice(){
-  if(!("speechSynthesis" in window)) return false;
-  try{
-    warmBoardVoices();
-
-    // Browsers may block later speech unless speech synthesis has first been
-    // started from a direct user gesture. The Enable Board button provides that gesture.
-    window.speechSynthesis.cancel();
-    const u=new SpeechSynthesisUtterance("Voice alerts enabled.");
-    u.lang="en-US";
-    u.volume=0.85;
-    u.rate=1.0;
-    u.pitch=1.0;
-    const v=chooseBoardVoice();
-    if(v) u.voice=v;
-    window.speechSynthesis.speak(u);
-    boardVoiceUnlocked=true;
-    localStorage.setItem("serverRoomVoiceEnabled","1");
-    return true;
-  }catch(e){
-    console.warn("Voice unlock:",e);
-    return false;
-  }
-}
-
 function chooseBoardVoice(){
   if(!("speechSynthesis" in window)) return null;
   const voices=window.speechSynthesis.getVoices()||[];
   const english=voices.filter(v=>/^en[-_]/i.test(v.lang||""));
-  const preferred=["Samantha","Ava","Victoria","Karen","Zira","Jenny","Aria","Emma","Michelle","Salli","Joanna"];
+  const preferred=["Samantha","Ava","Victoria","Karen","Zira","Jenny","Aria","Emma","Michelle","Salli","Joanna","Kendra"];
   for(const name of preferred){
     const v=english.find(x=>String(x.name||"").toLowerCase().includes(name.toLowerCase()));
     if(v) return v;
@@ -75,8 +60,44 @@ function chooseBoardVoice(){
   return english[0]||voices[0]||null;
 }
 
+async function ensureBoardAudioContext(){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC) throw new Error("This browser does not support Web Audio.");
+  ctx=ctx||new AC();
+  if(ctx.state==="suspended") await ctx.resume();
+  return ctx.state==="running";
+}
+
+async function playBoardChime(){
+  try{
+    const running=await ensureBoardAudioContext();
+    if(!running){
+      setBoardAudioStatus("Audio is blocked. Tap Enable Audio + Voice.",false);
+      return false;
+    }
+    const now=ctx.currentTime;
+    [659.25,783.99,987.77].forEach((f,i)=>{
+      const o=ctx.createOscillator(),g=ctx.createGain();
+      o.frequency.value=f;o.type="sine";
+      g.gain.setValueAtTime(.0001,now+i*.20);
+      g.gain.exponentialRampToValueAtTime(.28,now+i*.20+.03);
+      g.gain.exponentialRampToValueAtTime(.0001,now+i*.20+.48);
+      o.connect(g);g.connect(ctx.destination);
+      o.start(now+i*.20);o.stop(now+i*.20+.53);
+    });
+    return true;
+  }catch(e){
+    console.warn("Board chime:",e);
+    setBoardAudioStatus(`Sound error: ${e.message||e}`,false);
+    return false;
+  }
+}
+
 function speakBoardMoneyReady(name){
-  if(!("speechSynthesis" in window)) return;
+  if(!("speechSynthesis" in window)){
+    setBoardAudioStatus("Voice is not supported by this browser.",false);
+    return;
+  }
 
   const doSpeak=()=>{
     try{
@@ -87,43 +108,69 @@ function speakBoardMoneyReady(name){
       if(v) u.voice=v;
       u.lang=v?.lang||"en-US";
       u.rate=.90;
-      u.pitch=1.08;
+      u.pitch=1.06;
       u.volume=1;
 
-      u.onerror=(e)=>{
-        console.warn("Board speech error:",e);
-        const err=document.getElementById("boardError");
-        if(err) err.textContent=`Voice error: ${e.error||"speech failed"}`;
-      };
-
+      u.onstart=()=>setBoardAudioStatus("Audio + Voice enabled for this browser session.",true);
+      u.onerror=(e)=>setBoardAudioStatus(`Voice error: ${e.error||"speech failed"}`,false);
       window.speechSynthesis.speak(u);
     }catch(e){
-      console.warn("Board speech:",e);
+      setBoardAudioStatus(`Voice error: ${e.message||e}`,false);
     }
   };
 
-  // Voice lists can load asynchronously in Chrome/Windows.
   if((window.speechSynthesis.getVoices()||[]).length){
     doSpeak();
   }else{
     warmBoardVoices();
-    setTimeout(doSpeak,500);
+    setTimeout(doSpeak,650);
   }
 }
 
-function chime(){
-  ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();
-  if(ctx.state==="suspended") ctx.resume();
-  const now=ctx.currentTime;
-  [659.25,783.99,987.77].forEach((f,i)=>{
-    const o=ctx.createOscillator(),g=ctx.createGain();
-    o.frequency.value=f;o.type="sine";
-    g.gain.setValueAtTime(.0001,now+i*.2);
-    g.gain.exponentialRampToValueAtTime(.2,now+i*.2+.03);
-    g.gain.exponentialRampToValueAtTime(.0001,now+i*.2+.5);
-    o.connect(g);g.connect(ctx.destination);o.start(now+i*.2);o.stop(now+i*.2+.55);
+window.unlockServerRoomAudio=async function(){
+  try{
+    const ok=await playBoardChime(); // direct user gesture unlocks WebAudio
+    warmBoardVoices();
+
+    if("speechSynthesis" in window){
+      window.speechSynthesis.cancel();
+      const u=new SpeechSynthesisUtterance("Audio and voice alerts are enabled.");
+      const v=chooseBoardVoice();
+      if(v) u.voice=v;
+      u.lang=v?.lang||"en-US";
+      u.rate=.95;
+      u.pitch=1.05;
+      u.volume=1;
+      window.speechSynthesis.speak(u);
+      boardVoiceUnlocked=true;
+    }
+
+    boardAudioUnlocked=!!ok;
+    setBoardAudioStatus(
+      boardAudioUnlocked
+        ? "Audio + Voice enabled for this browser session."
+        : "Audio is still blocked. Check device volume and Chrome site sound permission.",
+      boardAudioUnlocked
+    );
+  }catch(e){
+    setBoardAudioStatus(`Enable failed: ${e.message||e}`,false);
+  }
+};
+
+window.testServerRoomAudio=async function(){
+  const ok=await playBoardChime();
+  if(ok) setBoardAudioStatus("Sound test played successfully.",true);
+};
+
+window.testServerRoomChime=window.testServerRoomAudio;
+
+window.testBoardVoice=function(){
+  // This click itself is a user gesture, so unlock first then speak test phrase.
+  window.unlockServerRoomAudio().then(()=>{
+    setTimeout(()=>speakBoardMoneyReady("Sarah Kibler"),750);
   });
-}
+};
+
 let qAnnouncements=[],showing=false;
 function showNext(){
   if(showing||!qAnnouncements.length)return;
@@ -131,7 +178,7 @@ function showNext(){
   $("moneyReadyName").textContent=qAnnouncements[0]||"Employee";
   if($("moneyReadyQueueInfo")) $("moneyReadyQueueInfo").textContent=qAnnouncements.length>1?`${qAnnouncements.length-1} more announcement(s) waiting`:"";
   $("moneyReadyOverlay").classList.remove("hidden");
-  chime();
+  playBoardChime();
   setTimeout(()=>speakBoardMoneyReady(qAnnouncements[0]),650);
 }
 function announce(name){qAnnouncements.push(name||"Employee");showNext();}
@@ -210,7 +257,7 @@ function renderBoard(checkAnnouncements=false){
 window.enableBoardHotfix=async function(){
   const err=$("boardError");
   try{
-    unlockBoardVoice();
+
     if(err) err.textContent="Connecting...";
     if(!auth.currentUser) await signInAnonymously(auth);
     ctx=ctx||new (window.AudioContext||window.webkitAudioContext)();
@@ -218,6 +265,7 @@ window.enableBoardHotfix=async function(){
     $("boardSetup").classList.add("hidden");
     $("boardStatus").classList.remove("hidden");
     localStorage.setItem("serverRoomBoardEnabled","1");
+    setBoardAudioStatus("Board connected. Tap Enable Audio + Voice once for this browser session.",false);
 
     if(unsub) unsub();
     if(expiryTimer) clearInterval(expiryTimer);

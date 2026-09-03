@@ -91,7 +91,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.1.4</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.2</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -152,7 +152,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
       <button class="btn light" onclick="closeServerRoomBoard()">Back</button>
     </div>
     <div id="boardSetup" class="notice" style="background:#fff7df;color:#7a5200;margin-bottom:16px">
-      Tap <b>Enable Board + Sound + Voice</b> once on this tablet. The first tap unlocks browser audio and voice announcements.
+      Tap <b>Enable Board + Sound + Voice</b> to connect the board. Then tap <b>Enable Audio + Voice</b> once each browser session so Chrome allows automatic announcements.
       <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
   <button class="btn gold" type="button" onclick="enableBoardHotfix()">Enable Board + Sound + Voice</button>
   <button class="btn light" type="button" onclick="testServerRoomChime()">Test Chime</button><button class="btn light" type="button" onclick="testBoardVoice()">Test Voice</button>
@@ -163,6 +163,12 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
       <b>Board is active.</b> Waiting for Money Ready...
       <div class="small" style="margin-top:4px;opacity:.72">Picked Up removes the employee immediately. If not picked up, the Server Room card automatically disappears after 30 minutes.</div>
 <div id="boardLiveInfo" class="small" style="margin-top:6px"></div>
+      <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn gold" type="button" onclick="unlockServerRoomAudio()">Enable Audio + Voice</button>
+        <button class="btn light" type="button" onclick="testServerRoomAudio()">Test Sound</button>
+        <button class="btn light" type="button" onclick="testBoardVoice()">Test Voice</button>
+      </div>
+      <div id="boardAudioStatus" class="small" style="margin-top:8px;font-weight:800"></div>
     </div>
     <div id="moneyReadyList" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px"></div>
   </div>
@@ -613,11 +619,11 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1214.js"></script>
+<script type="module" src="app-v1220.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1214"></script>
+<script type="module" src="./board-hotfix.js?v=1220"></script>
 
 <div id="pickupSignatureModal" class="hidden" style="position:fixed;inset:0;background:rgba(3,13,27,.72);z-index:99999;display:none;align-items:center;justify-content:center;padding:18px">
   <div style="background:white;color:#0b1830;border-radius:20px;width:min(760px,96vw);padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.35)">

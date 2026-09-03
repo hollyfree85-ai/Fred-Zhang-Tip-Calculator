@@ -1,5 +1,5 @@
-const CACHE="fz-tip-v1214";
-const CORE=["./","./index.html","./app-v1214.js","./firebase-config.js","./hourly-logic.js","./manifest.webmanifest"];
+const CACHE="fz-tip-v1220";
+const CORE=["./","./index.html","./app-v1220.js","./firebase-config.js","./hourly-logic.js","./manifest.webmanifest"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();
