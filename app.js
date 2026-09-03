@@ -627,12 +627,15 @@ function listenEmployee(){
     // Employee current list contains only items still in process.
     const active=rows.filter(r=>r.status!=="money_ready").slice(0,10);
     $("mySubmissions").innerHTML=active.length?active.map(r=>`
-      <div style="padding:10px 0;border-bottom:1px solid #edf0f4">
-        <b>${esc(r.date)} • ${esc(r.shift)}</b>
-        <div class="small">${esc(r.clock)} • Grand ${fmtMoney(r.grandTotal)}
-        ${["DOUBLE","LONG"].includes(r.shift)?` • AM ${fmtMoney(r.totalAM)}`:""}
-        • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}
-        • <span class="status ${esc(r.status)}">${esc(r.status)}</span></div>
+      <div style="padding:12px 0;border-bottom:1px solid #edf0f4;display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap">
+        <div style="min-width:0;flex:1">
+          <b>${esc(r.date)} • ${esc(r.shift)}</b>
+          <div class="small">${esc(r.clock)} • Grand ${fmtMoney(r.grandTotal)}
+          ${["DOUBLE","LONG"].includes(r.shift)?` • AM ${fmtMoney(r.totalAM)}`:""}
+          • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}
+          • <span class="status ${esc(r.status)}">${esc(r.status)}</span></div>
+        </div>
+        <button class="btn red" type="button" onclick="deleteMySubmission('${r.id}')">Delete</button>
       </div>`).join(""):'<div class="small">No report currently in process.</div>';
 
     if(latestFinal && !sessionStorage.getItem("moneyReady:"+latestFinal.id)){
@@ -643,6 +646,51 @@ function listenEmployee(){
     }
   },e=>console.error("Employee listener:",e)));
 }
+
+
+window.deleteMySubmission=async function(id){
+  if(currentProfile?.role!=="employee"){
+    alert("Employee account required.");
+    return;
+  }
+
+  try{
+    const ref=doc(db,"submissions",id);
+    const snap=await getDoc(ref);
+
+    if(!snap.exists()){
+      alert("This report no longer exists.");
+      return;
+    }
+
+    const before=snap.data();
+
+    if(before.employeeUid!==currentUser.uid){
+      alert("You can only delete your own report.");
+      return;
+    }
+
+    if(before.status==="money_ready"){
+      alert("A finalized Money Ready report cannot be deleted by Employee. Please contact Manager/Owner.");
+      return;
+    }
+
+    const label=`${before.date||""} • ${before.shift||""}`;
+    if(!confirm(`Delete your report?\n\n${label}\n\nThis removes only this report. It does NOT delete your employee account.`)) return;
+
+    await deleteDoc(ref);
+
+    try{
+      await writeAudit("employee_delete_own_submission",id,before.employee||currentProfile.displayName||"",{before});
+    }catch(e){
+      console.warn("Audit log skipped after employee delete:",e);
+    }
+
+    alert("Your report was deleted.");
+  }catch(e){
+    alert(`Delete failed: ${e.code||e.message}`);
+  }
+};
 
 function notifyManager(r){
   if(typeof Notification!=="undefined" && Notification.permission==="granted"){
@@ -1943,3 +1991,5 @@ function selectZeroOnFocus(el){
 // V10.5: PDF rebuilt in legacy Fred Zhang one-employee-per-page report layout; XLS rebuilt as styled Excel XML matching legacy Daily Report columns. Busser Rate export fixed (1.500%, not 150%).
 
 // V10.7 REPORT STYLE: original Fred Zhang report layout restored; main PDF values 14pt; Excel Arial 14; network-first code cache.
+
+// V10.8: Employee can delete only their own non-final submission from Current / Pending Report.
