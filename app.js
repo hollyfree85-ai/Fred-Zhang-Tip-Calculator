@@ -1087,52 +1087,55 @@ function historyTime(v){
   return ms?new Date(ms).toLocaleString():"";
 }
 
-window.deleteHistoryEntry=async function(id){
+
+window.deleteAllHistory=async function(){
   if(currentProfile?.role!=="owner"){
     alert("Owner only.");
     return;
   }
-  if(!confirm("Delete this history entry?\n\nYou can Undo for 3 days. After that it will be permanently deleted.")) return;
+  const qSnap=await getDocs(query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500)));
+  const rows=qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!r.deletedAt);
+  if(!rows.length){
+    alert("No active history to delete.");
+    return;
+  }
+  if(!confirm(`DELETE ALL OWNER CHANGE HISTORY?\n\n${rows.length} history entries will move to Recently Deleted.\nYou can Undo All for 3 days.`)) return;
 
-  try{
-    await updateDoc(doc(db,"auditLogs",id),{
+  const purgeAfter=new Date(Date.now()+HISTORY_UNDO_MS);
+  for(const r of rows){
+    await updateDoc(doc(db,"auditLogs",r.id),{
       deletedAt:serverTimestamp(),
       deletedBy:currentProfile.displayName||currentProfile.username||"Owner",
-      purgeAfter:new Date(Date.now()+HISTORY_UNDO_MS)
+      purgeAfter
     });
-  }catch(e){
-    alert(`History delete failed: ${e.code||e.message}`);
   }
 };
 
-window.undoHistoryDelete=async function(id){
+window.undoAllHistory=async function(){
   if(currentProfile?.role!=="owner"){
     alert("Owner only.");
     return;
   }
-  try{
-    const ref=doc(db,"auditLogs",id);
-    const s=await getDoc(ref);
-    if(!s.exists()){
-      alert("This history entry has already been permanently deleted.");
-      return;
-    }
-    const r=s.data();
+  const qSnap=await getDocs(query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500)));
+  const rows=qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!!r.deletedAt);
+  const restorable=rows.filter(r=>{
     const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
-    if(r.deletedAt && purgeAt && Date.now()>purgeAt){
-      await deleteDoc(ref);
-      alert("The 3-day Undo period has expired. This entry is permanently deleted.");
-      return;
-    }
-    await updateDoc(ref,{
+    return !purgeAt || purgeAt>Date.now();
+  });
+  if(!restorable.length){
+    alert("Nothing available to Undo.");
+    return;
+  }
+  if(!confirm(`UNDO ALL DELETED HISTORY?\n\nRestore ${restorable.length} history entries?`)) return;
+
+  for(const r of restorable){
+    await updateDoc(doc(db,"auditLogs",r.id),{
       deletedAt:null,
       deletedBy:"",
       purgeAfter:null,
       restoredAt:serverTimestamp(),
       restoredBy:currentProfile.displayName||currentProfile.username||"Owner"
     });
-  }catch(e){
-    alert(`Undo failed: ${e.code||e.message}`);
   }
 };
 
@@ -1172,9 +1175,8 @@ function listenHistory(){
         <td>${esc(r.action||"")}</td><td>${esc(r.employee||"")}</td>
         <td>${esc(r.submissionId||"")}</td>
         <td>${esc(JSON.stringify(r.details||{}).slice(0,300))}</td>
-        <td><button class="btn red" type="button" onclick="deleteHistoryEntry('${r.id}')">Delete</button></td>
       </tr>`;
-    }).join(""):'<tr><td colspan="8">No active history.</td></tr>';
+    }).join(""):'<tr><td colspan="7">No active history.</td></tr>';
 
     $("historyTrashBody").innerHTML=trash.length?trash.map(r=>{
       const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
@@ -1185,9 +1187,8 @@ function listenHistory(){
         <td>${esc(r.action||"")}</td>
         <td>${esc(r.employee||"")}</td>
         <td>${esc(purgeAt?new Date(purgeAt).toLocaleString():"")}</td>
-        <td><button class="btn green" type="button" onclick="undoHistoryDelete('${r.id}')">Undo</button></td>
       </tr>`;
-    }).join(""):'<tr><td colspan="7">Recently Deleted is empty.</td></tr>';
+    }).join(""):'<tr><td colspan="6">Recently Deleted is empty.</td></tr>';
   },e=>console.error("History listener:",e)));
 }
 
@@ -1709,16 +1710,33 @@ window.clearAllFinalDailyReports=async function(){
 };
 
 
+
 window.markMoneyPickedUp=async function(reportId,submissionId,employee){
   if(!["manager","owner"].includes(currentProfile?.role||"")){
     alert("Manager/Owner only.");
     return;
   }
-  if(!confirm(`Mark ${employee||"this employee"} as PAID / PICKED UP?\n\nThis removes the employee from the Server Room Money Ready board.`)) return;
+  if(!confirm(`Mark ${employee||"this employee"} as PAID / PICKED UP?\n\nThis will immediately remove this employee from the Server Room board.`)) return;
 
   try{
+    // Delete every active board document that belongs to this employee/report/submission.
+    // Older versions used different document IDs, so deleting only submissionId was not enough.
+    const boardSnap=await getDocs(query(collection(db,"moneyReadyBoard"),limit(100)));
+    const employeeKey=String(employee||"").trim().toLowerCase();
+    const matches=boardSnap.docs.filter(d=>{
+      const r=d.data()||{};
+      return d.id===submissionId
+        || d.id===reportId
+        || String(r.submissionId||"")===String(submissionId||"")
+        || String(r.reportId||"")===String(reportId||"")
+        || (employeeKey && String(r.employee||"").trim().toLowerCase()===employeeKey);
+    });
+
+    for(const d of matches){
+      await deleteDoc(doc(db,"moneyReadyBoard",d.id));
+    }
+
     if(submissionId){
-      try{ await deleteDoc(doc(db,"moneyReadyBoard",submissionId)); }catch(e){ console.warn(e); }
       try{
         await updateDoc(doc(db,"submissions",submissionId),{
           pickupStatus:"picked_up",
@@ -1726,8 +1744,9 @@ window.markMoneyPickedUp=async function(reportId,submissionId,employee){
           pickedUpBy:currentProfile.displayName||currentProfile.username,
           updatedAt:serverTimestamp()
         });
-      }catch(e){ console.warn(e); }
+      }catch(e){ console.warn("Submission pickup update:",e); }
     }
+
     if(reportId){
       try{
         await updateDoc(doc(db,"hourlyReports",reportId),{
@@ -1735,15 +1754,19 @@ window.markMoneyPickedUp=async function(reportId,submissionId,employee){
           pickedUpAt:serverTimestamp(),
           pickedUpBy:currentProfile.displayName||currentProfile.username
         });
-      }catch(e){ console.warn(e); }
+      }catch(e){ console.warn("Report pickup update:",e); }
     }
+
     try{
       await writeAudit("money_picked_up",reportId||submissionId||"",employee||"",{
-        submissionId:submissionId||""
+        submissionId:submissionId||"",
+        deletedBoardDocs:matches.length
       });
     }catch(e){}
-    alert("Marked as picked up. Server Room board will update automatically.");
+
+    alert(`Picked Up complete. Removed ${matches.length} Server Room board item(s).`);
   }catch(e){
+    console.error("Picked Up:",e);
     alert(`Picked Up failed: ${e.code||e.message}`);
   }
 };
@@ -2223,3 +2246,5 @@ document.addEventListener("change",e=>{
 // V11.1: ALL authenticated roles use memory-only auth. Refresh/new tab/new window/shared link always requires fresh login.
 
 // V11.2: History soft delete + 3-day Undo/purge; Server Room cards auto-expire after 30 minutes.
+
+// V11.3: Owner History Delete All/Undo All; Picked Up deletes all matching board docs; board documents are physically deleted after 30 minutes.

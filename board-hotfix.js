@@ -1,6 +1,6 @@
 import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import { getFirestore, collection, query, where, limit, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, collection, query, where, limit, onSnapshot, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { FIREBASE_CONFIG } from "./firebase-config.js";
 
 const app = getApps()[0] || initializeApp(FIREBASE_CONFIG);
@@ -51,6 +51,19 @@ window.dismissMoneyReadyOverlay=()=>{
   qAnnouncements.shift();showing=false;setTimeout(showNext,200);
 };
 window.testServerRoomChime=()=>chime();
+
+
+async function purgeExpiredBoardDocs(){
+  const now=Date.now();
+  const expired=latestBoardRows.filter(r=>{
+    const created=toMillis(r.createdAt)||now;
+    return (now-created)>=BOARD_EXPIRE_MS;
+  });
+  for(const r of expired){
+    try{ await deleteDoc(doc(db,"moneyReadyBoard",r.id)); }
+    catch(e){ console.warn("Board 30-minute cleanup:",r.id,e); }
+  }
+}
 
 function currentVisibleRows(){
   const now=Date.now();
@@ -122,6 +135,7 @@ window.enableBoardHotfix=async function(){
     const q=query(collection(db,"moneyReadyBoard"),where("active","==",true),limit(100));
     unsub=onSnapshot(q,snap=>{
       latestBoardRows=snap.docs.map(d=>({id:d.id,...d.data()}));
+      purgeExpiredBoardDocs();
       renderBoard(true);
       if(err) err.textContent="";
     },e=>{
@@ -130,7 +144,7 @@ window.enableBoardHotfix=async function(){
     });
 
     // Even if Firestore has no new snapshot, cards disappear automatically at 30 minutes.
-    expiryTimer=setInterval(()=>renderBoard(false),15000);
+    expiryTimer=setInterval(()=>{ purgeExpiredBoardDocs(); renderBoard(false); },15000);
 
   }catch(e){
     if(err) err.textContent=`Board failed: ${e.code||e.message}`;

@@ -418,20 +418,26 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <div class="notice good" style="margin-bottom:12px">
             Owner can delete history entries. Deleted entries stay in <b>Recently Deleted</b> for 3 days and can be restored with <b>Undo</b>. After 3 days they are permanently deleted.
           </div>
-          <div class="small" style="margin-bottom:10px">Every add, edit, approve, reject, and delete action is written to the audit log.</div>
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+            <div class="small">Every add, edit, approve, reject, and delete action is written to the audit log.</div>
+            <button class="btn red" type="button" onclick="deleteAllHistory()">Delete All</button>
+          </div>
           <div class="tablewrap">
             <table>
-              <thead><tr><th>Time</th><th>Actor</th><th>Role</th><th>Action</th><th>Employee</th><th>Submission ID</th><th>Details</th><th>Action</th></tr></thead>
+              <thead><tr><th>Time</th><th>Actor</th><th>Role</th><th>Action</th><th>Employee</th><th>Submission ID</th><th>Details</th></tr></thead>
               <tbody id="historyBody"></tbody>
             </table>
           </div>
 
           <div style="height:18px"></div>
-          <h3 style="margin:0 0 8px">Recently Deleted — Undo up to 3 Days</h3>
-          <div class="small" style="margin-bottom:10px">These entries are hidden from the main history immediately, but are not permanently deleted until the 3-day undo period ends.</div>
+          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
+            <h3 style="margin:0 0 8px">Recently Deleted — Undo up to 3 Days</h3>
+            <button class="btn green" type="button" onclick="undoAllHistory()">Undo All</button>
+          </div>
+          <div class="small" style="margin-bottom:10px">Delete All moves the full visible history here. Undo All restores everything still inside the 3-day window.</div>
           <div class="tablewrap">
             <table>
-              <thead><tr><th>Deleted</th><th>Original Time</th><th>Actor</th><th>Action</th><th>Employee</th><th>Delete Expires</th><th>Action</th></tr></thead>
+              <thead><tr><th>Deleted</th><th>Original Time</th><th>Actor</th><th>Action</th><th>Employee</th><th>Delete Expires</th></tr></thead>
               <tbody id="historyTrashBody"></tbody>
             </table>
           </div>
@@ -494,10 +500,10 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=32"></script>
+<script type="module" src="app.js?v=33"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1120"></script>
+<script type="module" src="./board-hotfix.js?v=1130"></script>
 </body>
 </html>
