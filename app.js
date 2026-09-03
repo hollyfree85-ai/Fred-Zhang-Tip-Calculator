@@ -1096,55 +1096,277 @@ window.loadSubmissionToHourly=function(id){
 };
 
 
+
 function reportRowsForExport(){
   return latestHourlyReports.map(r=>({
-    Date:r.date||"",Employee:r.employee||"",Position:r.position||"",Shift:r.shift||"",
-    "Grand Total":Number(r.grandTotal||0).toFixed(2),
-    "Total AM":Number(r.totalAM||0).toFixed(2),
-    "Total PM":Number(r.totalPM||0).toFixed(2),
-    "Paid Tip":Number(r.paidTip||0).toFixed(2),
-    "Cash Tip":Number(r.cashTip||0).toFixed(2),
-    "Meal":Number(r.meal||0).toFixed(2),
-    "Busser Rate":(Number(r.busserRate||0)*100).toFixed(2)+"%",
-    "Busser Tip Out":Number(r.busserTipOut||0).toFixed(2),
-    "Bar Tip Out":Number(r.barTipOut||0).toFixed(2),
-    "Hourly Adjustment":Number(r.adjustmentSalaryHourly||0).toFixed(2),
-    "Total Paid Out":Number(r.totalPaidOut||0).toFixed(2),
-    Status:"MONEY READY"
+    id:r.id||"",
+    date:r.date||"",
+    employee:r.employee||"",
+    position:r.position||"",
+    shift:r.shift||"",
+    busserAM:r.busserAM==="N/A"?"-":(r.busserAM||"-"),
+    hourInAM:r.hourInAM||r.hours?.hourInAM||"",
+    hourOutAM:r.hourOutAM||r.hours?.hourOutAM||"",
+    hourInPM:r.hourInPM||r.hours?.hourInPM||"",
+    hourOutPM:r.hourOutPM||r.hours?.hourOutPM||"",
+    hourIn:r.hourIn||r.hours?.hourIn||"",
+    hourOut:r.hourOut||r.hours?.hourOut||"",
+    totalHoursWork:Number(r.totalHoursWork??r.totalHours??0),
+    grandTotal:Number(r.grandTotal||0),
+    totalAM:Number(r.totalAM||0),
+    totalPM:Number(r.totalPM||0),
+    totalTips:Number(r.totalTips||0),
+    payCardTipFee:Number(r.payCardTipFee??r.cardFee??0),
+    paidTip:Number(r.paidTip||0),
+    busserRate:Number(r.busserRate||0),
+    busserTipOut:Number(r.busserTipOut||0),
+    amBarSales:Boolean(r.amBarSales??r.barSalesAM),
+    amBarTip:Number(r.amBarTipOut??r.barTipAM??0),
+    pmBarSales:Boolean(r.pmBarSales??r.barSalesPM),
+    pmBarTip:Number(r.pmBarTipOut??r.barTipPM??0),
+    barTipOut:Number(r.barTipOut||0),
+    totalBeforeMeal:Number(r.totalBeforeMeal||0),
+    cashTip:Number(r.cashTip||0),
+    grandTotalTip:Number(r.grandTotalTip||0),
+    hourlyRate:Number(r.hourlyRate||0),
+    hourlyMinimum:Number(r.hourlyMinimum||0),
+    adjustmentSalaryHourly:Number(r.adjustmentSalaryHourly||0),
+    adjustmentDecision:String(r.adjustmentDecision||"NO ADJUSTMENT").toUpperCase(),
+    grandTotalAfterAdjustment:Number(r.grandTotalAfterAdjustment||0),
+    meal:Number(r.meal||0),
+    totalPaidOut:Number(r.totalPaidOut||0),
+    status:"MONEY READY",
+    finalizedBy:r.updatedBy||r.createdBy||r.finalizedBy||"",
+    createdAt:r.createdAt||null
   }));
 }
-function xlsBlob(rows){
-  const keys=Object.keys(rows[0]||{});
-  const escX=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  const table=`<table><thead><tr>${keys.map(k=>`<th>${escX(k)}</th>`).join("")}</tr></thead><tbody>${
-    rows.map(r=>`<tr>${keys.map(k=>`<td>${escX(r[k])}</td>`).join("")}</tr>`).join("")
-  }</tbody></table>`;
-  const html=`<html><head><meta charset="UTF-8"></head><body>${table}</body></html>`;
-  return new Blob([html],{type:"application/vnd.ms-excel"});
+
+function xlsEscape(v){
+  return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
-function pdfEscape(s){return String(s??"").replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)");}
+function xlsCellString(v,style=""){
+  return `<Cell${style?` ss:StyleID="${style}"`:""}><Data ss:Type="String">${xlsEscape(v)}</Data></Cell>`;
+}
+function xlsCellNumber(v,style="Number2"){
+  const n=Number(v||0);
+  return `<Cell ss:StyleID="${style}"><Data ss:Type="Number">${Number.isFinite(n)?n:0}</Data></Cell>`;
+}
+function xlsBlob(rows){
+  const header=[
+    "Date","Name","Position","Shift","Busser AM",
+    "Hour In AM","Hour Out AM","Hour In PM","Hour Out PM","Total Hours Work",
+    "Grand Total","Total AM","Total PM","Total Tips","Pay Card Tip Fee","Paid Tip",
+    "Busser Rate %","Busser Tip Out","AM Bar Sales","AM Bar Tip","PM Bar Sales","PM Bar Tip",
+    "Bar Tip Out","Total Before Meal","Cash Tip","Grand Total Tip","Hourly Rate","Hourly Minimum",
+    "Adjustment Salary Hourly","Adjustment Decision","Grand Total After Adjustment","Meal",
+    "Total Paid Out","Status","Finalized By"
+  ];
+  const widths=[86,150,90,80,145,85,85,85,85,100,95,90,90,90,100,90,90,95,90,90,90,90,90,105,90,105,85,100,115,130,120,85,110,100,120];
+  const cols=widths.map(w=>`<Column ss:AutoFitWidth="0" ss:Width="${w}"/>`).join("");
+  const headerRow=`<Row ss:StyleID="Header" ss:Height="26">${header.map(h=>xlsCellString(h)).join("")}</Row>`;
+  const dataRows=rows.map(r=>{
+    const shift=String(r.shift||"").toUpperCase();
+    const isDouble=shift==="DOUBLE"||shift==="LONG";
+    const amIn=isDouble?r.hourInAM:(shift==="AM"?r.hourIn:"");
+    const amOut=isDouble?r.hourOutAM:(shift==="AM"?r.hourOut:"");
+    const pmIn=isDouble?r.hourInPM:(shift==="PM"?r.hourIn:"");
+    const pmOut=isDouble?r.hourOutPM:(shift==="PM"?r.hourOut:"");
+    return `<Row ss:Height="22">${
+      [
+        xlsCellString(r.date),
+        xlsCellString(r.employee),
+        xlsCellString(r.position),
+        xlsCellString(r.shift),
+        xlsCellString(r.busserAM||"-"),
+        xlsCellString(amIn),
+        xlsCellString(amOut),
+        xlsCellString(pmIn),
+        xlsCellString(pmOut),
+        xlsCellNumber(r.totalHoursWork,"Number2"),
+        xlsCellNumber(r.grandTotal,"Money"),
+        xlsCellNumber(r.totalAM,"Money"),
+        xlsCellNumber(r.totalPM,"Money"),
+        xlsCellNumber(r.totalTips,"Money"),
+        xlsCellNumber(r.payCardTipFee,"Money"),
+        xlsCellNumber(r.paidTip,"Money"),
+        xlsCellNumber(r.busserRate,"Rate3"),
+        xlsCellNumber(r.busserTipOut,"Money"),
+        xlsCellString(r.amBarSales?"YES":"NO"),
+        xlsCellNumber(r.amBarTip,"Money"),
+        xlsCellString(r.pmBarSales?"YES":"NO"),
+        xlsCellNumber(r.pmBarTip,"Money"),
+        xlsCellNumber(r.barTipOut,"Money"),
+        xlsCellNumber(r.totalBeforeMeal,"Money"),
+        xlsCellNumber(r.cashTip,"Money"),
+        xlsCellNumber(r.grandTotalTip,"Money"),
+        xlsCellNumber(r.hourlyRate,"Money"),
+        xlsCellNumber(r.hourlyMinimum,"Money"),
+        xlsCellNumber(r.adjustmentSalaryHourly,"Money"),
+        xlsCellString(r.adjustmentDecision==="NONE"?"NO ADJUSTMENT":r.adjustmentDecision),
+        xlsCellNumber(r.grandTotalAfterAdjustment,"Money"),
+        xlsCellNumber(r.meal,"Money"),
+        xlsCellNumber(r.totalPaidOut,"Money"),
+        xlsCellString(r.status),
+        xlsCellString(r.finalizedBy)
+      ].join("")
+    }</Row>`;
+  }).join("");
+
+  const xml=`<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Arial" ss:Size="11"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9FB3D1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D4E6"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D4E6"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D4E6"/>
+   </Borders>
+   <Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#10213C"/>
+   <Interior ss:Color="#DCE8FF" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="Number2"><NumberFormat ss:Format="0.00"/></Style>
+  <Style ss:ID="Rate3"><NumberFormat ss:Format="0.000"/></Style>
+  <Style ss:ID="Money"><NumberFormat ss:Format="$#,##0.00;[Red]-$#,##0.00"/></Style>
+ </Styles>
+ <Worksheet ss:Name="Daily Report">
+  <Table>${cols}${headerRow}${dataRows}</Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane>
+   <Selected/><ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+  return new Blob([xml],{type:"application/vnd.ms-excel"});
+}
+
+function pdfEscape(s){
+  return String(s??"")
+    .normalize("NFKD").replace(/[^\x20-\x7E]/g," ")
+    .replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)");
+}
+function pdfMoney(v){
+  const n=Number(v||0);
+  const sign=n<0?"-$ ":"$ ";
+  return sign+Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function pdfRate(v){
+  return Number(v||0).toLocaleString("en-US",{minimumFractionDigits:3,maximumFractionDigits:3})+"%";
+}
+function pdfBool(v){ return v?"YES":"NO"; }
+function pdfField(label,value,x,y){
+  return `BT /F1 7 Tf ${x} ${y} Td (${pdfEscape(label)}) Tj ET\n`+
+         `BT /F2 9.5 Tf ${x} ${y-11} Td (${pdfEscape(value)}) Tj ET\n`;
+}
+function pdfReportContent(r,index,total){
+  const shift=String(r.shift||"").toUpperCase();
+  const isDouble=shift==="DOUBLE"||shift==="LONG";
+  const amIn=isDouble?r.hourInAM:(shift==="AM"?r.hourIn:"-");
+  const amOut=isDouble?r.hourOutAM:(shift==="AM"?r.hourOut:"-");
+  const pmIn=isDouble?r.hourInPM:(shift==="PM"?r.hourIn:"-");
+  const pmOut=isDouble?r.hourOutPM:(shift==="PM"?r.hourOut:"-");
+  const left=[
+    ["Date",r.date||"-"],
+    ["Employee",r.employee||"-"],
+    ["Position",r.position||"-"],
+    ["Shift",r.shift||"-"],
+    ["Busser AM",r.busserAM||"-"],
+    ["Hour In AM",amIn||"-"],
+    ["Hour Out AM",amOut||"-"],
+    ["Hour In PM",pmIn||"-"],
+    ["Hour Out PM",pmOut||"-"],
+    ["Total Hours",Number(r.totalHoursWork||0).toFixed(2)],
+    ["Grand Total",pdfMoney(r.grandTotal)],
+    ["Total AM",pdfMoney(r.totalAM)],
+    ["Total PM",pdfMoney(r.totalPM)],
+    ["Total Tips",pdfMoney(r.totalTips)],
+    ["Pay Card Tip Fee",pdfMoney(r.payCardTipFee)],
+    ["Paid Tip",pdfMoney(r.paidTip)],
+    ["Busser Rate",pdfRate(r.busserRate)]
+  ];
+  const right=[
+    ["Busser Tip Out",pdfMoney(r.busserTipOut)],
+    ["AM Bar Sales",pdfBool(r.amBarSales)],
+    ["AM Bar Tip",pdfMoney(r.amBarTip)],
+    ["PM Bar Sales",pdfBool(r.pmBarSales)],
+    ["PM Bar Tip",pdfMoney(r.pmBarTip)],
+    ["Bar Tip Out",pdfMoney(r.barTipOut)],
+    ["Total Before Meal",pdfMoney(r.totalBeforeMeal)],
+    ["Cash Tip",pdfMoney(r.cashTip)],
+    ["Grand Total Tip",pdfMoney(r.grandTotalTip)],
+    ["Hourly Rate",pdfMoney(r.hourlyRate)],
+    ["Hourly Minimum",pdfMoney(r.hourlyMinimum)],
+    ["Adjustment Salary Hourly",pdfMoney(r.adjustmentSalaryHourly)],
+    ["Adjustment Decision",r.adjustmentDecision==="NONE"?"NO ADJUSTMENT":r.adjustmentDecision],
+    ["Grand Total After Adjustment",pdfMoney(r.grandTotalAfterAdjustment)],
+    ["Meal",pdfMoney(r.meal)],
+    ["TOTAL PAID OUT",pdfMoney(r.totalPaidOut)],
+    ["Status",r.status||"MONEY READY"]
+  ];
+
+  let c="";
+  c+="BT /F2 17 Tf 36 754 Td (TIP CALCULATOR BY FRED ZHANG - EMPLOYEE REPORT) Tj ET\n";
+  c+=`BT /F1 8 Tf 36 737 Td (Report ${index+1} of ${total}) Tj ET\n`;
+  c+="0.8 w 36 724 m 576 724 l S\n";
+
+  let y=700;
+  for(const [label,value] of left){ c+=pdfField(label,value,36,y); y-=34; }
+  y=700;
+  for(const [label,value] of right){ c+=pdfField(label,value,315,y); y-=34; }
+
+  c+="0.8 w 36 116 m 576 116 l S\n";
+  c+="BT /F2 13 Tf 36 92 Td (TOTAL PAID OUT) Tj ET\n";
+  c+=`BT /F2 25 Tf 36 62 Td (${pdfEscape(pdfMoney(r.totalPaidOut))}) Tj ET\n`;
+  c+="BT /F1 7.5 Tf 36 42 Td (Final Daily Report - calculated and finalized by Manager/Owner) Tj ET\n";
+  c+=`BT /F2 11 Tf 315 92 Td (FINAL STATUS - ${pdfEscape(r.status||"MONEY READY")}) Tj ET\n`;
+  if(r.finalizedBy){
+    c+=`BT /F1 7.5 Tf 315 76 Td (Finalized By) Tj ET\n`;
+    c+=`BT /F2 9.5 Tf 315 64 Td (${pdfEscape(r.finalizedBy)}) Tj ET\n`;
+  }
+  c+=`BT /F1 7 Tf 36 22 Td (Generated ${pdfEscape(new Date().toLocaleString())} | Page ${index+1}) Tj ET\n`;
+  return c;
+}
+
 function simplePdfBlob(rows){
-  // Compact, dependency-free PDF report. One line per report; valid PDF file.
-  const lines=["FRED ZHANG TIP CALCULATOR - FINAL TIP REPORTS"];
-  rows.forEach(r=>{
-    lines.push(`${r.Date} | ${r.Employee} | ${r.Shift} | Grand $${r["Grand Total"]} | Busser $${r["Busser Tip Out"]} | Bar $${r["Bar Tip Out"]} | Adjustment $${r["Hourly Adjustment"]} | PAID OUT $${r["Total Paid Out"]}`);
-  });
-  const pageLines=lines.slice(0,45);
-  let content="BT\n/F1 10 Tf\n40 760 Td\n";
-  pageLines.forEach((line,i)=>{ content+=`(${pdfEscape(line.slice(0,118))}) Tj\n0 -16 Td\n`; });
-  content+="ET";
+  const n=rows.length;
+  const font1=3+n*2;
+  const font2=font1+1;
   const objects=[];
+  const kids=[];
   objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
-  objects[2]="<< /Type /Pages /Kids [3 0 R] /Count 1 >>";
-  objects[3]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>";
-  objects[4]=`<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
-  objects[5]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-  let pdf="%PDF-1.4\n", offsets=[0];
-  for(let i=1;i<=5;i++){ offsets[i]=pdf.length; pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`; }
+
+  for(let i=0;i<n;i++){
+    const pageObj=3+i*2;
+    const contentObj=pageObj+1;
+    kids.push(`${pageObj} 0 R`);
+    const content=pdfReportContent(rows[i],i,n);
+    objects[pageObj]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> >> /Contents ${contentObj} 0 R >>`;
+    objects[contentObj]=`<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
+  }
+  objects[2]=`<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${n} >>`;
+  objects[font1]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  objects[font2]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+
+  const maxObj=font2;
+  let pdf="%PDF-1.4\n";
+  const offsets=[0];
+  for(let i=1;i<=maxObj;i++){
+    offsets[i]=pdf.length;
+    pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;
+  }
   const xref=pdf.length;
-  pdf+="xref\n0 6\n0000000000 65535 f \n";
-  for(let i=1;i<=5;i++) pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
-  pdf+=`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  pdf+=`xref\n0 ${maxObj+1}\n0000000000 65535 f \n`;
+  for(let i=1;i<=maxObj;i++) pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
+  pdf+=`trailer\n<< /Size ${maxObj+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return new Blob([pdf],{type:"application/pdf"});
 }
 async function shareReportFile(blob,filename,target){
@@ -1196,19 +1418,54 @@ window.shareAllReportsPdf=async function(target){
 };
 
 
+
 function finalGroupId(name){
-  return "finalName_"+Array.from(new TextEncoder().encode(name)).map(b=>b.toString(16).padStart(2,"0")).join("");
+  return "finalName_"+Array.from(new TextEncoder().encode(name))
+    .map(b=>b.toString(16).padStart(2,"0")).join("");
 }
+
+function syncOwnerFinalControls(){
+  const b=$("clearAllFinalBtn");
+  if(b) b.classList.toggle("hidden", currentProfile?.role!=="owner");
+}
+
+window.clearAllFinalDailyReports=async function(){
+  if(currentProfile?.role!=="owner"){ alert("Owner only."); return; }
+  if(!latestHourlyReports.length){ alert("No Final Daily Reports to clear."); return; }
+  if(!confirm(`CLEAR ALL FINAL DAILY REPORTS?\n\nThis permanently deletes ${latestHourlyReports.length} finalized report(s).\n\nOwner only. This cannot be undone.`)) return;
+  try{
+    const rows=[...latestHourlyReports];
+    for(const r of rows){
+      await deleteDoc(doc(db,"hourlyReports",r.id));
+      if(r.sourceSubmissionId){
+        try{
+          await updateDoc(doc(db,"submissions",r.sourceSubmissionId),{
+            status:"archived",
+            hourlyStatus:"cleared_by_owner",
+            hourlyReportId:"",
+            updatedAt:serverTimestamp()
+          });
+        }catch(e){console.warn(e);}
+        try{ await deleteDoc(doc(db,"moneyReadyBoard",r.sourceSubmissionId)); }catch(e){console.warn(e);}
+      }
+    }
+    try{ await writeAudit("final_daily_clear_all","ALL","",{count:rows.length}); }catch(e){}
+    alert("Final Daily Report cleared.");
+  }catch(e){
+    alert(`Clear All failed: ${e.code||e.message}`);
+  }
+};
+
 function renderFinalDailyByName(){
+  syncOwnerFinalControls();
   const el=$("finalDailyByName");
   if(!el) return;
   const rows=[...latestHourlyReports].sort((a,b)=>{
-    const byName=(a.employee||"").localeCompare(b.employee||"");
-    if(byName) return byName;
-    return String(b.date||"").localeCompare(String(a.date||""));
+    const n=(a.employee||"").localeCompare(b.employee||"");
+    return n || String(b.date||"").localeCompare(String(a.date||""));
   });
   if(!rows.length){
-    el.innerHTML='<div class="small">No final daily reports yet.</div>';
+    el.innerHTML='<div class="notice">No finalized reports yet.</div>';
     return;
   }
   const groups={};
@@ -1217,11 +1474,11 @@ function renderFinalDailyByName(){
     (groups[name]||(groups[name]=[])).push(r);
   });
   el.innerHTML=Object.entries(groups).map(([name,list])=>`
-    <div class="card final-name-card">
+    <div class="final-name-card">
       <button class="final-name-row" type="button" onclick="toggleFinalEmployee('${encodeURIComponent(name)}')">
         <div>
           <div style="font-size:22px;font-weight:1000">${esc(name)}</div>
-          <div class="small">${list.length} final report${list.length===1?"":"s"} • Latest ${esc(list[0]?.date||"")}</div>
+          <div class="small">${list.length} report${list.length===1?"":"s"} • Latest ${esc(list[0]?.date||"")}</div>
         </div>
         <div style="font-size:24px">▾</div>
       </button>
@@ -1255,41 +1512,30 @@ function renderFinalDailyByName(){
       </div>
     </div>`).join("");
 }
+
 window.toggleFinalEmployee=function(encodedName){
   const name=decodeURIComponent(encodedName);
   const el=$(finalGroupId(name));
   if(el) el.classList.toggle("hidden");
 };
 
+window.openStaffTab=function(name){
+  const btn=document.querySelector(`[data-stab="${name}"]`);
+  if(btn) btn.click();
+};
+
 function listenHourlyReports(){
   const q=query(collection(db,"hourlyReports"),orderBy("createdAt","desc"),limit(200));
   unsubs.push(onSnapshot(q,snap=>{
     latestHourlyReports=snap.docs.map(d=>({id:d.id,...d.data()}));
-    const el=$("hourlyReportsList"); if(!el) return;
-    el.innerHTML=latestHourlyReports.length?latestHourlyReports.map(r=>`
-      <article class="card" style="box-shadow:none;border:1px solid #d7dfeb;margin:10px 0">
-        <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
-          <div><h3 style="margin:0">${esc(r.employee||"")}</h3><div class="small">${esc(r.date||"")} • ${esc(r.position||"")} • ${esc(r.shift||"")}</div></div>
-          <span class="status approved">MONEY READY</span>
-        </div>
-        <div class="grid3" style="margin-top:10px">
-          <div class="kpi"><span>Grand Total</span><b>${fmtMoney(r.grandTotal)}</b></div>
-          <div class="kpi"><span>Total AM</span><b>${fmtMoney(r.totalAM)}</b></div>
-          <div class="kpi"><span>Total PM</span><b>${fmtMoney(r.totalPM)}</b></div>
-          <div class="kpi"><span>Paid Tip</span><b>${fmtMoney(r.paidTip)}</b></div>
-          <div class="kpi"><span>Busser Rate</span><b>${fmtPct(r.busserRate)}</b></div>
-          <div class="kpi"><span>Busser Tip Out</span><b>${fmtMoney(r.busserTipOut)}</b></div>
-          <div class="kpi"><span>Bar Tip Out</span><b>${fmtMoney(r.barTipOut)}</b></div>
-          <div class="kpi"><span>Hourly Adjustment</span><b>${fmtMoney(r.adjustmentSalaryHourly)}</b></div>
-          <div class="kpi"><span>TOTAL PAID OUT</span><b>${fmtMoney(r.totalPaidOut)}</b></div>
-        </div>
-        <div class="actions" style="margin-top:10px">
-          <button class="btn light" onclick="editHourlyReport('${r.id}')">EDIT</button>
-          <button class="btn light" onclick="republishMoneyReady('${r.id}')">Announce Again</button>
-          <button class="btn light" onclick="resendReportSms('${r.sourceSubmissionId||""}')">SMS REPORT</button>
-          <button class="btn red" onclick="deleteHourlyReport('${r.id}')">DELETE</button>
-        </div>
-      </article>`).join(""):'<div class="small">No final reports yet.</div>';
+    renderFinalDailyByName();
+
+    // Legacy container, if an older cached HTML still has it, keep it hidden.
+    const old=$("hourlyReportsList");
+    if(old){
+      old.classList.add("hidden");
+      old.innerHTML="";
+    }
   },e=>console.error("Hourly reports:",e)));
 }
 
@@ -1536,6 +1782,7 @@ window.saveHourlyV01=async function(){
     }
 
     alert("Final approved. Report moved to Final Daily Report. Employee status: MONEY READY.");
+    openStaffTab("finalDaily");
     currentHourlyReportId=null;
     currentHourlySubmissionId=null;
   }catch(e){
@@ -1616,3 +1863,7 @@ function selectZeroOnFocus(el){
 // V10.1: persistent Server Room Board, visible diagnostics, test chime, announce-again from Final Daily Report.
 
 // V10.3: separate Final Daily Report grouped by employee; draft autosave; queued global Money Ready overlays.
+
+// V10.4 FINAL: Final Daily Report is its own staff tab, grouped by employee; owner-only Clear All; final submit opens that tab.
+
+// V10.5: PDF rebuilt in legacy Fred Zhang one-employee-per-page report layout; XLS rebuilt as styled Excel XML matching legacy Daily Report columns. Busser Rate export fixed (1.500%, not 150%).

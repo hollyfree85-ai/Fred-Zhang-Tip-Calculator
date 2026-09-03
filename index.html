@@ -251,6 +251,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
         <button class="tab" data-stab="approvals">Employee Approvals <span id="approvalBadge" class="badge">0</span></button>
         <button class="tab" data-stab="report">Manager Review / Report</button>
         <button class="tab" data-stab="hourly">Hourly Adjustment V01</button>
+        <button class="tab" data-stab="finalDaily">Final Daily Report</button>
         <button class="tab ownerOnly" data-stab="users">Users</button>
         <button class="tab ownerOnly" data-stab="history">History</button>
         <button class="tab" data-stab="setup">Setup</button>
@@ -357,24 +358,34 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
                 <div class="kpi"><span>TOTAL PAID OUT</span><b id="hrPaidOut">$0.00</b></div>
               </div>
             </div>
-          </div>
-
-          <h3 style="font-size:26px;margin-top:26px">Final Daily Report</h3>
-          <div class="notice good">Only reports that have been fully calculated and finalized by Manager/Owner appear here.</div>
-          <div class="actions" style="margin:12px 0 16px;gap:10px;flex-wrap:wrap">
-            <button class="btn light" type="button" onclick="downloadAllReportsXls()">Download XLS</button>
-            <button class="btn light" type="button" onclick="downloadAllReportsPdf()">Download PDF</button>
-            <button class="btn light" type="button" onclick="shareAllReportsXls('whatsapp')">Send XLS to WhatsApp</button>
-            <button class="btn light" type="button" onclick="shareAllReportsPdf('whatsapp')">Send PDF to WhatsApp</button>
-            <button class="btn light" type="button" onclick="shareAllReportsXls('email')">Send XLS to Email</button>
-            <button class="btn light" type="button" onclick="shareAllReportsPdf('email')">Send PDF to Email</button>
-          </div>
-          <div class="small" style="margin-bottom:10px">On phones/tablets, the system uses the device Share Sheet so you can choose WhatsApp or your email app and send the actual XLS/PDF file.</div>
-          <div id="hourlyReportsList"><div class="small">No final reports yet.</div></div>
+          </div></div>
         </div>
       </section>
 
-      <section id="users" class="staffPanel hidden">
+      
+      <section id="finalDaily" class="staffPanel hidden">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap">
+            <div>
+              <h2 style="margin:0 0 4px">Final Daily Report</h2>
+              <div class="small">Finalized reports are grouped by employee name. Click a name to view the report details.</div>
+            </div>
+            <div class="actions" style="gap:8px;flex-wrap:wrap">
+              <button id="clearAllFinalBtn" class="btn red hidden" type="button" onclick="clearAllFinalDailyReports()">Clear All</button>
+              <button class="btn light" type="button" onclick="downloadAllReportsXls()">Download XLS</button>
+              <button class="btn light" type="button" onclick="downloadAllReportsPdf()">Download PDF</button>
+              <button class="btn light" type="button" onclick="shareAllReportsXls('whatsapp')">Send XLS to WhatsApp</button>
+              <button class="btn light" type="button" onclick="shareAllReportsPdf('whatsapp')">Send PDF to WhatsApp</button>
+              <button class="btn light" type="button" onclick="shareAllReportsXls('email')">Send XLS to Email</button>
+              <button class="btn light" type="button" onclick="shareAllReportsPdf('email')">Send PDF to Email</button>
+            </div>
+          </div>
+          <div class="notice good" style="margin-top:14px">Only Manager/Owner finalized reports appear here. <b>Clear All</b> is available to Owner only.</div>
+          <div id="finalDailyByName" style="margin-top:14px"></div>
+        </div>
+      </section>
+
+<section id="users" class="staffPanel hidden">
         <div class="card">
           <h2>User Management</h2>
           <div class="grid3">
@@ -452,10 +463,10 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=23"></script>
+<script type="module" src="app.js?v=25"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1030"></script>
+<script type="module" src="./board-hotfix.js?v=1050"></script>
 </body>
 </html>
