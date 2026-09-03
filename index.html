@@ -91,7 +91,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.1.3</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.1.4</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -613,11 +613,15 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1213.js"></script>
+<script type="module" src="app-v1214.js"></script>
 <script>
-if('serviceWorker' in navigator){/* service worker disabled */inset:0;background:rgba(3,13,27,.72);z-index:99999;display:none;align-items:center;justify-content:center;padding:18px">
+if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
+</script>
+<script type="module" src="./board-hotfix.js?v=1214"></script>
+
+<div id="pickupSignatureModal" class="hidden" style="position:fixed;inset:0;background:rgba(3,13,27,.72);z-index:99999;display:none;align-items:center;justify-content:center;padding:18px">
   <div style="background:white;color:#0b1830;border-radius:20px;width:min(760px,96vw);padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.35)">
-    <h2 style="margin:0 0 6px">Money Picked Up — Employee Signature</h2>
+    <h2 style="margin:0 0 6px">Money Picked Up — Employee Signature <span style="font-size:12px;opacity:.45">v12.1.4</span></h2>
     <div id="pickupSignatureEmployee" class="small" style="margin-bottom:14px"></div>
     <div class="notice good" style="margin-bottom:14px">
       Employee signs below to confirm the money was received. The signature will be stored with the final report and printed on the PDF.
@@ -636,54 +640,6 @@ if('serviceWorker' in navigator){/* service worker disabled */inset:0;background
     </div>
   </div>
 </div>
-
-
-<script>
-(function(){
-  // Hard cache reset for this build. Previous service-worker versions caused old
-  // Picked Up handlers to survive after GitHub updates.
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.getRegistrations().then(function(regs){
-      regs.forEach(function(r){ r.unregister(); });
-    }).catch(function(){});
-  }
-  if (window.caches && caches.keys) {
-    caches.keys().then(function(keys){
-      keys.forEach(function(k){
-        if (/fz-tip/i.test(k)) caches.delete(k);
-      });
-    }).catch(function(){});
-  }
-
-  window.openPickupSignatureDirect=function(reportId,submissionId,employee){
-    var modal=document.getElementById('pickupSignatureModal');
-    var label=document.getElementById('pickupSignatureEmployee');
-    if(!modal || !label){
-      alert('Pickup signature screen is not available. Please reload the page.');
-      return;
-    }
-
-    employee=employee||'';
-    modal.dataset.reportId=reportId||'';
-    modal.dataset.submissionId=submissionId||'';
-    modal.dataset.employee=employee;
-    label.textContent='Employee: '+employee;
-
-    modal.classList.remove('hidden');
-    modal.style.display='flex';
-
-    if(typeof window.preparePickupSignatureFromDirect==='function'){
-      window.preparePickupSignatureFromDirect(reportId||'',submissionId||'',employee);
-    }else{
-      setTimeout(function(){
-        if(typeof window.preparePickupSignatureFromDirect==='function'){
-          window.preparePickupSignatureFromDirect(reportId||'',submissionId||'',employee);
-        }
-      },150);
-    }
-  };
-})();
-</script>
 
 </body>
 </html>
