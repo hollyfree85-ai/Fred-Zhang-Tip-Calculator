@@ -67,8 +67,8 @@ self.addEventListener("notificationclick",event=>{
   })());
 });
 
-const CACHE="fz-tip-v1322";
-const CORE=["./","./index.html","./app-v1322.js","./firebase-config.js","./push-config.js","./hourly-logic.js","./manifest.webmanifest", "./money-ready-chime.wav"];
+const CACHE="fz-tip-v1330";
+const CORE=["./","./index.html","./app-v1330.js","./simple-ui-v1330.js","./firebase-config.js","./push-config.js","./hourly-logic.js","./manifest.webmanifest", "./money-ready-chime.wav"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();
