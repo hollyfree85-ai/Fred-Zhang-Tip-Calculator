@@ -150,12 +150,16 @@ window.employeeSignup=async function(){
 };
 
 
-window.openServerRoomBoard=function(){
+window.openServerRoomBoard=async function(){
   boardMode=true;
   $("loginView").classList.add("hidden");
   $("appView").classList.add("hidden");
   $("top").classList.add("hidden");
   $("serverRoomBoard").classList.remove("hidden");
+  $("boardError").textContent="";
+  if(localStorage.getItem("serverRoomBoardEnabled")==="1"){
+    await enableServerRoomBoard(true);
+  }
 };
 window.closeServerRoomBoard=async function(){
   boardMode=false;
@@ -163,21 +167,39 @@ window.closeServerRoomBoard=async function(){
   $("serverRoomBoard").classList.add("hidden");
   $("loginView").classList.remove("hidden");
 };
-window.enableServerRoomBoard=async function(){
+window.enableServerRoomBoard=async function(auto=false){
   try{
     boardMode=true;
+    $("boardError").textContent="";
     if(!auth.currentUser){
       await signInAnonymously(auth);
     }
     boardAudioCtx = boardAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
-    if(boardAudioCtx.state==="suspended") await boardAudioCtx.resume();
+    if(!auto && boardAudioCtx.state==="suspended") await boardAudioCtx.resume();
+    localStorage.setItem("serverRoomBoardEnabled","1");
     $("boardSetup").classList.add("hidden");
     $("boardStatus").classList.remove("hidden");
+    $("boardLiveInfo").textContent=`Connected as anonymous board • ${new Date().toLocaleTimeString()}`;
     listenMoneyReadyBoard();
   }catch(e){
-    alert("Could not enable Server Room Board: "+(e.code||e.message));
+    console.error("Enable board failed:",e);
+    localStorage.removeItem("serverRoomBoardEnabled");
+    $("boardSetup").classList.remove("hidden");
+    $("boardStatus").classList.add("hidden");
+    const msg=(e.code||e.message||String(e));
+    $("boardError").textContent=`Board failed: ${msg}. In Firebase Authentication, Anonymous sign-in must be ENABLED.`;
+    if(!auto) alert(`Server Room Board failed: ${msg}`);
   }
 };
+
+window.testServerRoomChime=async function(){
+  try{
+    boardAudioCtx = boardAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    if(boardAudioCtx.state==="suspended") await boardAudioCtx.resume();
+    boardChime();
+  }catch(e){ alert("Sound test failed: "+(e.message||e)); }
+};
+
 function boardChime(){
   if(!boardAudioCtx)return;
   const now=boardAudioCtx.currentTime;
@@ -201,15 +223,24 @@ window.dismissMoneyReadyOverlay=function(){
 };
 function listenMoneyReadyBoard(){
   if(boardUnsub){try{boardUnsub()}catch(e){}}
+  let firstSnapshot=true;
   const q=query(collection(db,"moneyReadyBoard"),where("active","==",true),limit(100));
   boardUnsub=onSnapshot(q,snap=>{
     const rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    $("boardLiveInfo").textContent=`LIVE • ${rows.length} money-ready report(s) • ${new Date().toLocaleTimeString()}`;
     $("moneyReadyList").innerHTML=rows.length?rows.map(r=>`
       <div style="background:#0f243d;border:1px solid #28445f;border-radius:18px;padding:18px">
         <div style="font-size:12px;opacity:.7;letter-spacing:.12em">MONEY READY</div>
         <div style="font-size:30px;font-weight:1000;margin:8px 0">${esc(r.employee||"")}</div>
         <div style="font-size:18px;font-weight:700">Please come to Cashier</div>
       </div>`).join(""):'<div style="opacity:.65">No employees waiting for pickup.</div>';
+
+    if(firstSnapshot){
+      // Existing active reports should be visible immediately, but not blast a chime for every historical record.
+      rows.forEach(r=>boardKnownReady.add(r.id));
+      firstSnapshot=false;
+      return;
+    }
     for(const r of rows){
       if(!boardKnownReady.has(r.id)){
         boardKnownReady.add(r.id);
@@ -217,7 +248,11 @@ function listenMoneyReadyBoard(){
         break;
       }
     }
-  },e=>console.error("Money Ready board:",e));
+  },e=>{
+    console.error("Money Ready board:",e);
+    $("boardError").textContent=`Realtime board error: ${e.code||e.message}. Check Firestore rules and Anonymous Authentication.`;
+    $("boardLiveInfo").textContent="NOT CONNECTED";
+  });
 }
 
 window.loginEmployee = async function(){
@@ -1139,6 +1174,7 @@ function listenHourlyReports(){
         </div>
         <div class="actions" style="margin-top:10px">
           <button class="btn light" onclick="editHourlyReport('${r.id}')">EDIT</button>
+          <button class="btn light" onclick="republishMoneyReady('${r.id}')">Announce Again</button>
           <button class="btn light" onclick="resendReportSms('${r.sourceSubmissionId||""}')">SMS REPORT</button>
           <button class="btn red" onclick="deleteHourlyReport('${r.id}')">DELETE</button>
         </div>
@@ -1146,6 +1182,29 @@ function listenHourlyReports(){
   },e=>console.error("Hourly reports:",e)));
 }
 
+
+
+window.republishMoneyReady=async function(reportId){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  const r=latestHourlyReports.find(x=>x.id===reportId);
+  if(!r){alert("Report not found.");return;}
+  const submissionId=r.sourceSubmissionId||reportId;
+  try{
+    await setDoc(doc(db,"moneyReadyBoard",submissionId),{
+      employee:r.employee||"",
+      submissionId:r.sourceSubmissionId||"",
+      reportId:r.id,
+      message:"Money is ready. Please come to cashier.",
+      active:true,
+      createdAt:serverTimestamp(),
+      finalizedBy:currentProfile.displayName||currentProfile.username,
+      announceNonce:Date.now()
+    },{merge:true});
+    alert(`${r.employee||"Employee"} sent to Server Room Board.`);
+  }catch(e){
+    alert(`Board publish failed: ${e.code||e.message}. Publish the V10.1 Firestore rules.`);
+  }
+};
 
 window.resendReportSms=async function(submissionId){
   if(!submissionId){alert("This report is not linked to an employee submission.");return;}
@@ -1442,3 +1501,5 @@ function selectZeroOnFocus(el){
 // V9.9: Hourly queue duplicate delete; XLS/PDF sharing; automatic Money Ready SMS backend support.
 
 // V10.0: polished Hourly V01 UI, comma/space currency formatting, zero overwrite inputs, Final Daily Report, robust final submit.
+
+// V10.1: persistent Server Room Board, visible diagnostics, test chime, announce-again from Final Daily Report.
