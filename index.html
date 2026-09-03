@@ -91,14 +91,15 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.2</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.3</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
     <div class="logo">JT</div>
     <h2 style="text-align:center;margin-bottom:4px">Fred Zhang Tip Calculator</h2>
     <div class="small" style="text-align:center;margin-bottom:18px">One App • Employee • Manager • Owner</div>
-    <div class="mode" style="grid-template-columns:repeat(3,1fr)">
+    <div id="globalAlertStatus" class="small" style="text-align:center;margin-top:10px;color:#146c43;font-weight:800">Money Ready dialog alerts are active while this page is open.</div>
+<div class="mode" style="grid-template-columns:repeat(3,1fr)">
       <button id="employeeModeBtn" class="on" onclick="setLoginMode('employee')">Employee</button>
       <button id="staffModeBtn" onclick="setLoginMode('staff')">Manager / Owner</button>
       <button id="boardModeBtn" onclick="openServerRoomBoard()">Server Room Board</button>
@@ -619,11 +620,24 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1220.js"></script>
+<script type="module" src="app-v1230.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1220"></script>
+<script type="module" src="./board-hotfix.js?v=1230"></script>
+
+
+<div id="globalMoneyReadyDialog" class="hidden" style="position:fixed;inset:0;z-index:120000;background:rgba(3,13,27,.82);display:none;align-items:center;justify-content:center;padding:20px">
+  <div style="width:min(720px,94vw);background:white;color:#10213c;border-radius:24px;padding:28px;text-align:center;box-shadow:0 30px 90px rgba(0,0,0,.42)">
+    <div style="font-size:15px;letter-spacing:.15em;font-weight:900;color:#0a7a43">MONEY READY</div>
+    <div id="globalMoneyReadyName" style="font-size:clamp(38px,7vw,70px);font-weight:1000;line-height:1.05;margin:14px 0"></div>
+    <div style="font-size:clamp(20px,3vw,30px);font-weight:800">Your tip money is ready.</div>
+    <div style="font-size:clamp(18px,2.5vw,26px);margin-top:5px">Please come to the cashier.</div>
+    <div id="globalMoneyReadyAudioStatus" class="small" style="margin-top:12px"></div>
+    <button class="btn green" style="margin-top:22px;min-width:180px" type="button" onclick="dismissGlobalMoneyReadyDialog()">OK</button>
+  </div>
+</div>
+<audio id="moneyReadyAudio" src="money-ready-chime.wav" preload="auto"></audio>
 
 <div id="pickupSignatureModal" class="hidden" style="position:fixed;inset:0;background:rgba(3,13,27,.72);z-index:99999;display:none;align-items:center;justify-content:center;padding:18px">
   <div style="background:white;color:#0b1830;border-radius:20px;width:min(760px,96vw);padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.35)">

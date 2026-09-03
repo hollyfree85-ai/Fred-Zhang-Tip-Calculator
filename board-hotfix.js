@@ -69,12 +69,21 @@ async function ensureBoardAudioContext(){
 }
 
 async function playBoardChime(){
+  const audio=document.getElementById("moneyReadyAudio");
+  if(audio){
+    try{
+      audio.pause();
+      audio.currentTime=0;
+      audio.volume=1;
+      await audio.play();
+      return true;
+    }catch(e){ console.warn("Bundled board chime:",e); }
+  }
+
+  // Fallback WebAudio.
   try{
     const running=await ensureBoardAudioContext();
-    if(!running){
-      setBoardAudioStatus("Audio is blocked. Tap Enable Audio + Voice.",false);
-      return false;
-    }
+    if(!running) return false;
     const now=ctx.currentTime;
     [659.25,783.99,987.77].forEach((f,i)=>{
       const o=ctx.createOscillator(),g=ctx.createGain();
@@ -87,12 +96,10 @@ async function playBoardChime(){
     });
     return true;
   }catch(e){
-    console.warn("Board chime:",e);
     setBoardAudioStatus(`Sound error: ${e.message||e}`,false);
     return false;
   }
 }
-
 function speakBoardMoneyReady(name){
   if(!("speechSynthesis" in window)){
     setBoardAudioStatus("Voice is not supported by this browser.",false);
