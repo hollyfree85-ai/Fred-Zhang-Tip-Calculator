@@ -23,12 +23,20 @@ function chime(){
     o.connect(g);g.connect(ctx.destination);o.start(now+i*.2);o.stop(now+i*.2+.55);
   });
 }
-function announce(name){
-  $("moneyReadyName").textContent=name||"Employee";
+let qAnnouncements=[],showing=false;
+function showNext(){
+  if(showing||!qAnnouncements.length)return;
+  showing=true;
+  $("moneyReadyName").textContent=qAnnouncements[0]||"Employee";
+  if($("moneyReadyQueueInfo"))$("moneyReadyQueueInfo").textContent=qAnnouncements.length>1?`${qAnnouncements.length-1} more announcement(s) waiting`:"";
   $("moneyReadyOverlay").classList.remove("hidden");
   chime();
 }
-window.dismissMoneyReadyOverlay=()=>$("moneyReadyOverlay").classList.add("hidden");
+function announce(name){qAnnouncements.push(name||"Employee");showNext();}
+window.dismissMoneyReadyOverlay=()=>{
+  $("moneyReadyOverlay").classList.add("hidden");
+  qAnnouncements.shift();showing=false;setTimeout(showNext,200);
+};
 window.testServerRoomChime=()=>chime();
 
 window.enableBoardHotfix=async function(){

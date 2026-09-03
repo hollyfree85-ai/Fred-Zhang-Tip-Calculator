@@ -72,6 +72,12 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
   }
   #hourlyResult h2 { margin-bottom:16px; }
 </style>
+
+<style>
+.final-name-row{width:100%;border:0;background:#fff;padding:18px;display:flex;justify-content:space-between;align-items:center;gap:12px;cursor:pointer;text-align:left}
+.final-name-card{box-shadow:none!important;border:1px solid #d7dfeb!important;margin:10px 0!important;padding:0!important;overflow:hidden}
+.final-detail{padding:0 18px 18px}
+</style>
 </head>
 <body>
 <div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
@@ -152,8 +158,8 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
   <div>
     <div style="font-size:22px;letter-spacing:.12em;opacity:.75">MONEY READY</div>
     <div id="moneyReadyName" style="font-size:clamp(42px,9vw,96px);font-weight:1000;margin:12px 0"></div>
-    <div style="font-size:clamp(24px,4vw,44px);font-weight:800">Please come to Cashier</div>
-    <button class="btn gold" style="margin-top:28px;font-size:20px" onclick="dismissMoneyReadyOverlay()">OK</button>
+    <div style="font-size:clamp(24px,4vw,44px);font-weight:800">Please come to Cashier</div><div id="moneyReadyQueueInfo" style="margin-top:10px;opacity:.72;font-size:16px"></div>
+    <button class="btn gold" style="margin-top:28px;font-size:20px" onclick="dismissMoneyReadyOverlay()">Close</button>
   </div>
 </div>
 
@@ -446,10 +452,10 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=21"></script>
+<script type="module" src="app.js?v=23"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1021"></script>
+<script type="module" src="./board-hotfix.js?v=1030"></script>
 </body>
 </html>

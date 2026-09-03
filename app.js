@@ -1,7 +1,7 @@
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword, signInAnonymously
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
@@ -213,13 +213,29 @@ function boardChime(){
     o.start(now+i*.22);o.stop(now+i*.22+.5);
   });
 }
+let globalAnnouncementQueue=[];
+let globalAnnouncementShowing=false;
 function showMoneyReadyOverlay(name){
-  $("moneyReadyName").textContent=name||"Employee";
+  globalAnnouncementQueue.push(name||"Employee");
+  showNextMoneyReadyAnnouncement();
+}
+function showNextMoneyReadyAnnouncement(){
+  if(globalAnnouncementShowing||!globalAnnouncementQueue.length)return;
+  globalAnnouncementShowing=true;
+  $("moneyReadyName").textContent=globalAnnouncementQueue[0];
+  if($("moneyReadyQueueInfo")){
+    $("moneyReadyQueueInfo").textContent=globalAnnouncementQueue.length>1
+      ? `${globalAnnouncementQueue.length-1} more announcement(s) waiting`
+      : "";
+  }
   $("moneyReadyOverlay").classList.remove("hidden");
   boardChime();
 }
 window.dismissMoneyReadyOverlay=function(){
   $("moneyReadyOverlay").classList.add("hidden");
+  globalAnnouncementQueue.shift();
+  globalAnnouncementShowing=false;
+  setTimeout(showNextMoneyReadyAnnouncement,200);
 };
 function listenMoneyReadyBoard(){
   if(boardUnsub){try{boardUnsub()}catch(e){}}
@@ -311,7 +327,7 @@ function showApp(){
   $("employeeBottom").classList.toggle("hidden",!emp);
   document.querySelectorAll(".ownerOnly").forEach(el=>el.classList.toggle("hidden",currentProfile.role!=="owner"));
 
-  if(emp) listenEmployee();
+  if(emp){ restoreEmployeeDraft(); listenEmployee(); }
   else listenStaff();
 }
 
@@ -432,6 +448,33 @@ document.querySelectorAll("[data-stab]").forEach(btn=>{
   });
 });
 
+
+const EMPLOYEE_DRAFT_KEY="fredTipEmployeeDraftV103";
+function saveEmployeeDraft(){
+  if(!currentProfile || currentProfile.role!=="employee") return;
+  const ids=["eDate","ePosition","eBreakMode","eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut","eGrandTotal","eTotalAM","eMeal","eCash"];
+  const d={shift:eShift,barAM:!!$("eBarAM")?.checked,barPM:!!$("eBarPM")?.checked};
+  ids.forEach(id=>{if($(id))d[id]=$(id).value;});
+  try{localStorage.setItem(EMPLOYEE_DRAFT_KEY,JSON.stringify(d));}catch(e){}
+}
+function restoreEmployeeDraft(){
+  try{
+    const d=JSON.parse(localStorage.getItem(EMPLOYEE_DRAFT_KEY)||"null");
+    if(!d)return;
+    Object.entries(d).forEach(([k,v])=>{
+      if(k==="shift"||k==="barAM"||k==="barPM")return;
+      if($(k))$(k).value=v;
+    });
+    if(d.shift)eShift=d.shift;
+    if($("eBarAM"))$("eBarAM").checked=!!d.barAM;
+    if($("eBarPM"))$("eBarPM").checked=!!d.barPM;
+    document.querySelectorAll("[data-eshift]").forEach(b=>b.classList.toggle("on",b.dataset.eshift===eShift));
+    refreshClockMode();
+  }catch(e){}
+}
+document.addEventListener("input",e=>{if(e.target?.closest?.("#employeeApp"))saveEmployeeDraft();});
+document.addEventListener("change",e=>{if(e.target?.closest?.("#employeeApp"))saveEmployeeDraft();});
+
 function clockText(){
   if(["DOUBLE","LONG"].includes(eShift)){
     if($("eBreakMode").value==="with"){
@@ -443,6 +486,7 @@ function clockText(){
 }
 
 window.clearEmployeeForm=function(){
+  localStorage.removeItem(EMPLOYEE_DRAFT_KEY);
   try{
     ["eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut"].forEach(id=>{ const e=$(id); if(e)e.value=""; });
     ["eMeal","eCash","eGrandTotal","eTotalAM"].forEach(id=>{ const e=$(id); if(e)e.value="0"; });
@@ -503,6 +547,7 @@ window.submitEmployee=async function(){
     const ref=doc(collection(db,"submissions"));
     await setDoc(ref,r);
     await writeAudit("employee_submit",ref.id,r.employee,{after:r});
+    localStorage.removeItem(EMPLOYEE_DRAFT_KEY);
     clearEmployeeForm();
     alert("Submitted to Manager.");
   }catch(e){
@@ -1150,6 +1195,72 @@ window.shareAllReportsPdf=async function(target){
   await shareReportFile(simplePdfBlob(rows),`Fred_Zhang_Tip_Report_${todayLocal()}.pdf`,target);
 };
 
+
+function finalGroupId(name){
+  return "finalName_"+Array.from(new TextEncoder().encode(name)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+function renderFinalDailyByName(){
+  const el=$("finalDailyByName");
+  if(!el) return;
+  const rows=[...latestHourlyReports].sort((a,b)=>{
+    const byName=(a.employee||"").localeCompare(b.employee||"");
+    if(byName) return byName;
+    return String(b.date||"").localeCompare(String(a.date||""));
+  });
+  if(!rows.length){
+    el.innerHTML='<div class="small">No final daily reports yet.</div>';
+    return;
+  }
+  const groups={};
+  rows.forEach(r=>{
+    const name=r.employee||"Unknown Employee";
+    (groups[name]||(groups[name]=[])).push(r);
+  });
+  el.innerHTML=Object.entries(groups).map(([name,list])=>`
+    <div class="card final-name-card">
+      <button class="final-name-row" type="button" onclick="toggleFinalEmployee('${encodeURIComponent(name)}')">
+        <div>
+          <div style="font-size:22px;font-weight:1000">${esc(name)}</div>
+          <div class="small">${list.length} final report${list.length===1?"":"s"} • Latest ${esc(list[0]?.date||"")}</div>
+        </div>
+        <div style="font-size:24px">▾</div>
+      </button>
+      <div id="${finalGroupId(name)}" class="final-detail hidden">
+        ${list.map(r=>`
+          <article style="border-top:1px solid #edf0f4;padding:16px 0">
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
+              <div>
+                <b style="font-size:18px">${esc(r.date||"")} • ${esc(r.shift||"")}</b>
+                <div class="small">${esc(r.position||"")} • MONEY READY</div>
+              </div>
+              <div class="actions">
+                <button class="btn light" type="button" onclick="editHourlyReport('${r.id}')">Edit</button>
+                <button class="btn light" type="button" onclick="republishMoneyReady('${r.id}')">Announce Again</button>
+                <button class="btn light" type="button" onclick="resendReportSms('${r.sourceSubmissionId||""}')">SMS Report</button>
+                <button class="btn red" type="button" onclick="deleteHourlyReport('${r.id}')">Delete</button>
+              </div>
+            </div>
+            <div class="grid3" style="margin-top:12px">
+              <div class="kpi"><span>Grand Total</span><b>${fmtMoney(r.grandTotal)}</b></div>
+              <div class="kpi"><span>Total AM</span><b>${fmtMoney(r.totalAM)}</b></div>
+              <div class="kpi"><span>Total PM</span><b>${fmtMoney(r.totalPM)}</b></div>
+              <div class="kpi"><span>Paid Tip</span><b>${fmtMoney(r.paidTip)}</b></div>
+              <div class="kpi"><span>Busser Rate</span><b>${fmtPct(r.busserRate)}</b></div>
+              <div class="kpi"><span>Busser Tip Out</span><b>${fmtMoney(r.busserTipOut)}</b></div>
+              <div class="kpi"><span>Bar Tip Out</span><b>${fmtMoney(r.barTipOut)}</b></div>
+              <div class="kpi"><span>Hourly Adjustment</span><b>${fmtMoney(r.adjustmentSalaryHourly)}</b></div>
+              <div class="kpi"><span>TOTAL PAID OUT</span><b>${fmtMoney(r.totalPaidOut)}</b></div>
+            </div>
+          </article>`).join("")}
+      </div>
+    </div>`).join("");
+}
+window.toggleFinalEmployee=function(encodedName){
+  const name=decodeURIComponent(encodedName);
+  const el=$(finalGroupId(name));
+  if(el) el.classList.toggle("hidden");
+};
+
 function listenHourlyReports(){
   const q=query(collection(db,"hourlyReports"),orderBy("createdAt","desc"),limit(200));
   unsubs.push(onSnapshot(q,snap=>{
@@ -1503,3 +1614,5 @@ function selectZeroOnFocus(el){
 // V10.0: polished Hourly V01 UI, comma/space currency formatting, zero overwrite inputs, Final Daily Report, robust final submit.
 
 // V10.1: persistent Server Room Board, visible diagnostics, test chime, announce-again from Final Daily Report.
+
+// V10.3: separate Final Daily Report grouped by employee; draft autosave; queued global Money Ready overlays.
