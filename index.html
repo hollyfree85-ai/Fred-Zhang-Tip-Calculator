@@ -91,7 +91,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 11.7.2</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 11.9</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -415,17 +415,32 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
                 <input id="hBtServerGrand9" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               </div>
+              <div style="margin-top:14px">
+                <button class="btn orange" type="button" onclick="window.calculateBartenderBarTipOut()">Calculate Bartender Tip Out</button>
+              </div>
               <div class="grid3" style="margin-top:14px">
                 <div class="kpi"><span>Server Grand Total Summary</span><b id="hBtServerSummary">$ 0.00</b></div>
                 <div class="kpi"><span>Gross @ 0.6%</span><b id="hBtGross">$ 0.00</b></div>
+
+                <div id="hBtPrevAMWrap" class="hidden">
+                  <label>Bartender AM Previous Tip Out ($)</label>
+                  <input id="hBtPrevAMInput" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+                </div>
+
+                <div id="hBtPrev24Wrap" class="hidden">
+                  <label>Bartender 2 PM - 4 PM Previous Tip Out ($)</label>
+                  <input id="hBtPrev24Input" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
+                </div>
+
                 <div class="kpi"><span>Less Bartender AM</span><b id="hBtLessAM">$ 0.00</b></div>
                 <div class="kpi"><span>Less Bartender 2 PM - 4 PM</span><b id="hBtLess24">$ 0.00</b></div>
                 <div class="kpi"><span>FINAL BAR TIP OUT RECEIVED</span><b id="hBtFinal">$ 0.00</b></div>
               </div>
+              <div id="hBtFormulaCheck" class="notice good" style="margin-top:10px;font-weight:800">Enter server Grand Totals to calculate.</div>
               <div class="small" style="margin-top:10px">
-                AM = Summary × 0.6%. &nbsp;|&nbsp;
-                2 PM-4 PM = Summary through 4 PM × 0.6% − Bartender AM. &nbsp;|&nbsp;
-                PM = Final Summary × 0.6% − Bartender AM − Bartender 2 PM-4 PM.
+                AM = All Server Grand Total × 0.6%. &nbsp;|&nbsp;
+                2 PM-4 PM = All Server Grand Total × 0.6% − Manager-entered Bartender AM. &nbsp;|&nbsp;
+                PM = All Server Grand Total × 0.6% − Manager-entered Bartender AM − Manager-entered Bartender 2 PM-4 PM.
               </div>
             </div>
           </div>
@@ -594,7 +609,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1172.js"></script>
+<script type="module" src="app-v1190.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
