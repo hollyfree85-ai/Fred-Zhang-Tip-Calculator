@@ -91,7 +91,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 11.9</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 12.0</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -558,8 +558,10 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <h2>Realtime Status</h2>
           <div id="backendStatus" class="notice"></div>
           <div style="height:12px"></div>
-          <button class="btn blue" onclick="requestNotify()">Enable Notifications</button>
-          <div class="small" style="margin-top:10px">Manager notification works instantly while the web app is open. Background push can be added with Firebase Cloud Messaging later if needed.</div>
+          <button class="btn blue" onclick="requestNotify()">Enable Sound + Vibration + Notifications</button>
+          <div class="small" style="margin-top:10px">
+            On this phone/tablet, Employee Submit alerts Manager/Owner with sound + vibration. Manager/Owner approval, rejection, and Money Ready alert the Employee the same way while the web app is open.
+          </div>
         </div>
       </section>
     </div>
@@ -589,6 +591,8 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
   </div>
 </div>
 
+<div style="margin:10px 0"><button class="btn blue" type="button" onclick="requestNotify()">Enable Phone Alerts</button>
+        <span class="small" style="margin-left:8px">Sound + vibration for approval / Money Ready.</span></div>
 <div id="employeeBottom" class="bottom hidden"><div class="inner"><button id="employeeClearBtn" class="btn light" type="button" onclick="clearEmployeeForm()">Clear</button><button class="btn gold" type="button" onclick="submitEmployee()">Submit to Manager</button></div></div>
 
 
@@ -609,7 +613,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1190.js"></script>
+<script type="module" src="app-v1200.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
