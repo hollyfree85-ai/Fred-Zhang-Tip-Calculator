@@ -91,7 +91,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 11.6.1</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -361,39 +361,57 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
               <div class="bartender-server-grid" style="margin-top:12px">
                 <div class="bartender-server-row bartender-server-head"><b>Server</b><b>Grand Total ($)</b></div>
               <div class="bartender-server-row">
-                <input id="hBtServerName1" placeholder="Server 1 name (optional)">
+                <select id="hBtServerName1" class="bartender-server-name">
+                  <option value="">Select Server 1</option>
+                </select>
                 <input id="hBtServerGrand1" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               <div class="bartender-server-row">
-                <input id="hBtServerName2" placeholder="Server 2 name (optional)">
+                <select id="hBtServerName2" class="bartender-server-name">
+                  <option value="">Select Server 2</option>
+                </select>
                 <input id="hBtServerGrand2" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               <div class="bartender-server-row">
-                <input id="hBtServerName3" placeholder="Server 3 name (optional)">
+                <select id="hBtServerName3" class="bartender-server-name">
+                  <option value="">Select Server 3</option>
+                </select>
                 <input id="hBtServerGrand3" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               <div class="bartender-server-row">
-                <input id="hBtServerName4" placeholder="Server 4 name (optional)">
+                <select id="hBtServerName4" class="bartender-server-name">
+                  <option value="">Select Server 4</option>
+                </select>
                 <input id="hBtServerGrand4" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               <div class="bartender-server-row">
-                <input id="hBtServerName5" placeholder="Server 5 name (optional)">
+                <select id="hBtServerName5" class="bartender-server-name">
+                  <option value="">Select Server 5</option>
+                </select>
                 <input id="hBtServerGrand5" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               <div class="bartender-server-row">
-                <input id="hBtServerName6" placeholder="Server 6 name (optional)">
+                <select id="hBtServerName6" class="bartender-server-name">
+                  <option value="">Select Server 6</option>
+                </select>
                 <input id="hBtServerGrand6" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               <div class="bartender-server-row">
-                <input id="hBtServerName7" placeholder="Server 7 name (optional)">
+                <select id="hBtServerName7" class="bartender-server-name">
+                  <option value="">Select Server 7</option>
+                </select>
                 <input id="hBtServerGrand7" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               <div class="bartender-server-row">
-                <input id="hBtServerName8" placeholder="Server 8 name (optional)">
+                <select id="hBtServerName8" class="bartender-server-name">
+                  <option value="">Select Server 8</option>
+                </select>
                 <input id="hBtServerGrand8" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               <div class="bartender-server-row">
-                <input id="hBtServerName9" placeholder="Server 9 name (optional)">
+                <select id="hBtServerName9" class="bartender-server-name">
+                  <option value="">Select Server 9</option>
+                </select>
                 <input id="hBtServerGrand9" type="number" min="0" step="0.01" inputmode="decimal" placeholder="0.00">
               </div>
               </div>
@@ -576,11 +594,11 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app.js?v=35"></script>
+<script type="module" src="app-v1161.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
-<script type="module" src="./board-hotfix.js?v=1150"></script>
+<script type="module" src="./board-hotfix.js?v=1160"></script>
 
 <div id="pickupSignatureModal" class="hidden" style="position:fixed;inset:0;background:rgba(3,13,27,.72);z-index:99999;display:flex;align-items:center;justify-content:center;padding:18px">
   <div style="background:white;color:#0b1830;border-radius:20px;width:min(760px,96vw);padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.35)">

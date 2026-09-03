@@ -1,5 +1,5 @@
-const CACHE="fz-tip-v35";
-const CORE=["./","./index.html","./app.js?v=35","./firebase-config.js","./hourly-logic.js","./manifest.webmanifest"];
+const CACHE="fz-tip-v1161";
+const CORE=["./","./index.html","./app-v1161.js","./firebase-config.js","./hourly-logic.js","./manifest.webmanifest"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();
@@ -21,7 +21,7 @@ self.addEventListener("fetch",event=>{
   const url=new URL(req.url);
   const isCode=url.pathname.endsWith("/") ||
                url.pathname.endsWith("/index.html") ||
-               url.pathname.endsWith("/app.js") ||
+               url.pathname.endsWith(".js") ||
                url.pathname.endsWith("/service-worker.js");
 
   if(isCode){

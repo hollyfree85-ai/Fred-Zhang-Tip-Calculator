@@ -2579,3 +2579,5 @@ document.addEventListener("change",e=>{
 // V11.5: Picked Up opens employee signature pad; signature strokes are stored and rendered into Final Report PDF.
 
 // V11.6: Bartender Server 1-9 names are dropdowns populated from active Employee accounts.
+
+// V11.6.1 fresh filename: forces Pickup Signature handler to load without stale app.js cache.
