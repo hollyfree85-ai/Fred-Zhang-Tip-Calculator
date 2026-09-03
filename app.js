@@ -3,11 +3,7 @@ import {
   getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged,
   createUserWithEmailAndPassword, signInAnonymously, setPersistence, inMemoryPersistence
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import {
-  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc,
-  collection, query, where, orderBy, limit, onSnapshot,
-  serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, orderBy, limit, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
 import { FIREBASE_CONFIG } from "./firebase-config.js";
 
@@ -1093,52 +1089,72 @@ window.deleteAllHistory=async function(){
     alert("Owner only.");
     return;
   }
-  const qSnap=await getDocs(query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500)));
-  const rows=qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!r.deletedAt);
-  if(!rows.length){
-    alert("No active history to delete.");
-    return;
-  }
-  if(!confirm(`DELETE ALL OWNER CHANGE HISTORY?\n\n${rows.length} history entries will move to Recently Deleted.\nYou can Undo All for 3 days.`)) return;
 
-  const purgeAfter=new Date(Date.now()+HISTORY_UNDO_MS);
-  for(const r of rows){
-    await updateDoc(doc(db,"auditLogs",r.id),{
-      deletedAt:serverTimestamp(),
-      deletedBy:currentProfile.displayName||currentProfile.username||"Owner",
-      purgeAfter
-    });
+  try{
+    const qSnap=await getDocs(query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500)));
+    const rows=qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!r.deletedAt);
+
+    if(!rows.length){
+      alert("No active history to delete.");
+      return;
+    }
+
+    if(!confirm(`DELETE ALL OWNER CHANGE HISTORY?\n\n${rows.length} history entries will move to Recently Deleted.\nYou can Undo All for 3 days.`)) return;
+
+    const purgeAfter=new Date(Date.now()+HISTORY_UNDO_MS);
+
+    for(const r of rows){
+      await updateDoc(doc(db,"auditLogs",r.id),{
+        deletedAt:serverTimestamp(),
+        deletedBy:currentProfile.displayName||currentProfile.username||"Owner",
+        purgeAfter
+      });
+    }
+
+    alert(`Delete All complete. ${rows.length} history entries moved to Recently Deleted.`);
+  }catch(e){
+    console.error("History Delete All:",e);
+    alert(`History Delete All failed: ${e.code||e.message}`);
   }
 };
-
 window.undoAllHistory=async function(){
   if(currentProfile?.role!=="owner"){
     alert("Owner only.");
     return;
   }
-  const qSnap=await getDocs(query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500)));
-  const rows=qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!!r.deletedAt);
-  const restorable=rows.filter(r=>{
-    const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
-    return !purgeAt || purgeAt>Date.now();
-  });
-  if(!restorable.length){
-    alert("Nothing available to Undo.");
-    return;
-  }
-  if(!confirm(`UNDO ALL DELETED HISTORY?\n\nRestore ${restorable.length} history entries?`)) return;
 
-  for(const r of restorable){
-    await updateDoc(doc(db,"auditLogs",r.id),{
-      deletedAt:null,
-      deletedBy:"",
-      purgeAfter:null,
-      restoredAt:serverTimestamp(),
-      restoredBy:currentProfile.displayName||currentProfile.username||"Owner"
+  try{
+    const qSnap=await getDocs(query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500)));
+    const rows=qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!!r.deletedAt);
+
+    const restorable=rows.filter(r=>{
+      const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
+      return !purgeAt || purgeAt>Date.now();
     });
+
+    if(!restorable.length){
+      alert("Nothing available to Undo.");
+      return;
+    }
+
+    if(!confirm(`UNDO ALL DELETED HISTORY?\n\nRestore ${restorable.length} history entries?`)) return;
+
+    for(const r of restorable){
+      await updateDoc(doc(db,"auditLogs",r.id),{
+        deletedAt:null,
+        deletedBy:"",
+        purgeAfter:null,
+        restoredAt:serverTimestamp(),
+        restoredBy:currentProfile.displayName||currentProfile.username||"Owner"
+      });
+    }
+
+    alert(`Undo All complete. Restored ${restorable.length} history entries.`);
+  }catch(e){
+    console.error("History Undo All:",e);
+    alert(`History Undo All failed: ${e.code||e.message}`);
   }
 };
-
 async function purgeExpiredHistory(rows){
   if(currentProfile?.role!=="owner") return;
   const now=Date.now();
@@ -2248,3 +2264,5 @@ document.addEventListener("change",e=>{
 // V11.2: History soft delete + 3-day Undo/purge; Server Room cards auto-expire after 30 minutes.
 
 // V11.3: Owner History Delete All/Undo All; Picked Up deletes all matching board docs; board documents are physically deleted after 30 minutes.
+
+// V11.3.1: fixed missing getDocs import for Picked Up and History Delete All/Undo All.
