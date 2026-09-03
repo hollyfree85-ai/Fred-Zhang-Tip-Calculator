@@ -1136,6 +1136,8 @@ function reportRowsForExport(){
     meal:Number(r.meal||0),
     totalPaidOut:Number(r.totalPaidOut||0),
     status:"MONEY READY",
+    signatureStatus:r.signatureStatus||r.employeeSignatureStatus||"",
+    signedAt:r.signedAt||r.employeeSignedAt||"",
     finalizedBy:r.updatedBy||r.createdBy||r.finalizedBy||"",
     createdAt:r.createdAt||null
   }));
@@ -1151,6 +1153,7 @@ function xlsCellNumber(v,style="Number2"){
   const n=Number(v||0);
   return `<Cell ss:StyleID="${style}"><Data ss:Type="Number">${Number.isFinite(n)?n:0}</Data></Cell>`;
 }
+
 function xlsBlob(rows){
   const header=[
     "Date","Name","Position","Shift","Busser AM",
@@ -1159,11 +1162,22 @@ function xlsBlob(rows){
     "Busser Rate %","Busser Tip Out","AM Bar Sales","AM Bar Tip","PM Bar Sales","PM Bar Tip",
     "Bar Tip Out","Total Before Meal","Cash Tip","Grand Total Tip","Hourly Rate","Hourly Minimum",
     "Adjustment Salary Hourly","Adjustment Decision","Grand Total After Adjustment","Meal",
-    "Total Paid Out","Status","Finalized By"
+    "Total Paid Out","Signature Status","Signed At","Status","Finalized By"
   ];
-  const widths=[86,150,90,80,145,85,85,85,85,100,95,90,90,90,100,90,90,95,90,90,90,90,90,105,90,105,85,100,115,130,120,85,110,100,120];
+
+  const widths=[
+    95,170,105,90,165,
+    100,100,100,100,115,
+    110,105,105,105,120,105,
+    105,110,100,105,100,105,
+    105,125,105,120,100,115,
+    145,160,150,95,
+    125,125,180,115,150
+  ];
+
   const cols=widths.map(w=>`<Column ss:AutoFitWidth="0" ss:Width="${w}"/>`).join("");
-  const headerRow=`<Row ss:StyleID="Header" ss:Height="26">${header.map(h=>xlsCellString(h)).join("")}</Row>`;
+  const headerRow=`<Row ss:StyleID="Header" ss:Height="34">${header.map(h=>xlsCellString(h)).join("")}</Row>`;
+
   const dataRows=rows.map(r=>{
     const shift=String(r.shift||"").toUpperCase();
     const isDouble=shift==="DOUBLE"||shift==="LONG";
@@ -1171,43 +1185,49 @@ function xlsBlob(rows){
     const amOut=isDouble?r.hourOutAM:(shift==="AM"?r.hourOut:"");
     const pmIn=isDouble?r.hourInPM:(shift==="PM"?r.hourIn:"");
     const pmOut=isDouble?r.hourOutPM:(shift==="PM"?r.hourOut:"");
-    return `<Row ss:Height="22">${
+
+    const sigStatus=r.signatureStatus||r.employeeSignatureStatus||"";
+    const signedAt=r.signedAt||r.employeeSignedAt||"";
+
+    return `<Row ss:Height="27">${
       [
-        xlsCellString(r.date),
-        xlsCellString(r.employee),
-        xlsCellString(r.position),
-        xlsCellString(r.shift),
-        xlsCellString(r.busserAM||"-"),
-        xlsCellString(amIn),
-        xlsCellString(amOut),
-        xlsCellString(pmIn),
-        xlsCellString(pmOut),
-        xlsCellNumber(r.totalHoursWork,"Number2"),
-        xlsCellNumber(r.grandTotal,"Money"),
-        xlsCellNumber(r.totalAM,"Money"),
-        xlsCellNumber(r.totalPM,"Money"),
-        xlsCellNumber(r.totalTips,"Money"),
-        xlsCellNumber(r.payCardTipFee,"Money"),
-        xlsCellNumber(r.paidTip,"Money"),
-        xlsCellNumber(r.busserRate,"Rate3"),
-        xlsCellNumber(r.busserTipOut,"Money"),
-        xlsCellString(r.amBarSales?"YES":"NO"),
-        xlsCellNumber(r.amBarTip,"Money"),
-        xlsCellString(r.pmBarSales?"YES":"NO"),
-        xlsCellNumber(r.pmBarTip,"Money"),
-        xlsCellNumber(r.barTipOut,"Money"),
-        xlsCellNumber(r.totalBeforeMeal,"Money"),
-        xlsCellNumber(r.cashTip,"Money"),
-        xlsCellNumber(r.grandTotalTip,"Money"),
-        xlsCellNumber(r.hourlyRate,"Money"),
-        xlsCellNumber(r.hourlyMinimum,"Money"),
-        xlsCellNumber(r.adjustmentSalaryHourly,"Money"),
-        xlsCellString(r.adjustmentDecision==="NONE"?"NO ADJUSTMENT":r.adjustmentDecision),
-        xlsCellNumber(r.grandTotalAfterAdjustment,"Money"),
-        xlsCellNumber(r.meal,"Money"),
-        xlsCellNumber(r.totalPaidOut,"Money"),
-        xlsCellString(r.status),
-        xlsCellString(r.finalizedBy)
+        xlsCellString(r.date,"Body"),
+        xlsCellString(r.employee,"Body"),
+        xlsCellString(r.position,"Body"),
+        xlsCellString(r.shift,"Body"),
+        xlsCellString(r.busserAM||"-","Body"),
+        xlsCellString(amIn,"Body"),
+        xlsCellString(amOut,"Body"),
+        xlsCellString(pmIn,"Body"),
+        xlsCellString(pmOut,"Body"),
+        xlsCellNumber(r.totalHoursWork,"Number14"),
+        xlsCellNumber(r.grandTotal,"Money14"),
+        xlsCellNumber(r.totalAM,"Money14"),
+        xlsCellNumber(r.totalPM,"Money14"),
+        xlsCellNumber(r.totalTips,"Money14"),
+        xlsCellNumber(r.payCardTipFee,"Money14"),
+        xlsCellNumber(r.paidTip,"Money14"),
+        xlsCellNumber(r.busserRate,"Rate14"),
+        xlsCellNumber(r.busserTipOut,"Money14"),
+        xlsCellString(r.amBarSales?"YES":"NO","Body"),
+        xlsCellNumber(r.amBarTip,"Money14"),
+        xlsCellString(r.pmBarSales?"YES":"NO","Body"),
+        xlsCellNumber(r.pmBarTip,"Money14"),
+        xlsCellNumber(r.barTipOut,"Money14"),
+        xlsCellNumber(r.totalBeforeMeal,"Money14"),
+        xlsCellNumber(r.cashTip,"Money14"),
+        xlsCellNumber(r.grandTotalTip,"Money14"),
+        xlsCellNumber(r.hourlyRate,"Money14"),
+        xlsCellNumber(r.hourlyMinimum,"Money14"),
+        xlsCellNumber(r.adjustmentSalaryHourly,"Money14"),
+        xlsCellString(r.adjustmentDecision==="NONE"?"NO ADJUSTMENT":r.adjustmentDecision,"Body"),
+        xlsCellNumber(r.grandTotalAfterAdjustment,"Money14"),
+        xlsCellNumber(r.meal,"Money14"),
+        xlsCellNumber(r.totalPaidOut,"MoneyBold14"),
+        xlsCellString(sigStatus,"Body"),
+        xlsCellString(signedAt,"Body"),
+        xlsCellString(r.status,"Body"),
+        xlsCellString(r.finalizedBy,"Body")
       ].join("")
     }</Row>`;
   }).join("");
@@ -1221,7 +1241,11 @@ function xlsBlob(rows){
  <Styles>
   <Style ss:ID="Default" ss:Name="Normal">
    <Alignment ss:Vertical="Center"/>
-   <Font ss:FontName="Arial" ss:Size="11"/>
+   <Font ss:FontName="Arial" ss:Size="14"/>
+  </Style>
+  <Style ss:ID="Body">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Arial" ss:Size="14"/>
   </Style>
   <Style ss:ID="Header">
    <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
@@ -1231,13 +1255,15 @@ function xlsBlob(rows){
     <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D4E6"/>
     <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D4E6"/>
    </Borders>
-   <Font ss:FontName="Arial" ss:Size="11" ss:Bold="1" ss:Color="#10213C"/>
+   <Font ss:FontName="Arial" ss:Size="14" ss:Bold="1" ss:Color="#10213C"/>
    <Interior ss:Color="#DCE8FF" ss:Pattern="Solid"/>
   </Style>
-  <Style ss:ID="Number2"><NumberFormat ss:Format="0.00"/></Style>
-  <Style ss:ID="Rate3"><NumberFormat ss:Format="0.000"/></Style>
-  <Style ss:ID="Money"><NumberFormat ss:Format="$#,##0.00;[Red]-$#,##0.00"/></Style>
+  <Style ss:ID="Number14"><Font ss:FontName="Arial" ss:Size="14"/><NumberFormat ss:Format="0.00"/></Style>
+  <Style ss:ID="Rate14"><Font ss:FontName="Arial" ss:Size="14"/><NumberFormat ss:Format="0.000"/></Style>
+  <Style ss:ID="Money14"><Font ss:FontName="Arial" ss:Size="14"/><NumberFormat ss:Format="$#,##0.00;[Red]-$#,##0.00"/></Style>
+  <Style ss:ID="MoneyBold14"><Font ss:FontName="Arial" ss:Size="14" ss:Bold="1"/><NumberFormat ss:Format="$#,##0.00;[Red]-$#,##0.00"/></Style>
  </Styles>
+
  <Worksheet ss:Name="Daily Report">
   <Table>${cols}${headerRow}${dataRows}</Table>
   <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
@@ -1246,8 +1272,10 @@ function xlsBlob(rows){
   </WorksheetOptions>
  </Worksheet>
 </Workbook>`;
+
   return new Blob([xml],{type:"application/vnd.ms-excel"});
 }
+
 
 function pdfEscape(s){
   return String(s??"")
@@ -1263,17 +1291,21 @@ function pdfRate(v){
   return Number(v||0).toLocaleString("en-US",{minimumFractionDigits:3,maximumFractionDigits:3})+"%";
 }
 function pdfBool(v){ return v?"YES":"NO"; }
+
 function pdfField(label,value,x,y){
-  return `BT /F1 7 Tf ${x} ${y} Td (${pdfEscape(label)}) Tj ET\n`+
-         `BT /F2 9.5 Tf ${x} ${y-11} Td (${pdfEscape(value)}) Tj ET\n`;
+  return `BT /F1 9.5 Tf ${x} ${y} Td (${pdfEscape(label)}) Tj ET\n`+
+         `BT /F2 14 Tf ${x} ${y-15} Td (${pdfEscape(value)}) Tj ET\n`;
 }
+
 function pdfReportContent(r,index,total){
   const shift=String(r.shift||"").toUpperCase();
   const isDouble=shift==="DOUBLE"||shift==="LONG";
+
   const amIn=isDouble?r.hourInAM:(shift==="AM"?r.hourIn:"-");
   const amOut=isDouble?r.hourOutAM:(shift==="AM"?r.hourOut:"-");
   const pmIn=isDouble?r.hourInPM:(shift==="PM"?r.hourIn:"-");
   const pmOut=isDouble?r.hourOutPM:(shift==="PM"?r.hourOut:"-");
+
   const left=[
     ["Date",r.date||"-"],
     ["Employee",r.employee||"-"],
@@ -1293,6 +1325,7 @@ function pdfReportContent(r,index,total){
     ["Paid Tip",pdfMoney(r.paidTip)],
     ["Busser Rate",pdfRate(r.busserRate)]
   ];
+
   const right=[
     ["Busser Tip Out",pdfMoney(r.busserTipOut)],
     ["AM Bar Sales",pdfBool(r.amBarSales)],
@@ -1309,30 +1342,41 @@ function pdfReportContent(r,index,total){
     ["Adjustment Decision",r.adjustmentDecision==="NONE"?"NO ADJUSTMENT":r.adjustmentDecision],
     ["Grand Total After Adjustment",pdfMoney(r.grandTotalAfterAdjustment)],
     ["Meal",pdfMoney(r.meal)],
-    ["TOTAL PAID OUT",pdfMoney(r.totalPaidOut)],
-    ["Status",r.status||"MONEY READY"]
+    ["TOTAL PAID OUT",pdfMoney(r.totalPaidOut)]
   ];
 
   let c="";
-  c+="BT /F2 17 Tf 36 754 Td (TIP CALCULATOR BY FRED ZHANG - EMPLOYEE REPORT) Tj ET\n";
-  c+=`BT /F1 8 Tf 36 737 Td (Report ${index+1} of ${total}) Tj ET\n`;
-  c+="0.8 w 36 724 m 576 724 l S\n";
+  // Original report-style header.
+  c+="BT /F2 19 Tf 28 758 Td (TIP CALCULATOR BY FRED ZHANG - EMPLOYEE REPORT) Tj ET\n";
+  c+=`BT /F1 10 Tf 28 739 Td (Report ${index+1} of ${total}) Tj ET\n`;
+  c+="0.9 w 28 725 m 584 725 l S\n";
 
-  let y=700;
-  for(const [label,value] of left){ c+=pdfField(label,value,36,y); y-=34; }
-  y=700;
-  for(const [label,value] of right){ c+=pdfField(label,value,315,y); y-=34; }
-
-  c+="0.8 w 36 116 m 576 116 l S\n";
-  c+="BT /F2 13 Tf 36 92 Td (TOTAL PAID OUT) Tj ET\n";
-  c+=`BT /F2 25 Tf 36 62 Td (${pdfEscape(pdfMoney(r.totalPaidOut))}) Tj ET\n`;
-  c+="BT /F1 7.5 Tf 36 42 Td (Final Daily Report - calculated and finalized by Manager/Owner) Tj ET\n";
-  c+=`BT /F2 11 Tf 315 92 Td (FINAL STATUS - ${pdfEscape(r.status||"MONEY READY")}) Tj ET\n`;
-  if(r.finalizedBy){
-    c+=`BT /F1 7.5 Tf 315 76 Td (Finalized By) Tj ET\n`;
-    c+=`BT /F2 9.5 Tf 315 64 Td (${pdfEscape(r.finalizedBy)}) Tj ET\n`;
+  // Two-column report body, larger and more readable.
+  let y=702;
+  for(const [label,value] of left){
+    c+=pdfField(label,value,28,y);
+    y-=35;
   }
-  c+=`BT /F1 7 Tf 36 22 Td (Generated ${pdfEscape(new Date().toLocaleString())} | Page ${index+1}) Tj ET\n`;
+
+  y=702;
+  for(const [label,value] of right){
+    c+=pdfField(label,value,322,y);
+    y-=35;
+  }
+
+  // Footer block matching the old report: very prominent paid out.
+  c+="0.9 w 28 105 m 584 105 l S\n";
+  c+="BT /F2 15 Tf 28 82 Td (TOTAL PAID OUT) Tj ET\n";
+  c+=`BT /F2 30 Tf 28 48 Td (${pdfEscape(pdfMoney(r.totalPaidOut))}) Tj ET\n`;
+
+  const status=String(r.status||"MONEY READY").toUpperCase();
+  c+="BT /F2 13 Tf 322 82 Td (FINAL REPORT - MONEY READY) Tj ET\n";
+  c+=`BT /F1 9.5 Tf 322 64 Td (Status: ${pdfEscape(status)}) Tj ET\n`;
+  if(r.finalizedBy){
+    c+=`BT /F1 9.5 Tf 322 49 Td (Finalized By: ${pdfEscape(r.finalizedBy)}) Tj ET\n`;
+  }
+
+  c+=`BT /F1 8 Tf 28 20 Td (Generated ${pdfEscape(new Date().toLocaleString())} | Page ${index+1}) Tj ET\n`;
   return c;
 }
 
@@ -1342,33 +1386,51 @@ function simplePdfBlob(rows){
   const font2=font1+1;
   const objects=[];
   const kids=[];
+
   objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
 
   for(let i=0;i<n;i++){
     const pageObj=3+i*2;
     const contentObj=pageObj+1;
     kids.push(`${pageObj} 0 R`);
+
     const content=pdfReportContent(rows[i],i,n);
-    objects[pageObj]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> >> /Contents ${contentObj} 0 R >>`;
-    objects[contentObj]=`<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
+
+    objects[pageObj]=
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] `+
+      `/Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> >> `+
+      `/Contents ${contentObj} 0 R >>`;
+
+    objects[contentObj]=
+      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
   }
+
   objects[2]=`<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${n} >>`;
+
+  // Helvetica / Helvetica-Bold are standard PDF sans-serif fonts and visually
+  // match Arial closely without shipping any font file.
   objects[font1]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
   objects[font2]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
 
   const maxObj=font2;
   let pdf="%PDF-1.4\n";
   const offsets=[0];
+
   for(let i=1;i<=maxObj;i++){
     offsets[i]=pdf.length;
     pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;
   }
+
   const xref=pdf.length;
   pdf+=`xref\n0 ${maxObj+1}\n0000000000 65535 f \n`;
-  for(let i=1;i<=maxObj;i++) pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
+  for(let i=1;i<=maxObj;i++){
+    pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
+  }
+
   pdf+=`trailer\n<< /Size ${maxObj+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return new Blob([pdf],{type:"application/pdf"});
 }
+
 async function shareReportFile(blob,filename,target){
   const file=new File([blob],filename,{type:blob.type});
   if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
@@ -1879,3 +1941,5 @@ function selectZeroOnFocus(el){
 // V10.4 FINAL: Final Daily Report is its own staff tab, grouped by employee; owner-only Clear All; final submit opens that tab.
 
 // V10.5: PDF rebuilt in legacy Fred Zhang one-employee-per-page report layout; XLS rebuilt as styled Excel XML matching legacy Daily Report columns. Busser Rate export fixed (1.500%, not 150%).
+
+// V10.7 REPORT STYLE: original Fred Zhang report layout restored; main PDF values 14pt; Excel Arial 14; network-first code cache.
