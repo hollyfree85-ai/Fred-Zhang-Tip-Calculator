@@ -67,8 +67,8 @@ self.addEventListener("notificationclick",event=>{
   })());
 });
 
-const CACHE="fz-tip-v1335";
-const CORE=["./","./index.html","./app-v1335.js","./simple-ui-v1335.js","./firebase-config.js","./push-config.js","./hourly-logic.js","./manifest.webmanifest", "./money-ready-chime.wav"];
+const CACHE="fz-tip-v1336";
+const CORE=["./","./index.html","./app-v1336.js?v=1336","./simple-ui-v1336.js?v=1336","./firebase-config.js","./push-config.js","./hourly-logic.js","./manifest.webmanifest", "./money-ready-chime.wav"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();
@@ -85,31 +85,20 @@ self.addEventListener("activate",event=>{
 
 self.addEventListener("fetch",event=>{
   const req=event.request;
-  if(req.method!=="GET") return;
-
-  const url=new URL(req.url);
-  const isCode=url.pathname.endsWith("/") ||
-               url.pathname.endsWith("/index.html") ||
-               url.pathname.endsWith(".js") ||
-               url.pathname.endsWith("/service-worker.js");
-
-  if(isCode){
+  if(req.mode==="navigate"){
     event.respondWith(
-      fetch(req,{cache:"no-store"})
-        .then(res=>{
-          const copy=res.clone();
-          caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});
-          return res;
-        })
-        .catch(()=>caches.match(req))
+      fetch(req,{cache:"no-store"}).then(res=>{
+        const copy=res.clone();
+        caches.open(CACHE).then(c=>c.put(req,copy));
+        return res;
+      }).catch(()=>caches.match(req).then(r=>r||caches.match("./index.html")))
     );
     return;
   }
-
   event.respondWith(
-    caches.match(req).then(hit=>hit||fetch(req).then(res=>{
+    caches.match(req).then(cached=>cached||fetch(req).then(res=>{
       const copy=res.clone();
-      caches.open(CACHE).then(c=>c.put(req,copy)).catch(()=>{});
+      caches.open(CACHE).then(c=>c.put(req,copy));
       return res;
     }))
   );
