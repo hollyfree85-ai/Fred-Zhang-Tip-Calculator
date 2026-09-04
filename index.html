@@ -59,6 +59,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 .sxhead{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.sxmodal{position:fixed;inset:0;z-index:150000;background:rgba(3,13,27,.8);align-items:center;justify-content:center;padding:14px}.sxdialog{width:min(920px,98vw)}.sxbig{font-size:24px!important;padding:15px!important}.sxgrp{display:grid;grid-template-columns:70px 1fr;gap:10px;margin:10px 0}.sxgrp>div{display:flex;flex-wrap:wrap;gap:8px}.sxtable{min-width:72px;min-height:52px;border:2px solid #cbd6e3;border-radius:12px;background:white;font-size:18px;font-weight:900}.sxtable.on{background:#12213a;color:white}.sxt th,.sxt td{font-size:16px;padding:12px 10px}.sxfilter{display:grid;grid-template-columns:1fr 1.4fr auto;gap:12px;margin:16px 0}.sxfilter input,.sxfilter select{font-size:18px;padding:13px}.sxfilter button{min-height:50px}.sxsum{display:grid;grid-template-columns:repeat(5,minmax(130px,1fr));gap:10px;margin:14px 0}.sxsum>div{border:1px solid #d6deea;border-radius:14px;padding:13px;background:#f8fafc}.sxsum small{display:block;font-weight:900;text-transform:uppercase;color:#607087}.sxsum b{display:block;font-size:23px}.sxrt th{font-size:15px;padding:13px 10px;background:#12213a;color:white}.sxrt td{font-size:17px;padding:13px 10px}.sxrt select{font-size:16px;padding:10px;min-width:180px}@media(max-width:800px){.sxfilter{grid-template-columns:1fr}.sxsum{grid-template-columns:1fr 1fr}.sxgrp{grid-template-columns:1fr}}.sxmodal{overflow:auto!important;align-items:flex-start!important}
 .sxdialog{margin:18px auto!important;max-height:calc(100vh - 36px);overflow:auto}
 .sxdialog .actions{position:sticky;bottom:0;background:#fff;padding-top:12px;padding-bottom:4px;z-index:3}
+.sxCompleteBtn{width:100%!important;min-height:68px!important;font-size:21px!important;font-weight:900!important;margin-top:16px!important}.sxCompleteBtn:disabled{opacity:.45!important}
 </style>
 
 <style>
@@ -104,7 +105,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.3.2 SAVE FIX</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.3.4 ROLE SECURITY</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -700,7 +701,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1332.js"></script>
+<script type="module" src="app-v1334.js"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
@@ -744,5 +745,5 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-wor
   </div>
 </div>
 
-<script src="simple-ui-v1332.js"></script></body>
+<script src="simple-ui-v1334.js"></script></body>
 </html>
