@@ -104,6 +104,18 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 
 #employeeBottom,#employeeApp #employeeBottom,
 button[onclick="submitEmployeeReport()"]{display:none!important}
+
+.owner-user-page-head,.owner-user-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.owner-user-card{border:1px solid #d8e1ec;border-radius:16px;padding:14px;margin:12px 0;background:#fff}
+.owner-user-name{font-size:18px}.owner-user-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.owner-user-grid>div{border:1px solid #e1e7ef;border-radius:12px;padding:10px;background:#f7f9fc}
+.owner-user-grid span{display:block;font-size:11px;font-weight:900;color:#68758a;text-transform:uppercase;margin-bottom:4px}
+.owner-user-grid b{display:block;font-size:14px;word-break:break-word}
+.owner-modal-overlay{position:fixed;inset:0;z-index:180000;background:rgba(3,13,27,.76);align-items:center;justify-content:center;padding:16px;overflow:auto}
+.owner-modal-card{width:min(760px,96vw);margin:auto}
+#sxSubmit,#sxClear,#sxAdd,.sxtable{touch-action:manipulation;-webkit-tap-highlight-color:transparent;cursor:pointer}
+@media(max-width:720px){.owner-user-grid{grid-template-columns:1fr 1fr}}
+
 </style>
 
 <style>
@@ -149,7 +161,7 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.4.8 SHIFT BUTTON FIX</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.4.9 TIME USER EMPLOYEE FIX</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -652,7 +664,13 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
 
 <section id="users" class="staffPanel hidden">
         <div class="card">
-          <h2>User Management</h2>
+          <div class="owner-user-page-head">
+            <div>
+              <h2 style="margin-bottom:4px">User Management</h2>
+              <div class="small">View and edit user profile data. Existing PIN/password values are protected.</div>
+            </div>
+            <button type="button" class="btn blue" onclick="openOwnerPasswordModal()">Change My Owner Password</button>
+          </div>
           <div class="grid3">
             <div><label>Username</label><input id="uName" placeholder="john"></div>
             <div><label>Role</label><select id="uRole"><option value="employee">Employee</option><option value="manager">Manager</option><option value="cashier">Cashier</option></select></div>
@@ -712,6 +730,63 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
 </div>
 
 
+
+<div id="userEditModal" class="hidden owner-modal-overlay" style="display:none">
+  <div class="card owner-modal-card">
+    <h2>View / Edit User</h2>
+    <input id="editUserUid" type="hidden">
+    <div class="grid">
+      <div><label>Username</label><input id="editUserUsername" readonly></div>
+      <div><label>Role</label>
+        <select id="editUserRole" disabled>
+          <option value="employee">Employee</option>
+          <option value="manager">Manager</option>
+          <option value="cashier">Cashier</option>
+          <option value="owner">Owner</option>
+        </select>
+      </div>
+      <div><label>Display Name</label><input id="editUserDisplayName"></div>
+      <div><label>Phone</label><input id="editUserPhone" inputmode="tel"></div>
+      <div><label>Approval Status</label>
+        <select id="editUserApproval">
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+      </div>
+      <div><label>Account Status</label>
+        <select id="editUserActive">
+          <option value="true">Active</option>
+          <option value="false">Disabled</option>
+        </select>
+      </div>
+    </div>
+    <div class="notice" style="margin-top:12px">
+      Username, role, and existing password are protected. Delete and recreate the account when its login username or role must be changed.
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button type="button" class="btn light" onclick="closeEditUser()">Cancel</button>
+      <button type="button" class="btn green" onclick="saveEditUser()">Save User</button>
+    </div>
+  </div>
+</div>
+
+<div id="ownerPasswordModal" class="hidden owner-modal-overlay" style="display:none">
+  <div class="card owner-modal-card" style="max-width:560px">
+    <h2>Change Owner Password</h2>
+    <div><label>Current Password</label><input id="ownerCurrentPassword" type="password" autocomplete="current-password"></div>
+    <div style="height:10px"></div>
+    <div><label>New Password</label><input id="ownerNewPassword" type="password" autocomplete="new-password"></div>
+    <div style="height:10px"></div>
+    <div><label>Confirm New Password</label><input id="ownerConfirmPassword" type="password" autocomplete="new-password"></div>
+    <div class="notice" style="margin-top:12px">The new password is changed securely in Firebase Authentication.</div>
+    <div class="actions" style="margin-top:14px">
+      <button type="button" class="btn light" onclick="closeOwnerPasswordModal()">Cancel</button>
+      <button type="button" class="btn green" id="ownerChangePasswordBtn" onclick="changeOwnerPassword()">Change Password</button>
+    </div>
+  </div>
+</div>
+
 <div id="editModal" class="hidden" style="position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.45);padding:20px;overflow:auto">
   <div class="card" style="max-width:700px;margin:30px auto">
     <h2 id="editTitle">Edit Submission</h2>
@@ -756,7 +831,7 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1348.js?v=1348?v=1338?v=1337"></script>
+<script type="module" src="app-v1349.js?v=1349"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
@@ -800,7 +875,7 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-wor
   </div>
 </div>
 
-<script src="simple-ui-v1348.js?v=1348?v=1338?v=1337"></script></body>
+<script src="simple-ui-v1349.js?v=1349"></script></body>
 </html>
 <style>
 /* V13.4.2 - ONLY Employee Tip Report is hidden.
