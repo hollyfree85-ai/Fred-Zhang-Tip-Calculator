@@ -116,6 +116,12 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
 #sxSubmit,#sxClear,#sxAdd,.sxtable{touch-action:manipulation;-webkit-tap-highlight-color:transparent;cursor:pointer}
 @media(max-width:720px){.owner-user-grid{grid-template-columns:1fr 1fr}}
 
+
+#howBartenderCalcMount #hBartenderBarReceivedWrap{margin-top:8px!important}
+#howBartenderCalcMount #hBartenderBarReceivedWrap>.card{margin:0!important;background:#fff!important}
+#howBartenderCalcMount .bartender-server-row input,
+#howBartenderCalcMount .bartender-server-row select{min-height:52px;font-size:16px}
+.how-time-input{font-variant-numeric:tabular-nums;letter-spacing:2px}
 </style>
 
 <style>
@@ -161,7 +167,7 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.4.9 TIME USER EMPLOYEE FIX</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.5.0 ORIGINAL HOURLY COMPLETE</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -831,9 +837,13 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1349.js?v=1349"></script>
+<script type="module" src="app-v1350.js?v=1350"></script>
 <script>
-if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./service-worker-v1350.js?v=1350',{updateViaCache:'none'})
+    .then(reg=>reg.update())
+    .catch(()=>{});
+}
 </script>
 <script type="module" src="./board-hotfix.js?v=1322"></script>
 
@@ -875,7 +885,7 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-wor
   </div>
 </div>
 
-<script src="simple-ui-v1349.js?v=1349"></script></body>
+<script src="simple-ui-v1350.js?v=1350"></script></body>
 </html>
 <style>
 /* V13.4.2 - ONLY Employee Tip Report is hidden.
