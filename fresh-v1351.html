@@ -1,6 +1,23 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>
+(async()=>{
+  const q=new URLSearchParams(location.search);
+  if(q.get('clean')==='1') return;
+  try{
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+    if('caches' in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+  }catch(e){}
+  location.replace('./fresh-v1351.html?clean=1&t='+Date.now());
+})();
+</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
