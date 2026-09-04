@@ -109,7 +109,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.4.1 EMPLOYEE CHECK TIP ONLY</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.4.2 EMPLOYEE CHECK TIP ONLY</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -602,10 +602,6 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 <section id="users" class="staffPanel hidden">
         <div class="card">
           <h2>User Management</h2>
-<div class="notice" style="margin-bottom:12px">
-  Owner can view account name, username, role, phone, approval status, and active/disabled status.
-  PIN/password values are protected and are not displayed in plaintext.
-</div>
           <div class="grid3">
             <div><label>Username</label><input id="uName" placeholder="john"></div>
             <div><label>Role</label><select id="uRole"><option value="employee">Employee</option><option value="manager">Manager</option><option value="cashier">Cashier</option></select></div>
@@ -709,7 +705,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1341.js?v=1341?v=1338?v=1337"></script>
+<script type="module" src="app-v1342.js?v=1342?v=1338?v=1337"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
@@ -753,14 +749,10 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-wor
   </div>
 </div>
 
-<script src="simple-ui-v1341.js?v=1341?v=1338?v=1337"></script></body>
+<script src="simple-ui-v1342.js?v=1342?v=1338?v=1337"></script></body>
 </html>
 <style>
-/* V13.4.1 - Employee sees CHECK TIP only. Staff workflows stay intact. */
-#employeeApp [data-etab="shift"],
-#employeeApp #employeeShiftPanel,
-#employeeApp #employeeShift,
-#employeeApp .employeeShiftPanel {
-  display:none !important;
-}
+/* V13.4.2 - ONLY Employee Tip Report is hidden.
+   Manager/Owner Hourly Adjustment, Final Daily Report, History, etc. remain untouched. */
+#employeeApp [data-etab="shift"] { display:none !important; }
 </style>
