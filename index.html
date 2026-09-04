@@ -64,6 +64,19 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 .sxdialog .actions{position:sticky;bottom:0;background:#fff;padding-top:12px;padding-bottom:4px;z-index:3}
 .sxCompleteBtn{width:100%!important;min-height:68px!important;font-size:21px!important;font-weight:900!important;margin-top:16px!important}.sxCompleteBtn:disabled{opacity:.45!important}
 .sxOwnerTools,.sxOwnerSheetTools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.sxOwnerTools .btn,.sxOwnerSheetTools .btn{font-size:14px!important}.sxOwnerSheetTools{margin-top:8px}
+
+/* V13.3.9 CHECK TIP ONLY */
+#employeeShift,[data-etab="shift"],[data-stab="review"],[data-stab="hourly"],[data-stab="final"],[data-stab="history"],#review,#hourly,#final,#history{display:none!important;}
+
+
+.owner-user-card{border:1px solid #d7e0ea;border-radius:16px;padding:14px;margin:10px 0;background:#fff}
+.owner-user-main{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.owner-user-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.owner-user-grid>div{background:#f5f7fa;border:1px solid #e0e6ee;border-radius:12px;padding:10px}
+.owner-user-grid small{display:block;color:#667085;font-weight:800;font-size:11px;margin-bottom:4px}
+.owner-user-grid b{font-size:14px;word-break:break-word}
+@media(max-width:700px){.owner-user-grid{grid-template-columns:1fr 1fr}}
+
 </style>
 
 <style>
@@ -109,7 +122,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.3.8 OWNER FULL CONTROLS</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.4.0 CHECK TIP ONLY</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -705,7 +718,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1338.js?v=1338?v=1337"></script>
+<script type="module" src="app-v1340.js?v=1340?v=1337"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
@@ -749,5 +762,5 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-wor
   </div>
 </div>
 
-<script src="simple-ui-v1338.js?v=1338?v=1337"></script></body>
+<script src="simple-ui-v1340.js?v=1340?v=1337"></script></body>
 </html>
