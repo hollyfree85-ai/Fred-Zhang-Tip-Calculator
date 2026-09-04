@@ -64,6 +64,43 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 .sxdialog .actions{position:sticky;bottom:0;background:#fff;padding-top:12px;padding-bottom:4px;z-index:3}
 .sxCompleteBtn{width:100%!important;min-height:68px!important;font-size:21px!important;font-weight:900!important;margin-top:16px!important}.sxCompleteBtn:disabled{opacity:.45!important}
 .sxOwnerTools,.sxOwnerSheetTools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.sxOwnerTools .btn,.sxOwnerSheetTools .btn{font-size:14px!important}.sxOwnerSheetTools{margin-top:8px}
+
+/* V13.4.3 — Original Hourly Adjustment wizard UI */
+.hourly-original-wizard{margin:18px 0 22px;padding:20px;border:1px solid #d7dfeb;border-radius:22px;background:#fff;box-shadow:0 10px 28px rgba(20,36,70,.08)}
+.how-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.how-head h2{margin:0 0 4px;font-size:27px;color:#101a30}
+.how-step-badge{padding:8px 12px;border-radius:999px;background:#eaf0f8;color:#243a61;font-size:13px;font-weight:900}
+.how-title{margin:0 0 5px;font-size:28px;color:#162033}
+.how-sub{margin:0 0 18px;color:#66738a;font-size:16px}
+.how-card{padding:18px;border:1px solid #d7dfeb;border-radius:18px;background:#f9fbfd}
+.how-field{margin-bottom:16px}
+.how-field label,.how-label{display:block;margin-bottom:7px;font-size:15px;font-weight:900;color:#4b576b}
+.how-field input,.how-field select{width:100%;min-height:62px;padding:12px 14px;border:1px solid #cfd8e5;border-radius:14px;background:#fff;font-size:20px;color:#162033}
+.how-choices{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.how-choices.four{grid-template-columns:repeat(4,1fr)}
+.how-choice{min-height:60px;border:1px solid #cfd8e5;border-radius:14px;background:#fff;color:#111827;font-size:18px;font-weight:900}
+.how-choice.on{background:#101a30;color:#fff;border-color:#101a30}
+.how-info{margin:0 0 16px;padding:13px 14px;border:1px solid #c6d9f3;border-radius:14px;background:#eef5ff;color:#24446f;font-size:15px;line-height:1.4}
+.how-metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:12px}
+.how-metric{padding:13px;border:1px solid #d7dfeb;border-radius:14px;background:#fff}
+.how-metric span{display:block;color:#66738a;font-size:12px;font-weight:900;text-transform:uppercase}
+.how-metric b{display:block;margin-top:4px;font-size:20px;color:#162033}
+.how-actions{display:grid;grid-template-columns:1fr 1.5fr;gap:10px;margin-top:18px}
+.how-actions .btn{min-height:60px;font-size:18px;font-weight:900}
+.how-review-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.how-review-actions .btn{min-height:64px;font-size:18px;font-weight:900}
+.how-summary{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.how-summary>div{padding:12px;border:1px solid #d7dfeb;border-radius:13px;background:#fff}
+.how-summary small{display:block;color:#66738a;font-weight:900}
+.how-summary b{display:block;margin-top:3px;font-size:18px}
+.hourlyLegacyHidden{display:none!important}
+@media(max-width:720px){
+ .hourly-original-wizard{padding:14px;margin-top:12px}
+ .how-choices,.how-choices.four{grid-template-columns:1fr 1fr}
+ .how-actions,.how-review-actions{grid-template-columns:1fr}
+ .how-title{font-size:24px}
+}
+
 </style>
 
 <style>
@@ -109,7 +146,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.4.2 EMPLOYEE CHECK TIP ONLY</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.4.3 ORIGINAL HOURLY UI</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -359,7 +396,18 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
           <div class="notice" style="margin-top:12px">
             <b>Automatic Busser Rule:</b> Mon–Fri AM = no busser; Mon–Fri PM = 1.5%; Mon–Fri Double/Long = PM portion only at 1.5%; Sat–Sun all shifts = 1.5%.
           </div>
-          <h3>Employee & Shift</h3>
+          
+          <div id="hourlyOriginalWizard" class="hourly-original-wizard">
+            <div class="how-head">
+              <div>
+                <h2>Hourly Adjustment V01</h2>
+                <div class="small">Original simple workflow — choose employee and shift first, then continue step by step.</div>
+              </div>
+              <div id="howStepBadge" class="how-step-badge">STEP 1 / 7</div>
+            </div>
+            <div id="howBody"></div>
+          </div>
+<h3>Employee & Shift</h3>
           <div class="grid3">
             <div><label>Date</label><input id="hDate" type="date"></div>
             <div><label>Employee</label><select id="hEmployee"></select></div>
@@ -705,7 +753,7 @@ iframe{width:100%;min-height:75vh;border:1px solid var(--line);border-radius:14p
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v1342.js?v=1342?v=1338?v=1337"></script>
+<script type="module" src="app-v1343.js?v=1343?v=1338?v=1337"></script>
 <script>
 if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-worker.js').catch(()=>{})}
 </script>
@@ -749,7 +797,7 @@ if('serviceWorker' in navigator){navigator.serviceWorker.register('./service-wor
   </div>
 </div>
 
-<script src="simple-ui-v1342.js?v=1342?v=1338?v=1337"></script></body>
+<script src="simple-ui-v1343.js?v=1343?v=1338?v=1337"></script></body>
 </html>
 <style>
 /* V13.4.2 - ONLY Employee Tip Report is hidden.
