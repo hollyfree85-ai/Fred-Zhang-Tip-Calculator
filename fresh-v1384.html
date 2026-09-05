@@ -1,6 +1,28 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>
+(function(){
+  try{
+    const u=new URL(location.href);
+    if(u.searchParams.get('clean')==='1') return;
+    document.documentElement.style.visibility='hidden';
+
+    Promise.resolve()
+      .then(()=>('serviceWorker' in navigator)?navigator.serviceWorker.getRegistrations():[])
+      .then(regs=>Promise.all((regs||[]).map(r=>r.unregister())))
+      .then(()=>('caches' in window)?caches.keys():[])
+      .then(keys=>Promise.all((keys||[]).map(k=>caches.delete(k))))
+      .finally(()=>{
+        u.searchParams.set('clean','1');
+        u.searchParams.set('v','1384');
+        u.searchParams.set('t',String(Date.now()));
+        location.replace(u.toString());
+      });
+  }catch(e){}
+})();
+</script>
+
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -464,7 +486,7 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1SmallReportBox{
 #pickupSignatureModal.hidden{display:none!important}
 </style>
 </head>
-<body>
+<body><div style="display:none" data-build="1384" data-hourly-tab="present"></div>
 <div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.4 BAR PERIOD FORMULA FIX</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
