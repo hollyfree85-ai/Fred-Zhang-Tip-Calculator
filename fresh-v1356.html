@@ -1,6 +1,23 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>
+(async()=>{
+  const q=new URLSearchParams(location.search);
+  if(q.get('clean')==='1') return;
+  try{
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+    if('caches' in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+  }catch(e){}
+  location.replace('./fresh-v1356.html?clean=1&t='+Date.now());
+})();
+</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -136,22 +153,6 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
  .how-bt-checkpoints{grid-template-columns:1fr!important}
  .how-bt-row{grid-template-columns:1fr}
  .how-bt-head{display:none}
-}
-
-
-/* V13.5.6 Small Report */
-.small-report-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap}
-.small-report-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
-.small-report-summary .kpi{min-height:86px}
-.small-report-wrap{max-height:680px;border:1px solid #d9e1ec;border-radius:16px}
-.small-report-table{min-width:2250px;border-collapse:separate;border-spacing:0;width:100%}
-.small-report-table th{position:sticky;top:0;z-index:2;background:#10213c;color:#fff;font-size:14px;padding:13px 10px;white-space:nowrap}
-.small-report-table td{font-size:14px;padding:12px 10px;vertical-align:middle;border-bottom:1px solid #e6ebf2;white-space:nowrap}
-.small-report-table td.signature-cell{min-width:260px;width:260px;height:110px;white-space:normal}
-.small-report-signature{display:block;width:240px;height:86px;border:1px solid #cdd7e6;border-radius:10px;background:#fff}
-.small-report-signature-pending{display:flex;align-items:center;justify-content:center;width:240px;height:86px;border:1px dashed #c8a64b;border-radius:10px;background:#fff8df;color:#805f00;font-weight:900}
-@media(max-width:760px){
-  .small-report-summary{grid-template-columns:1fr 1fr}
 }
 
 </style>
@@ -408,7 +409,6 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
         <button class="tab" data-stab="report">Manager Review / Report</button>
         <button class="tab" data-stab="hourly">Hourly Adjustment V01</button>
         <button class="tab" data-stab="finalDaily">Final Daily Report</button>
-        <button class="tab managerOwnerOnly" data-stab="smallReport">Small Report</button>
         <button class="tab ownerOnly" data-stab="users">Users</button>
         <button class="tab ownerOnly" data-stab="history">History</button>
         <button class="tab tipCheckTab" data-stab="tipCheck">Check Tip</button>
@@ -636,69 +636,7 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
         </div>
       </section>
 
-      
-      <section id="smallReport" class="staffPanel hidden">
-        <div class="card">
-          <div class="small-report-head">
-            <div>
-              <h2 style="margin-bottom:4px">Small Report</h2>
-              <div class="small">Automatically updated after Hourly Adjustment is finalized. Signature appears after employee pickup/signature.</div>
-            </div>
-            <div class="actions">
-              <button class="btn light" type="button" onclick="downloadSmallReportXls()">Download XLS</button>
-              <button class="btn light" type="button" onclick="shareSmallReportXls('whatsapp')">WhatsApp</button>
-              <button class="btn light" type="button" onclick="shareSmallReportXls('email')">Email</button>
-            </div>
-          </div>
-
-          <div class="grid" style="margin-top:14px">
-            <div>
-              <label>Date</label>
-              <input id="smallReportDate" type="date">
-            </div>
-            <div>
-              <label>Employee</label>
-              <select id="smallReportEmployee">
-                <option value="">All Employees</option>
-              </select>
-            </div>
-          </div>
-          <div class="actions" style="margin-top:12px">
-            <button class="btn green" type="button" onclick="renderSmallReport()">View Report</button>
-            <button class="btn light" type="button" onclick="clearSmallReportFilters()">Show All</button>
-          </div>
-
-          <div id="smallReportSummary" class="small-report-summary"></div>
-
-          <div class="tablewrap small-report-wrap" style="margin-top:14px">
-            <table class="small-report-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Employee</th>
-                  <th>Shift</th>
-                  <th>Clock In 1</th>
-                  <th>Clock Out 1</th>
-                  <th>Clock In 2</th>
-                  <th>Clock Out 2</th>
-                  <th>Total Hours</th>
-                  <th>Paid Tips</th>
-                  <th>Tip Card Fee</th>
-                  <th>Busser Tip Out</th>
-                  <th>Bar Tip Out / Received</th>
-                  <th>Total Tip Before Meal</th>
-                  <th>Cash Tip</th>
-                  <th>Grand Total Tip</th>
-                  <th class="signature-col">Signature</th>
-                </tr>
-              </thead>
-              <tbody id="smallReportBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-<section id="finalDaily" class="staffPanel hidden">
+      <section id="finalDaily" class="staffPanel hidden">
         <div class="card">
           <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap">
             <div>
