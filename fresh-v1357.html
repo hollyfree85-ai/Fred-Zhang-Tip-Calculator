@@ -1,6 +1,23 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>
+(async()=>{
+  const q=new URLSearchParams(location.search);
+  if(q.get('clean')==='1') return;
+  try{
+    if('serviceWorker' in navigator){
+      const regs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r=>r.unregister()));
+    }
+    if('caches' in window){
+      const keys=await caches.keys();
+      await Promise.all(keys.map(k=>caches.delete(k)));
+    }
+  }catch(e){}
+  location.replace('./fresh-v1357.html?clean=1&t='+Date.now());
+})();
+</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -138,33 +155,6 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
  .how-bt-head{display:none}
 }
 
-
-/* V13.5.6 Small Report */
-.small-report-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap}
-.small-report-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
-.small-report-summary .kpi{min-height:86px}
-.small-report-wrap{max-height:680px;border:1px solid #d9e1ec;border-radius:16px}
-.small-report-table{min-width:2250px;border-collapse:separate;border-spacing:0;width:100%}
-.small-report-table th{position:sticky;top:0;z-index:2;background:#10213c;color:#fff;font-size:14px;padding:13px 10px;white-space:nowrap}
-.small-report-table td{font-size:14px;padding:12px 10px;vertical-align:middle;border-bottom:1px solid #e6ebf2;white-space:nowrap}
-.small-report-table td.signature-cell{min-width:260px;width:260px;height:110px;white-space:normal}
-.small-report-signature{display:block;width:240px;height:86px;border:1px solid #cdd7e6;border-radius:10px;background:#fff}
-.small-report-signature-pending{display:flex;align-items:center;justify-content:center;width:240px;height:86px;border:1px dashed #c8a64b;border-radius:10px;background:#fff8df;color:#805f00;font-weight:900}
-@media(max-width:760px){
-  .small-report-summary{grid-template-columns:1fr 1fr}
-}
-
-
-/* V13.5.7 Dedicated Hourly workspace */
-.hourly-workspace-nav{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:0 0 16px;padding:14px 16px;background:#fff;border:1px solid #d9e1ec;border-radius:16px;box-shadow:0 8px 24px rgba(15,33,60,.06)}
-.hourly-workspace-nav>div:first-child{display:flex;flex-direction:column;gap:2px}
-.hourly-workspace-nav b{font-size:20px;color:#10213c}.hourly-workspace-nav span{font-size:13px;color:#68758b}
-body.hourly-workspace-mode #staffApp>.tabs{display:none!important}
-body.hourly-workspace-mode #hourlyWorkspaceNav{display:flex!important}
-body.hourly-workspace-mode .staffPanel:not(#hourly):not(#smallReport){display:none!important}
-body.hourly-workspace-mode #hourly,body.hourly-workspace-mode #smallReport{max-width:1500px;margin-left:auto;margin-right:auto}
-@media(max-width:760px){.mode{grid-template-columns:1fr 1fr!important}}
-
 </style>
 
 <style>
@@ -221,11 +211,10 @@ body.hourly-workspace-mode #hourly,body.hourly-workspace-mode #smallReport{max-w
 <div style="text-align:center;margin-top:8px">
   <button class="btn light" type="button" onclick="testGlobalMoneyReadyDialog()">Test Money Ready Dialog</button>
 </div>
-<div class="mode" style="grid-template-columns:repeat(4,1fr)">
+<div class="mode" style="grid-template-columns:repeat(3,1fr)">
       <button id="employeeModeBtn" class="on" onclick="setLoginMode('employee')">Employee</button>
       <button id="staffModeBtn" onclick="setLoginMode('staff')">Manager / Owner / Cashier</button>
       <button id="boardModeBtn" onclick="openServerRoomBoard()">Server Room Board</button>
-      <button id="hourlyModeBtn" onclick="setLoginMode('hourly')">Hourly Adjustment</button>
     </div>
     <div id="employeeLogin">
       <label>Employee Name</label>
@@ -259,12 +248,6 @@ body.hourly-workspace-mode #hourly,body.hourly-workspace-mode #smallReport{max-w
       <label>Username</label><input id="staffUsername" autocomplete="username">
       <div style="height:10px"></div><label>Password</label><input id="staffPassword" type="password" autocomplete="current-password">
       <div style="height:14px"></div><button class="btn gold" style="width:100%" onclick="loginStaff()">Login</button>
-    </div>
-    <div id="hourlyLogin" class="hidden">
-      <div class="notice info" style="margin-bottom:12px"><b>Hourly Adjustment Workspace</b><br>Manager / Owner only. Same Firebase database and reports as the main app.</div>
-      <label>Username</label><input id="hourlyUsername" autocomplete="username">
-      <div style="height:10px"></div><label>Password</label><input id="hourlyPassword" type="password" autocomplete="current-password">
-      <div style="height:14px"></div><button class="btn green" style="width:100%" onclick="loginHourlyWorkspace()">Open Hourly Adjustment</button>
     </div>
     <div class="notice" style="margin-bottom:12px"><b>Shared device security:</b> every new tab, refresh, or reopened link requires a fresh login. Sharing this website link does not share the Owner/Manager account.</div>
 <div id="loginMessage" class="small" style="margin-top:12px"></div>
@@ -420,21 +403,12 @@ body.hourly-workspace-mode #hourly,body.hourly-workspace-mode #smallReport{max-w
     </div>
 
     <div id="staffApp" class="hidden">
-      <div id="hourlyWorkspaceNav" class="hidden hourly-workspace-nav">
-        <div><b>Hourly Adjustment Workspace</b><span>Same database • Manager / Owner</span></div>
-        <div class="actions">
-          <button class="btn dark" type="button" onclick="openHourlyWorkspacePanel('hourly')">Hourly Adjustment V01</button>
-          <button class="btn light" type="button" onclick="openHourlyWorkspacePanel('smallReport')">Small Report</button>
-          <button class="btn light" type="button" onclick="leaveHourlyWorkspace()">Main App</button>
-        </div>
-      </div>
       <div class="tabs">
         <button class="tab on" data-stab="pending">Pending Data <span id="pendingBadge" class="badge">0</span></button>
         <button class="tab" data-stab="approvals">Employee Approvals <span id="approvalBadge" class="badge">0</span></button>
         <button class="tab" data-stab="report">Manager Review / Report</button>
         <button class="tab" data-stab="hourly">Hourly Adjustment V01</button>
         <button class="tab" data-stab="finalDaily">Final Daily Report</button>
-        <button class="tab managerOwnerOnly" data-stab="smallReport">Small Report</button>
         <button class="tab ownerOnly" data-stab="users">Users</button>
         <button class="tab ownerOnly" data-stab="history">History</button>
         <button class="tab tipCheckTab" data-stab="tipCheck">Check Tip</button>
@@ -662,69 +636,7 @@ body.hourly-workspace-mode #hourly,body.hourly-workspace-mode #smallReport{max-w
         </div>
       </section>
 
-      
-      <section id="smallReport" class="staffPanel hidden">
-        <div class="card">
-          <div class="small-report-head">
-            <div>
-              <h2 style="margin-bottom:4px">Small Report</h2>
-              <div class="small">Automatically updated after Hourly Adjustment is finalized. Signature appears after employee pickup/signature.</div>
-            </div>
-            <div class="actions">
-              <button class="btn light" type="button" onclick="downloadSmallReportXls()">Download XLS</button>
-              <button class="btn light" type="button" onclick="shareSmallReportXls('whatsapp')">WhatsApp</button>
-              <button class="btn light" type="button" onclick="shareSmallReportXls('email')">Email</button>
-            </div>
-          </div>
-
-          <div class="grid" style="margin-top:14px">
-            <div>
-              <label>Date</label>
-              <input id="smallReportDate" type="date">
-            </div>
-            <div>
-              <label>Employee</label>
-              <select id="smallReportEmployee">
-                <option value="">All Employees</option>
-              </select>
-            </div>
-          </div>
-          <div class="actions" style="margin-top:12px">
-            <button class="btn green" type="button" onclick="renderSmallReport()">View Report</button>
-            <button class="btn light" type="button" onclick="clearSmallReportFilters()">Show All</button>
-          </div>
-
-          <div id="smallReportSummary" class="small-report-summary"></div>
-
-          <div class="tablewrap small-report-wrap" style="margin-top:14px">
-            <table class="small-report-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Employee</th>
-                  <th>Shift</th>
-                  <th>Clock In 1</th>
-                  <th>Clock Out 1</th>
-                  <th>Clock In 2</th>
-                  <th>Clock Out 2</th>
-                  <th>Total Hours</th>
-                  <th>Paid Tips</th>
-                  <th>Tip Card Fee</th>
-                  <th>Busser Tip Out</th>
-                  <th>Bar Tip Out / Received</th>
-                  <th>Total Tip Before Meal</th>
-                  <th>Cash Tip</th>
-                  <th>Grand Total Tip</th>
-                  <th class="signature-col">Signature</th>
-                </tr>
-              </thead>
-              <tbody id="smallReportBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-<section id="finalDaily" class="staffPanel hidden">
+      <section id="finalDaily" class="staffPanel hidden">
         <div class="card">
           <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap">
             <div>
