@@ -704,6 +704,68 @@ function hv1CapturePage(markSkipped=false){
   }
   s.drafts[hv1EditingEmployee]=d;hv1Save(s);
 }
+
+async function hv1HydrateDraftFromFinalReport(name){
+  const state=hv1Load();
+  const d=state.drafts?.[name];
+  if(!d?.hourlyReportId)return d||hv1BlankDraft(name);
+
+  const important=["hGrandTotal","hPaidTip","hCardFee","hCashTip","hMeal"];
+  const alreadyHas=important.some(k=>d.entered?.[k] || String(d.values?.[k]??"").trim()!=="");
+  if(alreadyHas)return d;
+
+  try{
+    const snap=await getDoc(doc(db,"hourlyReports",d.hourlyReportId));
+    if(!snap.exists())return d;
+    const r=snap.data()||{};
+    const hours=r.hours||{};
+    d.values=d.values||{};
+    d.entered=d.entered||{};
+
+    const put=(k,v)=>{
+      if(v===undefined||v===null)return;
+      d.values[k]=String(v);
+      d.entered[k]=true;
+    };
+
+    put("hDate",r.date||d.date||hv1DateValue());
+    put("hEmployee",r.employee||name);
+    put("hPosition",r.position||"Server");
+    put("hShift",r.shift||"AM");
+    put("hGrandTotal",r.grandTotal??0);
+    if(["DOUBLE","LONG"].includes(String(r.shift||"").toUpperCase())) put("hTotalAM",r.totalAM??0);
+    put("hPaidTip",r.paidTip??0);
+    put("hCardFee",r.payCardTipFee??r.cardFee??0);
+    put("hCashTip",r.cashTip??0);
+    put("hMeal",r.meal??0);
+
+    const shift=String(r.shift||"").toUpperCase();
+    if(shift==="DOUBLE"){
+      put("hAmIn",hours.hourInAM||hours.amIn||"");
+      put("hAmOut",hours.hourOutAM||hours.amOut||"");
+      put("hPmIn",hours.hourInPM||hours.pmIn||"");
+      put("hPmOut",hours.hourOutPM||hours.pmOut||"");
+    }else{
+      put("hIn",hours.hourIn||hours.hourInAM||hours.in||"");
+      put("hOut",hours.hourOut||hours.hourOutAM||hours.out||"");
+    }
+
+    d.hourlyWizardState={
+      position:r.position||d.hourlyWizardState?.position||"Server",
+      shift:r.shift||d.hourlyWizardState?.shift||"AM",
+      busserAM:d.values.hBusserAM||d.hourlyWizardState?.busserAM||"WITHOUT"
+    };
+    d.savedAt=Date.now();
+    state.drafts[name]=d;
+    localStorage.setItem(hv1Key(),JSON.stringify(state));
+    await hv1CloudSave(JSON.parse(JSON.stringify(state)));
+    return d;
+  }catch(e){
+    console.warn("Hydrate finalized V1 draft:",e);
+    return d;
+  }
+}
+
 function hv1ApplyDraft(name){
   const d=hv1Draft(name); currentHourlyReportId=d.hourlyReportId||null;currentHourlySubmissionId=d.sourceSubmissionId||null;
   // Clear backing fields first. Blank means NOT ENTERED; explicit 0 stays 0.
@@ -721,6 +783,105 @@ function hv1ApplyDraft(name){
   howSetSilent('hEmployee',name);howSetSilent('hDate',d.date||$('hv1Date').value);howSetSilent('hPosition',hourlyWizardState.position||'Server');howSetSilent('hShift',hourlyWizardState.shift==='LONG'?'AM':(hourlyWizardState.shift||'AM'));howSetSilent('hBusserAM',hourlyWizardState.busserAM||'WITHOUT');
   hourlyWizardStep=Math.max(1,Math.min(7,Number(d.page||1)));renderHourlyWizard();setTimeout(hv1PatchWizard,0);
 }
+
+let hv1AutosaveTimer=null;
+
+function hv1VisibleDraftValue(d,key){
+  const v=d?.values?.[key];
+  return v===undefined||v===null ? "" : String(v);
+}
+
+function hv1PatchWizard(){
+  if(!hourlyV1Mode||!hv1EditingEmployee||!document.body.classList.contains("hourly-v1-editing"))return;
+  const wizard=$("hourlyOriginalWizard");
+  if(!wizard)return;
+  const d=hv1Draft(hv1EditingEmployee);
+
+  // Restore visible fields directly from the employee draft.
+  // This is intentionally separate from the legacy backing inputs so an edit
+  // can never reopen with blank Paid Tip/Card Fee/Cash Tip/Meal values.
+  const map={
+    howDate:"hDate", howIn:"hIn", howOut:"hOut",
+    howAmIn:"hAmIn", howAmOut:"hAmOut", howPmIn:"hPmIn", howPmOut:"hPmOut",
+    howGrand:"hGrandTotal", howTotalAM:"hTotalAM",
+    howPaid:"hPaidTip", howCardFee:"hCardFee", howCash:"hCashTip", howMeal:"hMeal"
+  };
+  Object.entries(map).forEach(([visibleId,key])=>{
+    const el=$(visibleId);
+    if(!el)return;
+    const saved=hv1VisibleDraftValue(d,key);
+    if(saved!=="" && String(el.value??"")!==saved) el.value=saved;
+  });
+
+  if(hourlyWizardStep===4)updateHowSalesPreview();
+
+  // Always-visible V1 quick navigation.
+  let nav=$("hv1QuickNav");
+  if(!nav){
+    nav=document.createElement("div");
+    nav.id="hv1QuickNav";
+    nav.className="hv1-quick-nav";
+    nav.innerHTML=`
+      <button class="btn light" type="button" onclick="hv1BackToBoard()">TEAM BOARD</button>
+      <button class="btn dark" type="button" onclick="hv1GoBarFromEmployee()">BAR</button>
+      <button class="btn gold" type="button" onclick="hv1SaveStay()">SAVE</button>`;
+    wizard.prepend(nav);
+  }
+
+  // Autosave every editable field. No need to press Back/Next first.
+  wizard.querySelectorAll("input,select,textarea").forEach(el=>{
+    if(el.dataset.hv1AutosaveBound==="1")return;
+    el.dataset.hv1AutosaveBound="1";
+    const save=()=>{
+      clearTimeout(hv1AutosaveTimer);
+      hv1AutosaveTimer=setTimeout(()=>{
+        try{
+          captureHourlyWizard();
+          hv1CapturePage(false);
+          const note=$("hv1AutosaveNote");
+          if(note)note.textContent="Saved";
+        }catch(e){console.warn("V1 autosave:",e)}
+      },120);
+    };
+    el.addEventListener("input",save);
+    el.addEventListener("change",save);
+  });
+
+  if(!$("hv1AutosaveNote")){
+    const note=document.createElement("div");
+    note.id="hv1AutosaveNote";
+    note.className="hv1-autosave-note";
+    note.textContent="Auto-save ON";
+    nav?.appendChild(note);
+  }
+}
+
+window.hv1SaveStay=function(){
+  try{
+    captureHourlyWizard();
+    hv1CapturePage(false);
+    const note=$("hv1AutosaveNote");
+    if(note)note.textContent="Saved to draft";
+  }catch(e){
+    console.error("V1 Save:",e);
+    alert("Save failed: "+(e.message||e));
+  }
+};
+
+window.hv1GoBarFromEmployee=function(){
+  try{
+    captureHourlyWizard();
+    hv1CapturePage(false);
+  }catch(e){console.warn("Save before BAR:",e)}
+  document.body.classList.remove("hourly-v1-editing");
+  $("hourly")?.classList.add("hidden");
+  $("hourlyV1Workspace")?.classList.remove("hidden");
+  $("hv1Setup")?.classList.add("hidden");
+  $("hv1BoardBox")?.classList.add("hidden");
+  window.hv1OpenBarCenter();
+  window.scrollTo(0,0);
+};
+
 function hv1Status(d){if(d.finalized)return 'COMPLETED';if(d.savedAt)return 'IN PROGRESS';return 'NOT STARTED'}
 function hv1RenderRoster(){const host=$('hv1Roster');if(!host)return;const selected=new Set(hv1Load().team||[]);host.innerHTML=getEmployeeRoster().map(n=>`<label class="hv1-check"><input type="checkbox" value="${esc(n)}" ${selected.has(n)?'checked':''}><span>${esc(n)}</span></label>`).join('')}
 function hv1RenderCards(){const host=$('hv1Cards'),s=hv1Load();if(!host)return;host.innerHTML=(s.team||[]).map(n=>{const d=s.drafts?.[n]||hv1BlankDraft(n),st=hv1Status(d),cls=st==='COMPLETED'?'final':st==='IN PROGRESS'?'progress':'';const entered=Object.keys(d.entered||{}).length;const editNote=st==='COMPLETED'?'<br><b>Tap to EDIT finalized report</b>':'';return `<div class="hv1-card-wrap"><button class="hv1-card ${cls}" type="button" data-hv1-open-employee="${encodeURIComponent(n)}"><span class="hv1-status">${st}</span><h4>${esc(n)}</h4><div class="hv1-meta">${d.values?.hShift?`Shift: ${esc(d.values.hShift)}`:'Shift not selected'}<br>${entered} field/group(s) saved${(d.skippedPages||[]).length?` • ${(d.skippedPages||[]).length} page(s) skipped`:''}${editNote}</div></button><button class="hv1-card-delete" type="button" title="Delete ${esc(n)} from this team" data-hv1-delete-employee="${encodeURIComponent(n)}">×</button></div>`}).join('')}
@@ -1205,17 +1366,21 @@ document.addEventListener("click",e=>{
   }
 });
 
-window.hv1OpenEmployee=function(name){
+window.hv1OpenEmployee=async function(name){
   try{name=decodeURIComponent(name)}catch(e){}
   hv1EditingEmployee=name;
   document.body.classList.add('hourly-v1-mode','hourly-v1-editing');
   document.querySelectorAll('.staffPanel').forEach(x=>x.classList.add('hidden'));
   $('hourlyV1Workspace')?.classList.add('hidden');
   $('hourly')?.classList.remove('hidden');
+
+  await hv1HydrateDraftFromFinalReport(name);
   hv1ApplyDraft(name);
+
   requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'instant'}));
 };
 window.hv1BackToBoard=function(){
+  try{captureHourlyWizard()}catch(e){}
   hv1CapturePage(false);
   document.body.classList.remove('hourly-v1-editing');
   $('hourly')?.classList.add('hidden');
@@ -1224,7 +1389,15 @@ window.hv1BackToBoard=function(){
   requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'instant'}));
 };
 window.hv1SkipPage=function(){hv1CapturePage(true);if(hourlyWizardStep<7)hourlyWizardStep++;renderHourlyWizard();setTimeout(hv1PatchWizard,0)};
-window.hv1SavePage=function(){hv1CapturePage(false);hv1BackToBoard()};
+window.hv1SavePage=function(){
+  try{captureHourlyWizard()}catch(e){}
+  hv1CapturePage(false);
+  document.body.classList.remove('hourly-v1-editing');
+  $('hourly')?.classList.add('hidden');
+  $('hourlyV1Workspace')?.classList.remove('hidden');
+  hv1RenderCards();
+  window.scrollTo(0,0);
+};
 
 let hv1SmallReportHome=null;
 function hv1MoveSmallReportIntoV1(){
@@ -2404,7 +2577,7 @@ window.employeeDeleteTipCheckDate=async function(encodedDate){
     for(const s of targets)await archiveCheckTipSheet(s);
     await loadTipCheckSheets();
   }catch(e){
-    console.error("Employee Check Tip delete V13.8.10:",e);
+    console.error("Employee Check Tip delete:",e);
     alert(`Delete failed: ${e.code||e.message}\n\nIf this says permission-denied, publish the V13.8.10 Firestore rules.`);
   }
 };
@@ -6536,6 +6709,9 @@ function bindHourlyWizard(){
     }else if(key==="busserAM"){
       howSetSilent("hBusserAM",val);
     }
+    if(hourlyV1Mode&&hv1EditingEmployee){
+      try{hv1CapturePage(false)}catch(e){console.warn("V1 choice autosave:",e)}
+    }
     renderHourlyWizard();
   });
   $("howGrand")?.addEventListener("input",updateHowSalesPreview);
@@ -6559,8 +6735,13 @@ function bindHourlyWizard(){
 
   if($("howBack")) $("howBack").onclick=()=>{
     captureHourlyWizard();
+    if(hourlyV1Mode&&hv1EditingEmployee)hv1CapturePage(false);
     if(hourlyWizardStep===1) return;
     hourlyWizardStep=Math.max(1,hourlyWizardStep-1);
+    if(hourlyV1Mode&&hv1EditingEmployee){
+      const s=hv1Load(),d=s.drafts?.[hv1EditingEmployee];
+      if(d){d.page=hourlyWizardStep;d.savedAt=Date.now();s.drafts[hv1EditingEmployee]=d;hv1Save(s);}
+    }
     renderHourlyWizard();
   };
   if($("howNext")) $("howNext").onclick=()=>{
@@ -6571,6 +6752,7 @@ function bindHourlyWizard(){
       alert("Hourly Adjustment button error: "+(e.message||e));
       return;
     }
+    if(hourlyV1Mode&&hv1EditingEmployee)hv1CapturePage(false);
     if(hourlyWizardStep===6 && hourlyWizardState.position==="Bartender" && !validateHowBartenderStep()){
       return;
     }
@@ -6590,6 +6772,10 @@ function bindHourlyWizard(){
       return;
     }
     hourlyWizardStep=Math.min(7,hourlyWizardStep+1);
+    if(hourlyV1Mode&&hv1EditingEmployee){
+      const s=hv1Load(),d=s.drafts?.[hv1EditingEmployee];
+      if(d){d.page=hourlyWizardStep;d.savedAt=Date.now();s.drafts[hv1EditingEmployee]=d;hv1Save(s);}
+    }
     renderHourlyWizard();
   };
   if($("howCalc")) $("howCalc").onclick=()=>{
@@ -6719,4 +6905,4 @@ setTimeout(loadHourlyRememberPreference,0);
 
 // V13.8.10 employee soft-delete ownership uses Firebase UID.
 
-// V13.8.10 employee Check Tip self-delete rule compatibility fix.
+// V13.8.10 finalized edit hydration, autosave, quick Team Board/BAR navigation.
