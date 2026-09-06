@@ -1,0 +1,14 @@
+V13.8.26 BACKEND + BIOMETRIC NOTE
+
+PERMANENT USER DELETE
+- The app now calls the existing callable Cloud Function: deleteAppUser({uid})
+- That callable must delete the target Firebase Authentication user with Firebase Admin SDK.
+- The web app then removes users/{uid}, signupRequests/{uid}, and old user_profile archive entries.
+- Historical hourlyReports are intentionally preserved so a future signup can re-link old reports.
+
+OWNER BIOMETRIC
+- Uses WebAuthn platform authenticator on HTTPS.
+- Device decides whether it uses fingerprint, face, Windows Hello, Android screen lock, etc.
+- This build uses biometric for Owner destructive/security confirmations AFTER Owner is signed in.
+- True biometric-only Firebase login is intentionally NOT faked here. Secure passkey-only login requires
+  WebAuthn server-side verification plus Firebase custom authentication/backend integration.
