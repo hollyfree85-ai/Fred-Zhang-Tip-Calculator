@@ -433,6 +433,26 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
   .hv1-quick-nav .btn{font-size:12px;padding:9px 5px}
 }
 
+
+/* V13.8.11 direct final edit + BAR two-way sync */
+.hv1-quick-nav{
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+}
+.how-quick-edit-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-top:16px;
+}
+.how-quick-bar{margin-top:16px}
+@media(max-width:760px){
+  .hv1-quick-nav{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  .hv1-quick-nav .btn{font-size:11px!important;padding:8px 4px!important}
+  .how-quick-edit-grid{grid-template-columns:1fr}
+}
+
 </style>
 
 <style>
@@ -478,7 +498,7 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.10 EDIT AUTOSAVE + QUICK NAV</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.11 DIRECT EDIT + BAR 2-WAY SYNC</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -1342,10 +1362,10 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v13810.js?v=13810"></script>
+<script type="module" src="app-v13811.js?v=13811"></script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13810.js?v=13810',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13811.js?v=13811',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -1390,7 +1410,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script src="simple-ui-v13810.js?v=13810"></script>
+<script src="simple-ui-v13811.js?v=13811"></script>
 <div id="employeeDirectoryModal" class="modal hidden">
   <div class="modalbox" style="max-width:560px">
     <h3 id="employeeDirectoryModalTitle">Add Employee</h3>

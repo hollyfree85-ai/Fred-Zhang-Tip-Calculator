@@ -702,8 +702,86 @@ function hv1CapturePage(markSkipped=false){
       howSetSilent('hAmBar',amv);howSetSilent('hPmBar',pmv);
     }
   }
-  s.drafts[hv1EditingEmployee]=d;hv1Save(s);
+  if(hourlyWizardStep===7){
+    [['hGrandTotal','howGrand'],['hTotalAM','howTotalAM'],['hPaidTip','howPaid'],['hCardFee','howCardFee'],['hCashTip','howCash'],['hMeal','howMeal']].forEach(([k,id])=>{
+      const el=$(id); if(el){const v=String(el.value??'').trim();hv1SetValue(d,k,v===''?'0':v);howSetSilent(k,v===''?'0':v);}
+    });
+    if(hourlyWizardState.position!=='Bartender'){
+      if($('howAmBar')){const v=$('howAmBar').checked?'yes':'no';hv1SetValue(d,'hAmBar',v);howSetSilent('hAmBar',v);}
+      if($('howPmBar')){const v=$('howPmBar').checked?'yes':'no';hv1SetValue(d,'hPmBar',v);howSetSilent('hPmBar',v);}
+    }
+  }
+  s.drafts[hv1EditingEmployee]=d;
+  hv1SyncServerDraftToBar(s,hv1EditingEmployee);
+  hv1ApplyBarAutomation(s);
+  hv1Save(s);
 }
+
+async function hv1HydrateDraftFromFinalReport(name){
+  const state=hv1Load();
+  const d=state.drafts?.[name]||hv1BlankDraft(name);
+  if(!d?.hourlyReportId)return d;
+
+  // Once this build has hydrated the finalized report, preserve every later
+  // autosaved edit (including intentionally changing a value to 0).
+  if(d.editHydratedFromFinalV13811)return d;
+
+  try{
+    const snap=await getDoc(doc(db,"hourlyReports",d.hourlyReportId));
+    if(!snap.exists())return d;
+    const r=snap.data()||{};
+    const hours=r.hours||{};
+    d.values=d.values||{};
+    d.entered=d.entered||{};
+
+    const put=(k,v)=>{
+      if(v===undefined||v===null)return;
+      d.values[k]=String(v);
+      d.entered[k]=true;
+    };
+
+    // On first edit of an already-finalized report, the finalized Firestore
+    // record is the source of truth. This repairs old V1 drafts that reopened
+    // with $0.00 / blank Paid Tip, Grand Total, Card Fee, Meal, etc.
+    put("hDate",r.date||d.date||hv1DateValue());
+    put("hEmployee",r.employee||name);
+    put("hPosition",r.position||"Server");
+    put("hShift",r.shift||"AM");
+    put("hGrandTotal",r.grandTotal??0);
+    if(["DOUBLE","LONG"].includes(String(r.shift||"").toUpperCase())) put("hTotalAM",r.totalAM??0);
+    put("hPaidTip",r.paidTip??0);
+    put("hCardFee",r.payCardTipFee??r.cardFee??0);
+    put("hCashTip",r.cashTip??0);
+    put("hMeal",r.meal??0);
+
+    const shift=String(r.shift||"").toUpperCase();
+    if(shift==="DOUBLE"){
+      put("hAmIn",hours.hourInAM||hours.amIn||"");
+      put("hAmOut",hours.hourOutAM||hours.amOut||"");
+      put("hPmIn",hours.hourInPM||hours.pmIn||"");
+      put("hPmOut",hours.hourOutPM||hours.pmOut||"");
+    }else{
+      put("hIn",hours.hourIn||hours.hourInAM||hours.in||"");
+      put("hOut",hours.hourOut||hours.hourOutAM||hours.out||"");
+    }
+
+    d.hourlyWizardState={
+      position:r.position||d.hourlyWizardState?.position||"Server",
+      shift:r.shift||d.hourlyWizardState?.shift||"AM",
+      busserAM:d.values.hBusserAM||d.hourlyWizardState?.busserAM||"WITHOUT"
+    };
+    d.editHydratedFromFinalV13811=true;
+    d.savedAt=Date.now();
+    state.drafts[name]=d;
+    localStorage.setItem(hv1Key(),JSON.stringify(state));
+    await hv1CloudSave(JSON.parse(JSON.stringify(state)));
+    return d;
+  }catch(e){
+    console.warn("Hydrate finalized V1 draft:",e);
+    return d;
+  }
+}
+
 function hv1ApplyDraft(name){
   const d=hv1Draft(name); currentHourlyReportId=d.hourlyReportId||null;currentHourlySubmissionId=d.sourceSubmissionId||null;
   // Clear backing fields first. Blank means NOT ENTERED; explicit 0 stays 0.
@@ -721,6 +799,120 @@ function hv1ApplyDraft(name){
   howSetSilent('hEmployee',name);howSetSilent('hDate',d.date||$('hv1Date').value);howSetSilent('hPosition',hourlyWizardState.position||'Server');howSetSilent('hShift',hourlyWizardState.shift==='LONG'?'AM':(hourlyWizardState.shift||'AM'));howSetSilent('hBusserAM',hourlyWizardState.busserAM||'WITHOUT');
   hourlyWizardStep=Math.max(1,Math.min(7,Number(d.page||1)));renderHourlyWizard();setTimeout(hv1PatchWizard,0);
 }
+
+let hv1AutosaveTimer=null;
+
+function hv1VisibleDraftValue(d,key){
+  const v=d?.values?.[key];
+  return v===undefined||v===null ? "" : String(v);
+}
+
+function hv1PatchWizard(){
+  if(!hourlyV1Mode||!hv1EditingEmployee||!document.body.classList.contains("hourly-v1-editing"))return;
+  const wizard=$("hourlyOriginalWizard");
+  if(!wizard)return;
+  const d=hv1Draft(hv1EditingEmployee);
+
+  // Restore visible fields directly from the employee draft.
+  // This is intentionally separate from the legacy backing inputs so an edit
+  // can never reopen with blank Paid Tip/Card Fee/Cash Tip/Meal values.
+  const map={
+    howDate:"hDate", howIn:"hIn", howOut:"hOut",
+    howAmIn:"hAmIn", howAmOut:"hAmOut", howPmIn:"hPmIn", howPmOut:"hPmOut",
+    howGrand:"hGrandTotal", howTotalAM:"hTotalAM",
+    howPaid:"hPaidTip", howCardFee:"hCardFee", howCash:"hCashTip", howMeal:"hMeal"
+  };
+  Object.entries(map).forEach(([visibleId,key])=>{
+    const el=$(visibleId);
+    if(!el)return;
+    const saved=hv1VisibleDraftValue(d,key);
+    if(saved!=="" && String(el.value??"")!==saved) el.value=saved;
+  });
+
+  if(hourlyWizardStep===4)updateHowSalesPreview();
+
+  // Always-visible V1 quick navigation.
+  let nav=$("hv1QuickNav");
+  if(!nav){
+    nav=document.createElement("div");
+    nav.id="hv1QuickNav";
+    nav.className="hv1-quick-nav";
+    nav.innerHTML=`
+      <button class="btn light" type="button" onclick="hv1BackToBoard()">TEAM BOARD</button>
+      <button class="btn light" type="button" onclick="hv1JumpPage(4)">SALES</button>
+      <button class="btn light" type="button" onclick="hv1JumpPage(5)">TIPS</button>
+      <button class="btn dark" type="button" onclick="hv1GoBarFromEmployee()">BAR</button>
+      <button class="btn gold" type="button" onclick="hv1SaveStay()">SAVE</button>`;
+    wizard.prepend(nav);
+  }
+
+  // Autosave every editable field. No need to press Back/Next first.
+  wizard.querySelectorAll("input,select,textarea").forEach(el=>{
+    if(el.dataset.hv1AutosaveBound==="1")return;
+    el.dataset.hv1AutosaveBound="1";
+    const save=()=>{
+      clearTimeout(hv1AutosaveTimer);
+      hv1AutosaveTimer=setTimeout(()=>{
+        try{
+          captureHourlyWizard();
+          hv1CapturePage(false);
+          const note=$("hv1AutosaveNote");
+          if(note)note.textContent="Saved";
+        }catch(e){console.warn("V1 autosave:",e)}
+      },120);
+    };
+    el.addEventListener("input",save);
+    el.addEventListener("change",save);
+  });
+
+  if(!$("hv1AutosaveNote")){
+    const note=document.createElement("div");
+    note.id="hv1AutosaveNote";
+    note.className="hv1-autosave-note";
+    note.textContent="Auto-save ON";
+    nav?.appendChild(note);
+  }
+}
+
+
+window.hv1JumpPage=function(page){
+  try{
+    captureHourlyWizard();
+    hv1CapturePage(false);
+  }catch(e){console.warn("Save before page jump:",e)}
+  hourlyWizardStep=Math.max(1,Math.min(7,Number(page)||1));
+  const s=hv1Load(),d=s.drafts?.[hv1EditingEmployee];
+  if(d){d.page=hourlyWizardStep;d.savedAt=Date.now();s.drafts[hv1EditingEmployee]=d;hv1Save(s);}
+  renderHourlyWizard();
+  window.scrollTo(0,0);
+};
+
+window.hv1SaveStay=function(){
+  try{
+    captureHourlyWizard();
+    hv1CapturePage(false);
+    const note=$("hv1AutosaveNote");
+    if(note)note.textContent="Saved to draft";
+  }catch(e){
+    console.error("V1 Save:",e);
+    alert("Save failed: "+(e.message||e));
+  }
+};
+
+window.hv1GoBarFromEmployee=function(){
+  try{
+    captureHourlyWizard();
+    hv1CapturePage(false);
+  }catch(e){console.warn("Save before BAR:",e)}
+  document.body.classList.remove("hourly-v1-editing");
+  $("hourly")?.classList.add("hidden");
+  $("hourlyV1Workspace")?.classList.remove("hidden");
+  $("hv1Setup")?.classList.add("hidden");
+  $("hv1BoardBox")?.classList.add("hidden");
+  window.hv1OpenBarCenter();
+  window.scrollTo(0,0);
+};
+
 function hv1Status(d){if(d.finalized)return 'COMPLETED';if(d.savedAt)return 'IN PROGRESS';return 'NOT STARTED'}
 function hv1RenderRoster(){const host=$('hv1Roster');if(!host)return;const selected=new Set(hv1Load().team||[]);host.innerHTML=getEmployeeRoster().map(n=>`<label class="hv1-check"><input type="checkbox" value="${esc(n)}" ${selected.has(n)?'checked':''}><span>${esc(n)}</span></label>`).join('')}
 function hv1RenderCards(){const host=$('hv1Cards'),s=hv1Load();if(!host)return;host.innerHTML=(s.team||[]).map(n=>{const d=s.drafts?.[n]||hv1BlankDraft(n),st=hv1Status(d),cls=st==='COMPLETED'?'final':st==='IN PROGRESS'?'progress':'';const entered=Object.keys(d.entered||{}).length;const editNote=st==='COMPLETED'?'<br><b>Tap to EDIT finalized report</b>':'';return `<div class="hv1-card-wrap"><button class="hv1-card ${cls}" type="button" data-hv1-open-employee="${encodeURIComponent(n)}"><span class="hv1-status">${st}</span><h4>${esc(n)}</h4><div class="hv1-meta">${d.values?.hShift?`Shift: ${esc(d.values.hShift)}`:'Shift not selected'}<br>${entered} field/group(s) saved${(d.skippedPages||[]).length?` • ${(d.skippedPages||[]).length} page(s) skipped`:''}${editNote}</div></button><button class="hv1-card-delete" type="button" title="Delete ${esc(n)} from this team" data-hv1-delete-employee="${encodeURIComponent(n)}">×</button></div>`}).join('')}
@@ -728,6 +920,83 @@ async function hv1Enter(){hourlyV1Mode=true;document.body.classList.add('hourly-
 window.hv1SelectAll=function(){document.querySelectorAll('#hv1Roster input[type=checkbox]').forEach(x=>x.checked=true)};
 window.hv1CreateBoard=function(){const team=[...document.querySelectorAll('#hv1Roster input:checked')].map(x=>x.value);if(!team.length){alert('Select at least one employee.');return}const s=hv1Load();s.team=team;s.drafts=s.drafts||{};team.forEach(n=>{if(!s.drafts[n])s.drafts[n]=hv1BlankDraft(n)});hv1Save(s);$('hv1Setup').classList.add('hidden');$('hv1BoardBox').classList.remove('hidden');hv1RenderCards()};
 window.hv1EditTeam=function(){$('hv1BoardBox').classList.add('hidden');$('hv1Setup').classList.remove('hidden');hv1RenderRoster()};
+
+function hv1SyncServerDraftToBar(s,name){
+  hv1EnsureBarState(s);
+  const d=s.drafts?.[name];
+  if(!d || hv1DraftRole(d)==="bartender")return;
+
+  const shift=hv1DraftShift(d);
+  const grand=Math.max(0,Number(d.values?.hGrandTotal||0));
+  const totalAM=Math.max(0,Number(d.values?.hTotalAM||0));
+  const amOn=String(d.values?.hAmBar||"no")==="yes";
+  const pmOn=String(d.values?.hPmBar||"no")==="yes";
+
+  // AM-only: BAR AM Grand Total = employee Grand Total.
+  // PM-only: BAR PM Grand Total = employee Grand Total.
+  // DOUBLE: BAR AM = Total AM; BAR PM = cumulative/full Grand Total.
+  // BAR 2–4 remains manually editable because V01 has no separate 2–4 sales field.
+  if(shift==="AM"){
+    if(amOn && grand>0)s.bar.AM.entries[name]=String(grand);
+    else delete s.bar.AM.entries[name];
+    delete s.bar.PM.entries[name];
+  }else if(shift==="PM"){
+    if(pmOn && grand>0)s.bar.PM.entries[name]=String(grand);
+    else delete s.bar.PM.entries[name];
+    delete s.bar.AM.entries[name];
+  }else if(shift==="DOUBLE"){
+    if(amOn && totalAM>0)s.bar.AM.entries[name]=String(totalAM);
+    else delete s.bar.AM.entries[name];
+    if(pmOn && grand>0)s.bar.PM.entries[name]=String(grand);
+    else delete s.bar.PM.entries[name];
+  }else if(shift==="LONG"){
+    // LONG has only one V01 Grand Total. Auto-fill the selected single endpoint;
+    // if both are selected, PM gets the cumulative/full Grand Total and AM stays manual.
+    if(amOn && !pmOn && grand>0)s.bar.AM.entries[name]=String(grand);
+    else if(!amOn)delete s.bar.AM.entries[name];
+    if(pmOn && grand>0)s.bar.PM.entries[name]=String(grand);
+    else delete s.bar.PM.entries[name];
+  }
+}
+
+function hv1SyncBarEntryToServerDraft(s,key,name,value){
+  const d=s.drafts?.[name];
+  if(!d || hv1DraftRole(d)==="bartender")return;
+  d.values=d.values||{};
+  d.entered=d.entered||{};
+  const n=Math.max(0,Number(value)||0);
+  const has=String(value??"").trim()!=="" && n>0;
+  const shift=hv1DraftShift(d);
+
+  if(key==="AM"){
+    d.values.hAmBar=has?"yes":"no"; d.entered.hAmBar=true;
+    if(shift==="AM"){
+      d.values.hGrandTotal=has?String(n):d.values.hGrandTotal||"";
+      if(has)d.entered.hGrandTotal=true;
+    }else if(shift==="DOUBLE"){
+      d.values.hTotalAM=has?String(n):d.values.hTotalAM||"";
+      if(has)d.entered.hTotalAM=true;
+    }
+  }
+
+  if(key==="PM"){
+    const has24=Number(s.bar?.["2PM_4PM"]?.entries?.[name]||0)>0;
+    d.values.hPmBar=(has||has24)?"yes":"no"; d.entered.hPmBar=true;
+    if(["PM","DOUBLE","LONG"].includes(shift) && has){
+      d.values.hGrandTotal=String(n);
+      d.entered.hGrandTotal=true;
+    }
+  }
+
+  if(key==="2PM_4PM"){
+    const hasPM=Number(s.bar?.PM?.entries?.[name]||0)>0;
+    d.values.hPmBar=(has||hasPM)?"yes":"no"; d.entered.hPmBar=true;
+  }
+
+  d.savedAt=Date.now();
+  s.drafts[name]=d;
+}
+
 function hv1EnsureBarState(s){
   s.bar=s.bar||{};
   for(const key of ['AM','2PM_4PM','PM']){
@@ -794,6 +1063,7 @@ function hv1BarCardHtml(key,s){
 function hv1UpdateBarLive(key,name,value){
   const state=hv1Load(); hv1EnsureBarState(state);
   state.bar[key].entries[name]=String(value??"");
+  hv1SyncBarEntryToServerDraft(state,key,name,value);
   hv1ApplyBarAutomation(state);
   localStorage.setItem(hv1Key(),JSON.stringify(state));
   hv1CloudSave(JSON.parse(JSON.stringify(state))).catch(()=>{});
@@ -1205,17 +1475,21 @@ document.addEventListener("click",e=>{
   }
 });
 
-window.hv1OpenEmployee=function(name){
+window.hv1OpenEmployee=async function(name){
   try{name=decodeURIComponent(name)}catch(e){}
   hv1EditingEmployee=name;
   document.body.classList.add('hourly-v1-mode','hourly-v1-editing');
   document.querySelectorAll('.staffPanel').forEach(x=>x.classList.add('hidden'));
   $('hourlyV1Workspace')?.classList.add('hidden');
   $('hourly')?.classList.remove('hidden');
+
+  await hv1HydrateDraftFromFinalReport(name);
   hv1ApplyDraft(name);
+
   requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'instant'}));
 };
 window.hv1BackToBoard=function(){
+  try{captureHourlyWizard()}catch(e){}
   hv1CapturePage(false);
   document.body.classList.remove('hourly-v1-editing');
   $('hourly')?.classList.add('hidden');
@@ -1224,7 +1498,15 @@ window.hv1BackToBoard=function(){
   requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'instant'}));
 };
 window.hv1SkipPage=function(){hv1CapturePage(true);if(hourlyWizardStep<7)hourlyWizardStep++;renderHourlyWizard();setTimeout(hv1PatchWizard,0)};
-window.hv1SavePage=function(){hv1CapturePage(false);hv1BackToBoard()};
+window.hv1SavePage=function(){
+  try{captureHourlyWizard()}catch(e){}
+  hv1CapturePage(false);
+  document.body.classList.remove('hourly-v1-editing');
+  $('hourly')?.classList.add('hidden');
+  $('hourlyV1Workspace')?.classList.remove('hidden');
+  hv1RenderCards();
+  window.scrollTo(0,0);
+};
 
 let hv1SmallReportHome=null;
 function hv1MoveSmallReportIntoV1(){
@@ -2376,16 +2658,8 @@ async function archiveCheckTipSheet(sheet){
     if(String(sheet.employeeName||"").trim()!==mine){alert("You can delete only your own Check Tip status.");return false;}
   }
   const archiveRef=doc(db,"deletedItems",`checktip_${sheet.id}`);
-
-  // IMPORTANT: Employee must NOT pre-read a not-yet-existing archive document.
-  // Firestore evaluates a read against resource.data, which does not exist yet,
-  // and that caused the permission-denied seen in V13.8.11.
-  // A visible Check Tip status is not archived yet, so employee can create it directly.
-  if(role!=="employee"){
-    const old=await getDoc(archiveRef);
-    if(old.exists())return true;
-  }
-
+  const old=await getDoc(archiveRef);
+  if(old.exists())return true;
   await setDoc(archiveRef,{
     itemType:"check_tip",
     itemId:String(sheet.id),
@@ -2412,7 +2686,7 @@ window.employeeDeleteTipCheckDate=async function(encodedDate){
     for(const s of targets)await archiveCheckTipSheet(s);
     await loadTipCheckSheets();
   }catch(e){
-    console.error("Employee Check Tip delete V13.8.11:",e);
+    console.error("Employee Check Tip delete:",e);
     alert(`Delete failed: ${e.code||e.message}\n\nIf this says permission-denied, publish the V13.8.11 Firestore rules.`);
   }
 };
@@ -6435,24 +6709,51 @@ function renderHourlyWizard(){
   }
 
   if(hourlyWizardStep===7){
-    body=`<h3 class="how-title">Employee Report</h3><p class="how-sub">Calculate, review the V01 result, then submit final when everything is correct.</p>
+    const quickShowAM=hourlyWizardState.shift==="DOUBLE";
+    const serverMode=hourlyWizardState.position!=="Bartender";
+    const quickAm=serverMode && ["AM","DOUBLE","LONG"].includes(hourlyWizardState.shift);
+    const quickPm=serverMode && ["PM","DOUBLE","LONG"].includes(hourlyWizardState.shift);
+    const draftNow=(hourlyV1Mode&&hv1EditingEmployee)?hv1Draft(hv1EditingEmployee):null;
+    const amChecked=draftNow?.entered?.hAmBar
+      ? String(draftNow.values?.hAmBar||"no")==="yes"
+      : howVal("hAmBar")==="yes";
+    const pmChecked=draftNow?.entered?.hPmBar
+      ? String(draftNow.values?.hPmBar||"no")==="yes"
+      : howVal("hPmBar")==="yes";
+
+    body=`<h3 class="how-title">Employee Report — Quick Edit</h3>
+      <p class="how-sub">Edit the final numbers directly here. You do not need to go Back to Sales or Tips.</p>
       <div class="how-card">
         <div class="how-summary">
           <div><small>Employee</small><b>${howVal("hEmployee")||"—"}</b></div>
           <div><small>Shift</small><b>${hourlyWizardState.shift}</b></div>
-          <div><small>Grand Total</small><b>${howMoney(howVal("hGrandTotal"))}</b></div>
-          <div><small>Paid Tip</small><b>${howMoney(howVal("hPaidTip"))}</b></div>
-          <div><small>Cash Tip</small><b>${howMoney(howVal("hCashTip"))}</b></div>
-          <div><small>Meal</small><b>${howMoney(howVal("hMeal"))}</b></div>
-          ${hourlyWizardState.position==="Bartender"
-            ? (()=>{const bt=howBartenderFormula();return `
+        </div>
+
+        <div class="how-quick-edit-grid">
+          ${howField("Grand Total ($)","howGrand",howVal("hGrandTotal"),"number","0.00")}
+          ${quickShowAM?howField("Total AM ($)","howTotalAM",howVal("hTotalAM"),"number","0.00"):""}
+          ${howField("Paid Tip ($)","howPaid",howVal("hPaidTip"),"number","0.00")}
+          ${howField("Pay Card Tip Fee ($)","howCardFee",howVal("hCardFee"),"number","0.00")}
+          ${howField("Cash Tip ($)","howCash",howVal("hCashTip"),"number","0.00")}
+          ${howField("Meal ($)","howMeal",howVal("hMeal"),"number","0.00")}
+        </div>
+
+        ${serverMode?`<div class="how-quick-bar">
+          <div class="how-info"><b>BAR sync is automatic.</b><br>Check a period and the saved Grand Total is pushed to BAR Center. Editing BAR Center pushes the value back to this employee.</div>
+          ${quickAm?`<label class="check-card"><input id="howAmBar" type="checkbox" ${amChecked?"checked":""}><span><strong>AM BAR SALES</strong><span>Auto-sync to BAR AM</span></span></label>`:""}
+          ${quickPm?`<label class="check-card"><input id="howPmBar" type="checkbox" ${pmChecked?"checked":""}><span><strong>PM BAR SALES</strong><span>Auto-sync to BAR PM</span></span></label>`:""}
+        </div>`:""}
+
+        ${hourlyWizardState.position==="Bartender"
+          ? (()=>{const bt=howBartenderFormula();return `<div class="how-summary" style="margin-top:14px">
               <div><small>Server Grand Total</small><b>${howMoney(bt.summary)}</b></div>
               <div><small>Gross @ 0.6%</small><b>${howMoney(bt.gross)}</b></div>
               <div><small>Less AM</small><b>${howMoney(bt.lessAM)}</b></div>
               <div><small>Less 2 PM–4 PM</small><b>${howMoney(bt.less24)}</b></div>
-              <div><small>Bar Tip Out Received</small><b>${howMoney(bt.finalReceived)}</b></div>`;})()
-            : ""}
-        </div>
+              <div><small>Bar Tip Out Received</small><b>${howMoney(bt.finalReceived)}</b></div>
+            </div>`;})()
+          : ""}
+
         <div class="how-review-actions">
           <button type="button" class="btn gold" id="howCalc">CALCULATE V01</button>
           <button type="button" class="btn green" id="howFinal">SUBMIT FINAL & MONEY READY</button>
@@ -6468,7 +6769,7 @@ function renderHourlyWizard(){
   parkHourlyBartenderCalculator();
   if(hourlyWizardStep===6 && hourlyWizardState.position==="Bartender") updateHowBartenderPreview();
 
-  if(hourlyWizardStep===4) updateHowSalesPreview();
+  if(hourlyWizardStep===4 || hourlyWizardStep===7) updateHowSalesPreview();
   if(hourlyWizardStep===7) $("hourlyResult")?.classList.remove("hourlyLegacyHidden");
   if(hourlyV1Mode && document.body.classList.contains("hourly-v1-editing")) setTimeout(hv1PatchWizard,0);
 }
@@ -6519,6 +6820,17 @@ function captureHourlyWizard(){
       howSetSilent("hAmBar",$("howAmBar")?.checked?"yes":"no");
       howSetSilent("hPmBar",$("howPmBar")?.checked?"yes":"no");
     }
+  }else if(hourlyWizardStep===7){
+    if($("howGrand"))howSetSilent("hGrandTotal",$("howGrand").value||0);
+    if($("howTotalAM"))howSetSilent("hTotalAM",$("howTotalAM").value||0);
+    if($("howPaid"))howSetSilent("hPaidTip",$("howPaid").value||0);
+    if($("howCardFee"))howSetSilent("hCardFee",$("howCardFee").value||0);
+    if($("howCash"))howSetSilent("hCashTip",$("howCash").value||0);
+    if($("howMeal"))howSetSilent("hMeal",$("howMeal").value||0);
+    if(hourlyWizardState.position!=="Bartender"){
+      if($("howAmBar"))howSetSilent("hAmBar",$("howAmBar").checked?"yes":"no");
+      if($("howPmBar"))howSetSilent("hPmBar",$("howPmBar").checked?"yes":"no");
+    }
   }
 }
 
@@ -6544,6 +6856,9 @@ function bindHourlyWizard(){
     }else if(key==="busserAM"){
       howSetSilent("hBusserAM",val);
     }
+    if(hourlyV1Mode&&hv1EditingEmployee){
+      try{hv1CapturePage(false)}catch(e){console.warn("V1 choice autosave:",e)}
+    }
     renderHourlyWizard();
   });
   $("howGrand")?.addEventListener("input",updateHowSalesPreview);
@@ -6567,8 +6882,13 @@ function bindHourlyWizard(){
 
   if($("howBack")) $("howBack").onclick=()=>{
     captureHourlyWizard();
+    if(hourlyV1Mode&&hv1EditingEmployee)hv1CapturePage(false);
     if(hourlyWizardStep===1) return;
     hourlyWizardStep=Math.max(1,hourlyWizardStep-1);
+    if(hourlyV1Mode&&hv1EditingEmployee){
+      const s=hv1Load(),d=s.drafts?.[hv1EditingEmployee];
+      if(d){d.page=hourlyWizardStep;d.savedAt=Date.now();s.drafts[hv1EditingEmployee]=d;hv1Save(s);}
+    }
     renderHourlyWizard();
   };
   if($("howNext")) $("howNext").onclick=()=>{
@@ -6579,6 +6899,7 @@ function bindHourlyWizard(){
       alert("Hourly Adjustment button error: "+(e.message||e));
       return;
     }
+    if(hourlyV1Mode&&hv1EditingEmployee)hv1CapturePage(false);
     if(hourlyWizardStep===6 && hourlyWizardState.position==="Bartender" && !validateHowBartenderStep()){
       return;
     }
@@ -6598,6 +6919,10 @@ function bindHourlyWizard(){
       return;
     }
     hourlyWizardStep=Math.min(7,hourlyWizardStep+1);
+    if(hourlyV1Mode&&hv1EditingEmployee){
+      const s=hv1Load(),d=s.drafts?.[hv1EditingEmployee];
+      if(d){d.page=hourlyWizardStep;d.savedAt=Date.now();s.drafts[hv1EditingEmployee]=d;hv1Save(s);}
+    }
     renderHourlyWizard();
   };
   if($("howCalc")) $("howCalc").onclick=()=>{
@@ -6727,6 +7052,6 @@ setTimeout(loadHourlyRememberPreference,0);
 
 // V13.8.11 employee soft-delete ownership uses Firebase UID.
 
-// V13.8.11 employee Check Tip self-delete rule compatibility fix.
+// V13.8.11 finalized edit hydration, autosave, quick Team Board/BAR navigation.
 
-// V13.8.11 employee soft-delete skips forbidden pre-read of missing archive doc.
+// V13.8.11: direct final editing and two-way BAR/server sync.
