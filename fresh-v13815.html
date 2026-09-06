@@ -435,28 +435,218 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
 .employee-delete-checktip{margin-top:10px;width:100%}
 
 
-/* V13.8.13 Employee simplified + Cashier payout */
-.cashier-payout-table th,.cashier-payout-table td{vertical-align:middle}
-.cashier-payout-check{width:26px!important;height:26px!important;accent-color:#16a05d}
+/* V13.8.10 Hourly V1 edit/autosave quick navigation */
+.hv1-quick-nav{
+  position:sticky;top:0;z-index:45;
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;
+  padding:10px;margin:-4px 0 16px;
+  background:rgba(255,255,255,.96);
+  border:1px solid #dbe3ee;border-radius:16px;
+  box-shadow:0 8px 22px rgba(16,33,60,.10);
+  backdrop-filter:blur(8px);
+}
+.hv1-quick-nav .btn{min-height:48px}
+.hv1-autosave-note{
+  grid-column:1/-1;text-align:center;
+  font-size:12px;font-weight:900;color:#08703d;
+}
 @media(max-width:700px){
-  .cashier-payout-table th,.cashier-payout-table td{padding:12px 8px!important;font-size:14px}
-  .cashier-payout-table th:nth-child(1),.cashier-payout-table td:nth-child(1){min-width:100px}
-  .cashier-payout-table th:nth-child(2),.cashier-payout-table td:nth-child(2){min-width:150px}
+  .hv1-quick-nav{grid-template-columns:1fr 1fr 1fr;gap:6px;padding:7px}
+  .hv1-quick-nav .btn{font-size:12px;padding:9px 5px}
 }
 
 
-/* V13.8.15 SAFE employee portal simplification.
-   Full V1 / Manager / Owner / Cashier DOM is preserved. */
-body.employee-report-only #employeeApp .tabs,
-body.employee-report-only #employeeShiftContent > .card:first-child,
-body.employee-report-only #employeeShiftContent > .card:nth-child(2),
-body.employee-report-only #employeeTipCheckContent,
-body.employee-report-only #employeeBottom {
-  display:none !important;
+/* V13.8.11 direct final edit + BAR two-way sync */
+.hv1-quick-nav{
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
 }
-body.employee-report-only #employeeApp,
-body.employee-report-only #employeeShiftContent {
-  display:block !important;
+.how-quick-edit-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-top:16px;
+}
+.how-quick-bar{margin-top:16px}
+@media(max-width:760px){
+  .hv1-quick-nav{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  .hv1-quick-nav .btn{font-size:11px!important;padding:8px 4px!important}
+  .how-quick-edit-grid{grid-template-columns:1fr}
+}
+
+
+/* V13.8.12 larger readable text */
+body{font-size:17px}
+#hourlyV1Workspace,
+#smallReport{font-size:17px}
+#hourlyV1Workspace h2,
+#smallReport h2{font-size:32px!important}
+#hourlyV1Workspace h3,
+#smallReport h3{font-size:25px!important}
+#hourlyV1Workspace h4{font-size:21px!important}
+#hourlyV1Workspace label,
+#hourlyV1Workspace .how-label,
+#hourlyV1Workspace .how-sub,
+#hourlyV1Workspace .how-info,
+#smallReport label,
+#smallReport .small{font-size:16px!important}
+#hourlyV1Workspace input,
+#hourlyV1Workspace select,
+#hourlyV1Workspace textarea{font-size:20px!important}
+#hourlyV1Workspace .btn,
+#smallReport .btn{font-size:17px!important;font-weight:900}
+#hourlyV1Workspace .how-metric span,
+#hourlyV1Workspace .how-summary small,
+#smallReport .kpi span{font-size:15px!important}
+#hourlyV1Workspace .how-metric b,
+#hourlyV1Workspace .how-summary b,
+#smallReport .kpi b{font-size:24px!important}
+#smallReport table{font-size:16px!important}
+#smallReport th{font-size:15px!important;padding:12px 10px!important}
+#smallReport td{font-size:16px!important;padding:12px 10px!important}
+#smallReport .signature-cell{min-width:260px}
+@media(max-width:760px){
+  body{font-size:17px}
+  #hourlyV1Workspace h2,#smallReport h2{font-size:28px!important}
+  #hourlyV1Workspace input,#hourlyV1Workspace select{font-size:19px!important}
+  #smallReport table{font-size:15px!important}
+}
+
+
+/* V13.8.14 — larger Small Report + freeze Date and Employee */
+#smallReport{font-size:19px!important}
+#smallReport h2{font-size:36px!important;line-height:1.1!important}
+#smallReport .kpi span{font-size:17px!important}
+#smallReport .kpi b{font-size:29px!important}
+#smallReport .small{font-size:15px!important}
+#smallReport .tableWrap{
+  overflow:auto!important;
+  max-height:72vh;
+  position:relative;
+  border-radius:14px;
+}
+#smallReport table{
+  border-collapse:separate!important;
+  border-spacing:0!important;
+  font-size:18px!important;
+}
+#smallReport th{
+  position:sticky;
+  top:0;
+  z-index:20;
+  font-size:17px!important;
+  line-height:1.15!important;
+  padding:16px 13px!important;
+  white-space:nowrap;
+}
+#smallReport td{
+  font-size:18px!important;
+  padding:16px 13px!important;
+  white-space:nowrap;
+}
+#smallReport tbody td b{font-size:20px!important}
+#smallReport th:first-child,
+#smallReport td:first-child{
+  position:sticky;
+  left:0;
+  min-width:125px;
+  background:#fff;
+  z-index:12;
+}
+#smallReport th:first-child{
+  background:#10233f;
+  z-index:30;
+}
+#smallReport .sr-freeze-employee{
+  position:sticky!important;
+  left:125px;
+  min-width:220px;
+  background:#fff;
+  z-index:13;
+  box-shadow:8px 0 12px -12px rgba(0,0,0,.7);
+}
+#smallReport th.sr-freeze-employee{
+  background:#10233f;
+  z-index:31;
+}
+#smallReport tbody tr:nth-child(even) td:first-child,
+#smallReport tbody tr:nth-child(even) td.sr-freeze-employee{
+  background:#f8fafc;
+}
+#smallReport .btn{font-size:17px!important;min-height:46px}
+@media(max-width:760px){
+  #smallReport{font-size:18px!important}
+  #smallReport h2{font-size:31px!important}
+  #smallReport th{font-size:16px!important;padding:14px 11px!important}
+  #smallReport td{font-size:17px!important;padding:14px 11px!important}
+  #smallReport th:first-child,#smallReport td:first-child{min-width:112px}
+  #smallReport .sr-freeze-employee{left:112px;min-width:190px}
+}
+
+
+/* V13.8.15 — simple Small Report list + full detail modal */
+#smallReport .simple-name-report{
+  max-width:760px;
+  margin-left:auto;
+  margin-right:auto;
+  max-height:62vh;
+}
+#smallReport .simple-name-report table{width:100%!important}
+#smallReport .simple-name-report th{
+  position:sticky!important;top:0!important;left:auto!important;
+  text-align:left!important;font-size:19px!important;padding:16px 18px!important;
+}
+#smallReport .simple-name-report td{
+  position:static!important;
+  padding:8px!important;
+  background:#fff!important;
+}
+.small-report-name-btn{
+  width:100%;
+  border:1px solid #d8e1ec;
+  background:#fff;
+  border-radius:14px;
+  padding:17px 20px;
+  text-align:left;
+  font-size:22px;
+  line-height:1.1;
+  font-weight:1000;
+  color:#10233f;
+  cursor:pointer;
+}
+.small-report-name-btn:hover{background:#f3f7fc}
+.small-report-detail-modalbox{
+  width:min(940px,94vw)!important;
+  max-width:940px!important;
+  max-height:92vh;
+  overflow:auto;
+}
+.small-report-detail-head{
+  display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;
+  border-bottom:1px solid #dde5ef;padding-bottom:12px;margin-bottom:14px;
+}
+.small-report-detail-head h2{font-size:32px!important}
+.sr-detail-grid{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;
+}
+.sr-detail-grid>div{
+  border:1px solid #dbe3ed;border-radius:14px;padding:13px;background:#fff;
+}
+.sr-detail-grid span{display:block;font-size:15px;color:#657184;font-weight:800}
+.sr-detail-grid b{display:block;font-size:23px;color:#10233f;margin-top:4px}
+.sr-detail-grid small{display:block;font-size:12px;margin-top:4px;color:#657184}
+.sr-detail-grid .accent{background:#eef8f2;border-color:#b7dec5}
+.sr-detail-grid .grand{background:#fff7df;border-color:#e7c96f}
+.small-report-detail-signature{
+  margin-top:16px;padding:14px;border:1px solid #dbe3ed;border-radius:14px;background:#fafcff;
+}
+.small-report-detail-signature h3{font-size:20px!important;margin:0 0 8px}
+.small-report-detail-actions{margin-top:16px}
+.small-report-detail-actions .btn{font-size:18px!important;min-height:50px}
+@media(max-width:760px){
+  .sr-detail-grid{grid-template-columns:1fr 1fr}
+  .small-report-name-btn{font-size:20px}
 }
 
 </style>
@@ -504,7 +694,7 @@ body.employee-report-only #employeeShiftContent {
 </style>
 </head>
 <body><div style="display:none" data-build="1388" data-hourly-tab="present"></div>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.15 V1 RESTORED + EMPLOYEE REPORT ONLY SAFE</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.15 SIMPLE SMALL REPORT + BUSSER SPLIT</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -639,6 +829,7 @@ body.employee-report-only #employeeShiftContent {
     <div id="employeeApp" class="hidden">
       <div class="tabs" style="margin-bottom:12px">
         <button class="tab on" data-etab="shift">Tip Report</button>
+        <button class="tab" data-etab="tipcheck">Check Tip</button>
       </div>
       <div id="employeeShiftContent">
       <div id="employeeReadyReport" class="card hidden"></div>
@@ -717,9 +908,26 @@ body.employee-report-only #employeeShiftContent {
         <div class="notice good">Your submission is stored in the shared Firestore database and appears on Manager/Owner devices in realtime.</div>
       </div>
       <div class="card"><h2>Current / Pending Report</h2><div id="mySubmissions"></div></div>
-        <div class="card"><h2>My Tip Reports</h2><div class="notice good" style="margin-bottom:10px"><b>Your finalized tip reports stay linked to your employee name.</b><br>Reports created before you signed up will appear here after you log in.</div><div id="employeeHistoricalReports"><div class="small">Loading finalized reports...</div></div>
       </div>
 
+      <div id="employeeTipCheckContent" class="hidden">
+        <div class="card">
+          <h2>Check Tip</h2>
+          <div class="notice">Enter the date and up to 50 lines from your paper: Check Number, Table, and Tip. Leave unused lines blank.</div>
+          <div class="grid" style="margin-top:12px">
+            <div><label>Date</label><input id="eTipCheckDate" type="date"></div>
+            <div><label>Employee</label><input id="eTipCheckEmployee" readonly></div>
+          </div>
+          <div class="tablewrap" style="margin-top:12px;max-height:600px">
+            <table class="tip-check-table"><thead><tr><th>#</th><th>Check Number</th><th>Table</th><th>Tip ($)</th></tr></thead><tbody id="eTipCheckRows"></tbody></table>
+          </div>
+          <div class="actions" style="margin-top:14px">
+            <button class="btn light" type="button" onclick="clearEmployeeTipCheck()">Clear</button>
+            <button class="btn green" type="button" onclick="submitEmployeeTipCheck()">Submit to Cashier</button>
+          </div>
+        </div>
+        <div class="card"><h2>My Check Tip Status</h2><div id="employeeTipCheckStatus"></div></div>
+        <div class="card"><h2>My Tip Reports</h2><div class="notice good" style="margin-bottom:10px"><b>Your finalized tip reports stay linked to your employee name.</b><br>Reports created before you signed up will appear here after you log in.</div><div id="employeeHistoricalReports"><div class="small">Loading finalized reports...</div></div></div>
       </div>
     </div>
 
@@ -795,7 +1003,6 @@ body.employee-report-only #employeeShiftContent {
         <button class="tab ownerOnly" data-stab="history">History</button>
         <button class="tab ownerOnly" data-stab="deletedItems">Deleted / Undo <span id="deletedItemsBadge" class="badge">0</span></button>
         <button class="tab tipCheckTab" data-stab="tipCheck">Check Tip</button>
-        <button class="tab cashierOnly" data-stab="cashierPayout">Cashier</button>
         <button class="tab" data-stab="setup">Setup</button>
       </div>
 
@@ -1030,13 +1237,13 @@ body.employee-report-only #employeeShiftContent {
           <div class="small-report-head">
             <div>
               <h2 style="margin-bottom:4px">Small Report</h2>
-              <div class="small">Automatically updated after Hourly Adjustment is finalized. Manager/Owner can collect the server signature and send SMS directly from each row.</div>
+              <div class="small">Finalized employees only. Click an employee name to open the full report, collect signature, edit, or delete.</div>
             </div>
             <div class="actions">
               <button class="btn green" type="button" onclick="newHourlyEntryFromSmallReport()">+ New Entry</button>
               <button class="btn light" type="button" onclick="refreshPhoneDirectoryUi()">Refresh Phones</button>
               <button class="btn light" type="button" onclick="downloadSmallReportXls()">Download XLS</button>
-              <button class="btn light" type="button" onclick="downloadSmallReportPdf()">Download PDF</button>
+              <button class="btn light" type="button" onclick="downloadSmallReportPdf()">Download All PDF</button>
               <button class="btn light" type="button" onclick="shareSmallReportXls('whatsapp')">WhatsApp</button>
               <button class="btn light" type="button" onclick="shareSmallReportXls('email')">Email</button>
               <button class="btn red" type="button" onclick="deleteAllSmallReportRows()">Delete All</button>
@@ -1072,29 +1279,9 @@ body.employee-report-only #employeeShiftContent {
           </details>
           <div id="smallReportSummary" class="small-report-summary"></div>
 
-          <div class="tablewrap small-report-wrap" style="margin-top:14px">
+          <div class="tablewrap small-report-wrap simple-name-report" style="margin-top:14px">
             <table class="small-report-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Employee</th>
-                  <th>Shift</th>
-                  <th>Clock In 1</th>
-                  <th>Clock Out 1</th>
-                  <th>Clock In 2</th>
-                  <th>Clock Out 2</th>
-                  <th>Total Hours</th>
-                  <th>Paid Tips</th>
-                  <th>Tip Card Fee</th>
-                  <th>Busser Tip Out</th>
-                  <th>Bar Tip Out / Received</th>
-                  <th>Total Tip Before Meal</th>
-                  <th>Cash Tip</th>
-                  <th>Meal</th>
-                  <th>Total Paid Out</th>
-                  <th class="signature-col">Signature</th><th>Action</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Employee Name</th></tr></thead>
               <tbody id="smallReportBody"></tbody>
             </table>
           </div>
@@ -1141,28 +1328,6 @@ body.employee-report-only #employeeShiftContent {
             </div>
           </div>
           <div id="deletedItemsList" style="margin-top:14px"><div class="small">No deleted records.</div></div>
-        </div>
-      </section>
-
-
-      <section id="cashierPayout" class="staffPanel hidden cashierOnly">
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
-            <div>
-              <h2 style="margin:0 0 4px">Cashier Payout</h2>
-              <div class="small">Simple payout list — Date, Employee, Paid Out, and Checklist.</div>
-            </div>
-            <button class="btn red" type="button" onclick="clearCashierPayoutBoard()">Delete All</button>
-          </div>
-          <div class="notice good" style="margin-top:12px">
-            Checking a row only marks it for the Cashier. <b>Delete All</b> clears the Cashier screen only; it does not delete Hourly Adjustment or Small Report data.
-          </div>
-          <div class="tablewrap" style="margin-top:14px">
-            <table class="cashier-payout-table">
-              <thead><tr><th>Date</th><th>Employee</th><th>Paid Out</th><th>Checklist</th></tr></thead>
-              <tbody id="cashierPayoutBody"><tr><td colspan="4" class="small">Loading payout reports...</td></tr></tbody>
-            </table>
-          </div>
         </div>
       </section>
 
@@ -1458,6 +1623,25 @@ if('serviceWorker' in navigator){
       <button class="btn light" type="button" onclick="hv1CancelPassword()">Cancel</button>
       <button class="btn red" type="button" onclick="hv1SubmitPassword()">Confirm</button>
     </div>
+  </div>
+</div>
+
+
+<div id="smallReportDetailModal" class="modal hidden" style="z-index:99970">
+  <div class="modalbox small-report-detail-modalbox">
+    <div class="small-report-detail-head">
+      <div>
+        <h2 id="smallReportDetailTitle" style="margin:0">Employee Report</h2>
+        <div id="smallReportDetailSub" class="small"></div>
+      </div>
+      <button class="btn light" type="button" onclick="closeSmallReportDetail()">CLOSE</button>
+    </div>
+    <div id="smallReportDetailBody" class="small-report-detail-body"></div>
+    <div class="small-report-detail-signature">
+      <h3>Employee Signature</h3>
+      <div id="smallReportDetailSignature"></div>
+    </div>
+    <div id="smallReportDetailActions" class="actions small-report-detail-actions"></div>
   </div>
 </div>
 

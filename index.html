@@ -562,6 +562,71 @@ body{font-size:17px}
   #smallReport .sr-freeze-employee{left:112px;min-width:190px}
 }
 
+
+/* V13.8.15 — simple Small Report list + full detail modal */
+#smallReport .simple-name-report{
+  max-width:760px;
+  margin-left:auto;
+  margin-right:auto;
+  max-height:62vh;
+}
+#smallReport .simple-name-report table{width:100%!important}
+#smallReport .simple-name-report th{
+  position:sticky!important;top:0!important;left:auto!important;
+  text-align:left!important;font-size:19px!important;padding:16px 18px!important;
+}
+#smallReport .simple-name-report td{
+  position:static!important;
+  padding:8px!important;
+  background:#fff!important;
+}
+.small-report-name-btn{
+  width:100%;
+  border:1px solid #d8e1ec;
+  background:#fff;
+  border-radius:14px;
+  padding:17px 20px;
+  text-align:left;
+  font-size:22px;
+  line-height:1.1;
+  font-weight:1000;
+  color:#10233f;
+  cursor:pointer;
+}
+.small-report-name-btn:hover{background:#f3f7fc}
+.small-report-detail-modalbox{
+  width:min(940px,94vw)!important;
+  max-width:940px!important;
+  max-height:92vh;
+  overflow:auto;
+}
+.small-report-detail-head{
+  display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;
+  border-bottom:1px solid #dde5ef;padding-bottom:12px;margin-bottom:14px;
+}
+.small-report-detail-head h2{font-size:32px!important}
+.sr-detail-grid{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;
+}
+.sr-detail-grid>div{
+  border:1px solid #dbe3ed;border-radius:14px;padding:13px;background:#fff;
+}
+.sr-detail-grid span{display:block;font-size:15px;color:#657184;font-weight:800}
+.sr-detail-grid b{display:block;font-size:23px;color:#10233f;margin-top:4px}
+.sr-detail-grid small{display:block;font-size:12px;margin-top:4px;color:#657184}
+.sr-detail-grid .accent{background:#eef8f2;border-color:#b7dec5}
+.sr-detail-grid .grand{background:#fff7df;border-color:#e7c96f}
+.small-report-detail-signature{
+  margin-top:16px;padding:14px;border:1px solid #dbe3ed;border-radius:14px;background:#fafcff;
+}
+.small-report-detail-signature h3{font-size:20px!important;margin:0 0 8px}
+.small-report-detail-actions{margin-top:16px}
+.small-report-detail-actions .btn{font-size:18px!important;min-height:50px}
+@media(max-width:760px){
+  .sr-detail-grid{grid-template-columns:1fr 1fr}
+  .small-report-name-btn{font-size:20px}
+}
+
 </style>
 
 <style>
@@ -607,7 +672,7 @@ body{font-size:17px}
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.14 BIG SMALL REPORT + FREEZE NAME</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.15 SIMPLE SMALL REPORT + BUSSER SPLIT</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -1150,13 +1215,13 @@ body{font-size:17px}
           <div class="small-report-head">
             <div>
               <h2 style="margin-bottom:4px">Small Report</h2>
-              <div class="small">Automatically updated after Hourly Adjustment is finalized. Manager/Owner can collect the server signature and send SMS directly from each row.</div>
+              <div class="small">Finalized employees only. Click an employee name to open the full report, collect signature, edit, or delete.</div>
             </div>
             <div class="actions">
               <button class="btn green" type="button" onclick="newHourlyEntryFromSmallReport()">+ New Entry</button>
               <button class="btn light" type="button" onclick="refreshPhoneDirectoryUi()">Refresh Phones</button>
               <button class="btn light" type="button" onclick="downloadSmallReportXls()">Download XLS</button>
-              <button class="btn light" type="button" onclick="downloadSmallReportPdf()">Download PDF</button>
+              <button class="btn light" type="button" onclick="downloadSmallReportPdf()">Download All PDF</button>
               <button class="btn light" type="button" onclick="shareSmallReportXls('whatsapp')">WhatsApp</button>
               <button class="btn light" type="button" onclick="shareSmallReportXls('email')">Email</button>
               <button class="btn red" type="button" onclick="deleteAllSmallReportRows()">Delete All</button>
@@ -1192,30 +1257,9 @@ body{font-size:17px}
           </details>
           <div id="smallReportSummary" class="small-report-summary"></div>
 
-          <div class="tablewrap small-report-wrap" style="margin-top:14px">
+          <div class="tablewrap small-report-wrap simple-name-report" style="margin-top:14px">
             <table class="small-report-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th class="sr-freeze-employee">Employee</th>
-                  <th>Shift</th>
-                  <th>Clock In 1</th>
-                  <th>Clock Out 1</th>
-                  <th>Clock In 2</th>
-                  <th>Clock Out 2</th>
-                  <th>Total Hours</th>
-                  <th>Paid Tips</th>
-                  <th>Tip Card Fee</th>
-                  <th>Busser Tip Out</th>
-                  <th>Bar Tip Out / Received</th>
-                  <th>Total Tip Before Meal</th>
-                  <th>Cash Tip</th>
-                  <th>Meal</th>
-                  <th>Total Paid Out</th>
-                  <th>Grand Total<br><span style="font-size:11px">Total Before Meal + Cash Tip</span></th>
-                  <th class="signature-col">Signature</th><th>Action</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Employee Name</th></tr></thead>
               <tbody id="smallReportBody"></tbody>
             </table>
           </div>
@@ -1472,10 +1516,10 @@ body{font-size:17px}
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v13814.js?v=13814"></script>
+<script type="module" src="app-v13815.js?v=13815"></script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13814.js?v=13814',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13815.js?v=13815',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -1520,7 +1564,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script src="simple-ui-v13814.js?v=13814"></script>
+<script src="simple-ui-v13815.js?v=13815"></script>
 <div id="employeeDirectoryModal" class="modal hidden">
   <div class="modalbox" style="max-width:560px">
     <h3 id="employeeDirectoryModalTitle">Add Employee</h3>
@@ -1557,6 +1601,25 @@ if('serviceWorker' in navigator){
       <button class="btn light" type="button" onclick="hv1CancelPassword()">Cancel</button>
       <button class="btn red" type="button" onclick="hv1SubmitPassword()">Confirm</button>
     </div>
+  </div>
+</div>
+
+
+<div id="smallReportDetailModal" class="modal hidden" style="z-index:99970">
+  <div class="modalbox small-report-detail-modalbox">
+    <div class="small-report-detail-head">
+      <div>
+        <h2 id="smallReportDetailTitle" style="margin:0">Employee Report</h2>
+        <div id="smallReportDetailSub" class="small"></div>
+      </div>
+      <button class="btn light" type="button" onclick="closeSmallReportDetail()">CLOSE</button>
+    </div>
+    <div id="smallReportDetailBody" class="small-report-detail-body"></div>
+    <div class="small-report-detail-signature">
+      <h3>Employee Signature</h3>
+      <div id="smallReportDetailSignature"></div>
+    </div>
+    <div id="smallReportDetailActions" class="actions small-report-detail-actions"></div>
   </div>
 </div>
 
