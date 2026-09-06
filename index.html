@@ -139,7 +139,7 @@ button[onclick="submitEmployeeReport()"]{display:none!important}
 }
 
 
-/* V13.5.6 Daily Report */
+/* V13.5.6 Small Report */
 .small-report-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap}
 .small-report-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}
 .small-report-summary .kpi{min-height:86px}
@@ -397,7 +397,7 @@ body.hourly-v1-mode.hourly-v1-editing #hourly > .card{
 .hv1-password-box .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 
 
-/* V13.8.5 — Daily Report is a native Hourly V1 view */
+/* V13.8.5 — Small Report is a native Hourly V1 view */
 body.hourly-v1-mode #hv1SmallReportBox{display:block}
 body.hourly-v1-mode #hv1SmallReportBox.hidden{display:none!important}
 #hv1SmallReportMount > #smallReport{display:block!important;margin:0!important;max-width:none!important}
@@ -492,577 +492,249 @@ body{font-size:17px}
 }
 
 
-/* V13.8.14 — larger Daily Report + freeze Date and Employee */
-#smallReport{font-size:19px!important}
-#smallReport h2{font-size:36px!important;line-height:1.1!important}
-#smallReport .kpi span{font-size:17px!important}
-#smallReport .kpi b{font-size:29px!important}
-#smallReport .small{font-size:15px!important}
-#smallReport .tableWrap{
-  overflow:auto!important;
-  max-height:72vh;
-  position:relative;
-  border-radius:14px;
-}
-#smallReport table{
-  border-collapse:separate!important;
-  border-spacing:0!important;
-  font-size:18px!important;
-}
-#smallReport th{
-  position:sticky;
-  top:0;
-  z-index:20;
-  font-size:17px!important;
-  line-height:1.15!important;
-  padding:16px 13px!important;
-  white-space:nowrap;
-}
-#smallReport td{
-  font-size:18px!important;
-  padding:16px 13px!important;
-  white-space:nowrap;
-}
-#smallReport tbody td b{font-size:20px!important}
-#smallReport th:first-child,
-#smallReport td:first-child{
-  position:sticky;
-  left:0;
-  min-width:125px;
-  background:#fff;
-  z-index:12;
-}
-#smallReport th:first-child{
-  background:#10233f;
-  z-index:30;
-}
-#smallReport .sr-freeze-employee{
-  position:sticky!important;
-  left:125px;
-  min-width:220px;
-  background:#fff;
-  z-index:13;
-  box-shadow:8px 0 12px -12px rgba(0,0,0,.7);
-}
-#smallReport th.sr-freeze-employee{
-  background:#10233f;
-  z-index:31;
-}
-#smallReport tbody tr:nth-child(even) td:first-child,
-#smallReport tbody tr:nth-child(even) td.sr-freeze-employee{
-  background:#f8fafc;
-}
-#smallReport .btn{font-size:17px!important;min-height:46px}
-@media(max-width:760px){
-  #smallReport{font-size:18px!important}
-  #smallReport h2{font-size:31px!important}
-  #smallReport th{font-size:16px!important;padding:14px 11px!important}
-  #smallReport td{font-size:17px!important;padding:14px 11px!important}
-  #smallReport th:first-child,#smallReport td:first-child{min-width:112px}
-  #smallReport .sr-freeze-employee{left:112px;min-width:190px}
+/* V13.8.14 — Small Report one-screen viewport + Freeze Pane */
+html.small-report-fullscreen,
+body.small-report-fullscreen{
+  overflow:hidden!important;
+  height:100%!important;
 }
 
-
-/* V13.8.15 — simple Daily Report list + full detail modal */
-#smallReport .simple-name-report{
-  max-width:760px;
-  margin-left:auto;
-  margin-right:auto;
-  max-height:62vh;
-}
-#smallReport .simple-name-report table{width:100%!important}
-#smallReport .simple-name-report th{
-  position:sticky!important;top:0!important;left:auto!important;
-  text-align:left!important;font-size:19px!important;padding:16px 18px!important;
-}
-#smallReport .simple-name-report td{
-  position:static!important;
-  padding:8px!important;
-  background:#fff!important;
-}
-.small-report-name-btn{
-  width:100%;
-  border:1px solid #d8e1ec;
-  background:#fff;
-  border-radius:14px;
-  padding:17px 20px;
-  text-align:left;
-  font-size:22px;
-  line-height:1.1;
-  font-weight:1000;
-  color:#10233f;
-  cursor:pointer;
-}
-.small-report-name-btn:hover{background:#f3f7fc}
-.small-report-detail-modalbox{
-  width:min(940px,94vw)!important;
-  max-width:940px!important;
-  max-height:92vh;
-  overflow:auto;
-}
-.small-report-detail-head{
-  display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;
-  border-bottom:1px solid #dde5ef;padding-bottom:12px;margin-bottom:14px;
-}
-.small-report-detail-head h2{font-size:32px!important}
-.sr-detail-grid{
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;
-}
-.sr-detail-grid>div{
-  border:1px solid #dbe3ed;border-radius:14px;padding:13px;background:#fff;
-}
-.sr-detail-grid span{display:block;font-size:15px;color:#657184;font-weight:800}
-.sr-detail-grid b{display:block;font-size:23px;color:#10233f;margin-top:4px}
-.sr-detail-grid small{display:block;font-size:12px;margin-top:4px;color:#657184}
-.sr-detail-grid .accent{background:#eef8f2;border-color:#b7dec5}
-.sr-detail-grid .grand{background:#fff7df;border-color:#e7c96f}
-.small-report-detail-signature{
-  margin-top:16px;padding:14px;border:1px solid #dbe3ed;border-radius:14px;background:#fafcff;
-}
-.small-report-detail-signature h3{font-size:20px!important;margin:0 0 8px}
-.small-report-detail-actions{margin-top:16px}
-.small-report-detail-actions .btn{font-size:18px!important;min-height:50px}
-@media(max-width:760px){
-  .sr-detail-grid{grid-template-columns:1fr 1fr}
-  .small-report-name-btn{font-size:20px}
-}
-
-
-/* V13.8.16 — V1-only Daily Report + true report window */
-body.small-report-modal-open{overflow:hidden!important}
-#smallReportDetailModal{
+body.small-report-fullscreen #hourlyV1Workspace{
   position:fixed!important;
   inset:0!important;
+  z-index:250000!important;
   width:100vw!important;
-  height:100vh!important;
-  z-index:2147483000!important;
-  background:rgba(8,18,34,.72)!important;
-  align-items:center!important;
-  justify-content:center!important;
-  padding:22px!important;
-  overflow:auto!important;
+  height:100dvh!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:0!important;
+  background:#eef2f6!important;
+  overflow:hidden!important;
 }
-#smallReportDetailModal.hidden{display:none!important}
-#smallReportDetailModal .small-report-detail-modalbox{
-  position:relative!important;
-  width:min(980px,96vw)!important;
-  max-width:980px!important;
-  max-height:92vh!important;
-  margin:auto!important;
-  overflow:auto!important;
-  background:#fff!important;
-  border-radius:22px!important;
-  box-shadow:0 28px 90px rgba(0,0,0,.38)!important;
-  padding:24px!important;
+
+body.small-report-fullscreen #hv1SmallReportBox{
+  display:flex!important;
+  flex-direction:column!important;
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:12px!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  overflow:hidden!important;
 }
-#smallReportDetailModal .small-report-detail-head{
+
+body.small-report-fullscreen #hv1SmallReportBox > .hv1-title{
+  flex:0 0 auto!important;
+  margin:0 0 8px!important;
+  padding:2px 4px 8px!important;
+  border-bottom:1px solid #dbe3ee;
+}
+
+body.small-report-fullscreen #hv1SmallReportMount{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  margin-top:0!important;
+  overflow:hidden!important;
+}
+
+body.small-report-fullscreen #smallReport{
+  display:flex!important;
+  flex-direction:column!important;
+  height:100%!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+
+body.small-report-fullscreen #smallReport > .card{
+  display:flex!important;
+  flex-direction:column!important;
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:100%!important;
+  padding:8px!important;
+  overflow:hidden!important;
+}
+
+body.small-report-fullscreen #smallReport .small-report-head,
+body.small-report-fullscreen #smallReport #phoneDirectoryStatus,
+body.small-report-fullscreen #smallReport details,
+body.small-report-fullscreen #smallReport .small-report-summary{
+  flex:0 0 auto!important;
+}
+
+body.small-report-fullscreen #smallReportViewport{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:auto!important;
+  max-height:none!important;
+  width:100%!important;
+  overflow:auto!important;
+  overscroll-behavior:contain;
+  border-radius:12px!important;
+  margin-top:8px!important;
+  background:#fff;
+}
+
+/* Compact enough to use the phone/tablet screen, while retaining horizontal scroll. */
+body.small-report-fullscreen .small-report-table{
+  min-width:1760px!important;
+  width:max-content!important;
+  table-layout:auto!important;
+}
+
+body.small-report-fullscreen .small-report-table th{
   position:sticky!important;
-  top:-24px!important;
-  z-index:8!important;
+  top:0!important;
+  z-index:40!important;
+  padding:8px 8px!important;
+  font-size:12px!important;
+  line-height:1.15!important;
+  height:46px!important;
+}
+
+body.small-report-fullscreen .small-report-table td{
+  padding:8px 8px!important;
+  font-size:13px!important;
+  line-height:1.2!important;
+  height:58px!important;
+}
+
+/* FREEZE PANE: Date + Employee + Shift */
+body.small-report-fullscreen .small-report-table th:nth-child(1),
+body.small-report-fullscreen .small-report-table td:nth-child(1){
+  position:sticky!important;
+  left:0!important;
+  min-width:88px!important;
+  width:88px!important;
+}
+body.small-report-fullscreen .small-report-table th:nth-child(2),
+body.small-report-fullscreen .small-report-table td:nth-child(2){
+  position:sticky!important;
+  left:88px!important;
+  min-width:160px!important;
+  width:160px!important;
+}
+body.small-report-fullscreen .small-report-table th:nth-child(3),
+body.small-report-fullscreen .small-report-table td:nth-child(3){
+  position:sticky!important;
+  left:248px!important;
+  min-width:78px!important;
+  width:78px!important;
+}
+
+/* Frozen header cells stay above frozen body cells. */
+body.small-report-fullscreen .small-report-table th:nth-child(-n+3){
+  z-index:60!important;
+  background:#10213c!important;
+}
+body.small-report-fullscreen .small-report-table td:nth-child(-n+3){
+  z-index:20!important;
   background:#fff!important;
-  padding-top:24px!important;
+  box-shadow:1px 0 0 #e1e7ef;
 }
-#smallReportDetailModal .small-report-detail-head .btn{
-  font-size:17px!important;
-  min-height:48px!important;
+body.small-report-fullscreen .small-report-table tr:nth-child(even) td:nth-child(-n+3){
+  background:#f8fafc!important;
 }
-#hv1SmallReportBox #smallReport{
-  display:block!important;
+
+body.small-report-fullscreen .small-report-table td.signature-cell{
+  min-width:190px!important;
+  width:190px!important;
+  height:74px!important;
 }
-body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
-  display:none!important;
+body.small-report-fullscreen .small-report-signature,
+body.small-report-fullscreen .small-report-signature-pending{
+  width:174px!important;
+  height:58px!important;
 }
-@media(max-width:760px){
-  #smallReportDetailModal{padding:8px!important}
-  #smallReportDetailModal .small-report-detail-modalbox{
-    width:98vw!important;
-    max-height:96vh!important;
-    border-radius:16px!important;
-    padding:16px!important;
+
+.hv1-small-report-actions .btn{
+  min-width:92px;
+}
+
+/* On phones, keep only Employee + Shift frozen to leave more visible data room. */
+@media(max-width:720px){
+  body.small-report-fullscreen #hv1SmallReportBox{
+    padding:6px!important;
   }
-}
-
-
-/* V13.8.17 — Daily Report always reachable in Hourly V1 */
-.hv1-hero-tools{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
-.hv1-report-main{min-height:56px!important;padding:0 24px!important;font-size:17px!important;font-weight:1000!important}
-#hv1Setup .hv1-title .actions{display:flex!important;gap:10px!important;align-items:center!important;flex-wrap:wrap!important}
-#hv1Setup .hv1-title .actions .btn{min-height:48px!important;font-size:16px!important}
-@media(max-width:760px){
-  .hv1-hero-tools{width:100%;justify-content:stretch}
-  .hv1-report-main{flex:1}
-  .hv1-date{flex:1}
-}
-
-
-/* V13.8.17D clean login/dashboard */
-.login.card{max-width:900px!important}
-.login-role-buttons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0 22px}
-.login-role-btn{appearance:none;border:1px solid #d8e2ee;background:#fff;border-radius:18px;min-height:118px;padding:16px 14px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:4px;text-align:left;cursor:pointer;box-shadow:0 8px 22px rgba(16,35,63,.06);transition:.16s ease;color:#10233f}
-.login-role-btn:hover{transform:translateY(-1px);box-shadow:0 12px 28px rgba(16,35,63,.11)}
-.login-role-btn.on{border-color:#d7a62d;background:#fff8df;box-shadow:0 0 0 2px rgba(215,166,45,.14)}
-.login-role-btn b{font-size:18px;letter-spacing:.02em}.login-role-btn small{font-size:12px;line-height:1.35;color:#697586}.login-role-icon{font-size:27px;line-height:1}
-.tip-calc-login-btn{background:#eef7ff;border-color:#b9d5ef}.tip-calc-login-btn.on{background:#e9f5ff;border-color:#4a90c2}
-.login-panel-title{padding:14px 16px;margin-bottom:14px;border-radius:14px;background:#f6f8fb;border:1px solid #e0e6ee}.login-panel-title h3{margin:0 0 3px;font-size:21px;color:#10233f}
-.staff-menu-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:0 0 18px}
-.staff-menu-btn{border:1px solid #d8e2ee;background:#fff;border-radius:16px;min-height:64px;padding:12px 16px;font-size:16px;font-weight:1000;color:#10233f;text-align:left;display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;box-shadow:0 6px 18px rgba(16,35,63,.05)}
-.staff-menu-btn.on{background:#10233f;color:#fff;border-color:#10233f}.staff-menu-btn.on .badge{background:#fff;color:#10233f}
-#pending,#report,#hourly,#finalDaily,#tipCheck{display:none!important}
-body:not(.hourly-v1-mode) #hv1SmallReportBox,body:not(.hourly-v1-mode) #hv1Setup{display:none!important}
-@media(max-width:900px){.login-role-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:600px){.wrap{padding-left:10px!important;padding-right:10px!important}.login.card{padding:16px!important;border-radius:18px!important}.login-role-buttons{grid-template-columns:1fr 1fr;gap:8px}.login-role-btn{min-height:96px;padding:12px 10px;border-radius:14px}.login-role-btn b{font-size:15px}.login-role-btn small{font-size:10.5px}.login-role-icon{font-size:22px}.staff-menu-buttons{grid-template-columns:1fr 1fr;gap:8px}.staff-menu-btn{min-height:56px;font-size:14px;padding:10px 12px}.card{padding:14px!important}input,select,button{max-width:100%}}
-@media(max-width:380px){.login-role-buttons,.staff-menu-buttons{grid-template-columns:1fr}}
-
-
-/* V13.8.17E — responsive all-device layout */
-html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
-html,body{width:100%;max-width:100%;overflow-x:hidden}
-*{box-sizing:border-box}
-img,svg,canvas{max-width:100%}
-.wrap{width:min(100%,1500px);margin:0 auto;padding-left:clamp(10px,2vw,24px)!important;padding-right:clamp(10px,2vw,24px)!important}
-.card{max-width:100%}
-input,select,textarea,button{min-width:0;max-width:100%}
-input,select,textarea{width:100%}
-.tablewrap,.tableWrap{max-width:100%;overflow:auto;-webkit-overflow-scrolling:touch}
-.actions{display:flex;gap:8px;flex-wrap:wrap}
-.actions>.btn{flex:0 1 auto}
-.owner-credential-box{margin-top:14px;padding:14px;border:1px solid #e2c56f;background:#fff8df;border-radius:14px}
-.owner-credential-box h3{margin:0 0 4px}
-.owner-password-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
-
-@media(max-width:1024px){
-  .grid3{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-  .grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-  .hv1-team-grid,.hv1-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-  .sr-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-}
-
-@media(max-width:700px){
-  body{font-size:16px!important}
-  .top{position:sticky;top:0;z-index:1000}
-  .toprow{align-items:flex-start!important;gap:8px!important;flex-wrap:wrap!important}
-  .brand b{font-size:17px!important}
-  .brand small{font-size:10px!important}
-  .login.card{width:100%!important;margin:8px auto!important;padding:14px!important}
-  .login-role-buttons{grid-template-columns:1fr 1fr!important}
-  .login-role-btn{min-height:90px!important;padding:11px!important}
-  .login-role-btn b{font-size:14px!important}
-  .login-role-btn small{font-size:10px!important}
-  .grid3,.grid,.hv1-team-grid,.hv1-grid,.how-quick-edit-grid,.sr-detail-grid{grid-template-columns:1fr!important}
-  .staff-menu-buttons{grid-template-columns:1fr 1fr!important}
-  .staff-menu-btn{min-height:54px!important;font-size:13px!important}
-  .hv1-title,.how-head,.owner-user-page-head{align-items:flex-start!important;flex-direction:column!important}
-  .hv1-quick-nav{position:sticky!important;top:0!important;grid-template-columns:repeat(2,minmax(0,1fr))!important}
-  .hv1-quick-nav .btn{min-height:44px!important;font-size:12px!important}
-  #hourlyV1Workspace{font-size:16px!important}
-  #hourlyV1Workspace h2{font-size:25px!important}
-  #hourlyV1Workspace h3{font-size:21px!important}
-  #hourlyV1Workspace input,#hourlyV1Workspace select,#hourlyV1Workspace textarea{font-size:18px!important;min-height:48px}
-  #smallReportDetailModal .small-report-detail-modalbox{width:100%!important;max-width:none!important;max-height:96vh!important;padding:14px!important}
-  .small-report-detail-head{position:sticky;top:0;background:#fff;z-index:5}
-  .owner-password-input-row{grid-template-columns:1fr}
-  .show-password-row{width:100%}
-  .actions>.btn{flex:1 1 140px}
-}
-
-@media(max-width:430px){
-  .login-role-buttons,.staff-menu-buttons{grid-template-columns:1fr!important}
-  .login-role-btn{min-height:76px!important}
-  .login-role-icon{font-size:20px!important}
-  .actions{display:grid!important;grid-template-columns:1fr!important}
-  .actions>.btn{width:100%!important}
-  .toprow>div:last-child{width:100%;justify-content:space-between!important}
-  .role{font-size:10px!important}
-  .hv1-quick-nav{grid-template-columns:1fr 1fr!important;padding:6px!important;gap:6px!important}
-  .hv1-quick-nav .btn{font-size:11px!important;padding:7px 4px!important}
-  .small-report-name-btn{font-size:18px!important;padding:14px!important}
-  .sr-detail-grid>div{padding:11px!important}
-  .sr-detail-grid b{font-size:20px!important}
-}
-
-
-/* V13.8.17G — Analytics / stock-style business chart */
-.analytics-card{overflow:hidden}
-.analytics-head{
-  display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;
-  padding-bottom:16px;border-bottom:1px solid #e2e8f0
-}
-.analytics-eyebrow{font-size:11px;letter-spacing:.16em;font-weight:1000;color:#2563eb;margin-bottom:5px}
-.analytics-head h2{margin:0;font-size:30px}
-.analytics-period-buttons,.analytics-metric-buttons{display:flex;gap:8px;flex-wrap:wrap}
-.analytics-period-btn,.analytics-metric-btn{
-  border:1px solid #d9e1ec;background:#fff;color:#10233f;border-radius:999px;
-  min-height:40px;padding:8px 15px;font-size:13px;font-weight:1000;cursor:pointer
-}
-.analytics-period-btn.on,.analytics-metric-btn.on{
-  background:#10233f;color:#fff;border-color:#10233f;box-shadow:0 5px 15px rgba(16,35,63,.16)
-}
-.analytics-filter-grid{
-  display:grid;grid-template-columns:repeat(3,minmax(150px,1fr)) auto;gap:12px;align-items:end;
-  margin:16px 0
-}
-.analytics-range-actions{display:flex;gap:6px;flex-wrap:wrap}
-.analytics-range-actions .btn{min-height:45px}
-.analytics-metric-buttons{margin:4px 0 16px}
-.analytics-summary-grid{
-  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:12px 0 16px
-}
-.analytics-summary{
-  background:#f8fafc;border:1px solid #e1e7ef;border-radius:16px;padding:14px
-}
-.analytics-summary span{display:block;font-size:12px;color:#697586;font-weight:900;text-transform:uppercase;letter-spacing:.04em}
-.analytics-summary b{display:block;font-size:23px;color:#10233f;margin-top:5px;line-height:1.2}
-.analytics-summary small{display:block;font-size:11px;color:#7b8797;margin-top:4px}
-.analytics-positive{color:#08703d!important}.analytics-negative{color:#b42318!important}
-
-.stock-chart-shell{
-  border:1px solid #dfe6ef;border-radius:20px;background:#fff;overflow:hidden;
-  box-shadow:0 10px 30px rgba(16,35,63,.06)
-}
-.stock-chart-title-row{
-  padding:16px 18px;display:flex;justify-content:space-between;align-items:center;gap:14px;
-  border-bottom:1px solid #edf1f6
-}
-.stock-chart-title-row>div:first-child{display:flex;flex-direction:column;gap:3px}
-.stock-chart-title-row b{font-size:18px;color:#10233f}
-.stock-chart-title-row span{font-size:12px;color:#697586}
-.stock-last-value{font-size:25px!important;font-weight:1000;color:#10233f!important}
-.stock-chart{width:100%;min-height:370px;padding:8px 8px 0}
-.stock-svg{width:100%;height:auto;display:block;min-height:330px}
-.stock-grid-line{stroke:#e8edf4;stroke-width:1}
-.stock-axis-text{font-family:Arial,sans-serif;font-size:12px;fill:#7a8697}
-.stock-line{fill:none;stroke:#2563eb;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
-.stock-point{fill:#fff;stroke:#2563eb;stroke-width:4}
-.stock-point-hit{fill:transparent;stroke:transparent;cursor:pointer}
-.stock-chart-foot{
-  display:flex;justify-content:space-between;gap:12px;padding:8px 16px 14px;color:#7a8697;font-size:11px
-}
-.analytics-empty{
-  min-height:330px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
-  color:#697586;text-align:center
-}
-.analytics-empty b{font-size:18px;color:#10233f}
-.analytics-formula-note{
-  margin-top:14px;padding:12px 14px;background:#f6f8fb;border:1px solid #e1e7ef;border-radius:14px;
-  font-size:12px;line-height:1.55;color:#596575
-}
-
-@media(max-width:900px){
-  .analytics-filter-grid{grid-template-columns:1fr 1fr}
-  .analytics-range-actions{grid-column:1/-1}
-  .analytics-summary-grid{grid-template-columns:1fr 1fr}
-}
-@media(max-width:600px){
-  .analytics-head h2{font-size:25px}
-  .analytics-period-buttons{width:100%;display:grid;grid-template-columns:repeat(3,1fr)}
-  .analytics-period-btn{padding:8px 6px}
-  .analytics-filter-grid{grid-template-columns:1fr}
-  .analytics-range-actions{grid-column:auto;display:grid;grid-template-columns:repeat(4,1fr)}
-  .analytics-range-actions .btn{padding:8px 4px;font-size:12px}
-  .analytics-metric-buttons{display:grid;grid-template-columns:repeat(2,1fr)}
-  .analytics-metric-btn{border-radius:12px}
-  .analytics-summary-grid{grid-template-columns:1fr 1fr;gap:8px}
-  .analytics-summary{padding:11px}
-  .analytics-summary b{font-size:19px}
-  .stock-chart-title-row{align-items:flex-start;flex-direction:column}
-  .stock-last-value{font-size:22px!important}
-  .stock-chart{min-height:300px;padding:2px}
-  .stock-svg{min-height:285px}
-  .stock-chart-foot{flex-direction:column;gap:2px}
-}
-@media(max-width:380px){
-  .analytics-summary-grid{grid-template-columns:1fr}
-}
-
-
-/* V13.8.17H safer Team Board actions */
-.hv1-card-wrap{position:relative}
-.hv1-card-restore,.hv1-card-delete{
-  position:absolute;top:10px;width:38px;height:38px;border-radius:50%;
-  display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:1000;
-  cursor:pointer;z-index:8;box-shadow:0 5px 14px rgba(16,35,63,.18)
-}
-.hv1-card-delete{right:10px;background:#fff0f0;color:#b42318;border:2px solid #f4c7c7}
-.hv1-card-restore{right:54px;background:#edf7ff;color:#1769aa;border:2px solid #bfdcf3}
-.hv1-card-delete:hover{background:#b42318;color:#fff}
-.hv1-card-restore:hover{background:#1769aa;color:#fff}
-@media(max-width:600px){
-  .hv1-card-restore,.hv1-card-delete{width:34px;height:34px;font-size:18px;top:8px}
-  .hv1-card-delete{right:8px}.hv1-card-restore{right:48px}
-}
-
-
-/* V13.8.17I — Bright Future UI / larger mobile typography */
-:root{
-  --future-ink:#10233f;
-  --future-muted:#5f6f83;
-  --future-blue:#3b82f6;
-  --future-cyan:#22b8cf;
-  --future-gold:#f4c95d;
-  --future-surface:rgba(255,255,255,.92);
-  --future-line:rgba(82,126,176,.20);
-  --future-shadow:0 14px 38px rgba(40,82,130,.13),0 3px 8px rgba(40,82,130,.07);
-}
-body{
-  background:
-    radial-gradient(circle at 8% 3%,rgba(83,181,255,.14),transparent 28rem),
-    radial-gradient(circle at 92% 12%,rgba(255,214,102,.13),transparent 26rem),
-    linear-gradient(180deg,#f7fbff 0%,#f5f9ff 48%,#fbfdff 100%)!important;
-  color:var(--future-ink);
-}
-.card,.hv1-box,.approval-card,.deleted-item-card,.final-name-card{
-  background:var(--future-surface)!important;
-  border:1px solid var(--future-line)!important;
-  box-shadow:var(--future-shadow)!important;
-  backdrop-filter:blur(12px);
-}
-.card,.hv1-box{border-radius:22px!important}
-.btn,.staff-menu-btn,.login-role-btn,.analytics-metric-btn,.analytics-period-btn{
-  transition:transform .14s ease,box-shadow .14s ease,filter .14s ease!important;
-}
-.btn:hover,.staff-menu-btn:hover,.login-role-btn:hover,.analytics-metric-btn:hover,.analytics-period-btn:hover{
-  transform:translateY(-2px);
-}
-.btn.green,.btn.dark,.staff-menu-btn.on{
-  box-shadow:0 8px 18px rgba(28,88,145,.20)!important;
-}
-.btn.gold{
-  background:linear-gradient(180deg,#ffe48b,#f4c95d)!important;
-  border-color:#e5b83e!important;
-  color:#3c310d!important;
-  box-shadow:0 8px 18px rgba(190,145,34,.18)!important;
-}
-.login-role-btn{
-  background:linear-gradient(145deg,rgba(255,255,255,.98),rgba(239,247,255,.94))!important;
-  border:1px solid rgba(75,137,202,.22)!important;
-  box-shadow:0 13px 30px rgba(40,82,130,.11),inset 0 1px 0 rgba(255,255,255,.9)!important;
-}
-.login-role-btn.on{
-  background:linear-gradient(145deg,#fff8dc,#edf7ff)!important;
-  border-color:#e2bd4f!important;
-  box-shadow:0 14px 34px rgba(58,111,166,.16),inset 0 0 0 1px rgba(255,255,255,.9)!important;
-}
-.login-role-icon{
-  filter:drop-shadow(0 4px 5px rgba(34,77,120,.14));
-}
-.staff-menu-btn{
-  background:linear-gradient(145deg,#fff,#f1f7ff)!important;
-  border-color:rgba(70,127,190,.18)!important;
-}
-.staff-menu-btn.on{
-  background:linear-gradient(135deg,#183d68,#246aa0)!important;
-  color:#fff!important;
-}
-.hv1-card{
-  background:linear-gradient(145deg,#ffffff,#edf7ff)!important;
-  border:1px solid rgba(67,132,198,.20)!important;
-  box-shadow:0 14px 30px rgba(36,84,133,.12),inset 0 1px 0 rgba(255,255,255,.95)!important;
-}
-.hv1-card.progress{
-  background:linear-gradient(145deg,#fff9e8,#fffdf7)!important;
-}
-.hv1-card.final{
-  background:linear-gradient(145deg,#ebfff4,#f7fffb)!important;
-}
-.hv1-card:active,.login-role-btn:active,.staff-menu-btn:active,.btn:active{
-  transform:translateY(1px) scale(.99)!important;
-}
-input,select,textarea{
-  background:rgba(255,255,255,.96)!important;
-  border:1px solid rgba(76,126,181,.25)!important;
-  border-radius:13px!important;
-  box-shadow:inset 0 2px 5px rgba(36,78,122,.045),0 1px 0 rgba(255,255,255,.9)!important;
-}
-input:focus,select:focus,textarea:focus{
-  outline:none!important;
-  border-color:#59a7e8!important;
-  box-shadow:0 0 0 4px rgba(89,167,232,.13),inset 0 1px 3px rgba(36,78,122,.04)!important;
-}
-.hv1-status,.badge,.role{
-  box-shadow:0 4px 10px rgba(35,77,120,.10);
-}
-.stock-chart-shell{
-  background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(244,249,255,.98))!important;
-  box-shadow:0 18px 44px rgba(36,84,133,.11)!important;
-}
-
-/* Phone-first readability */
-@media(max-width:700px){
-  body{font-size:18px!important;line-height:1.48!important}
-  .wrap{padding-left:9px!important;padding-right:9px!important}
-  .card,.hv1-box{padding:16px!important;border-radius:18px!important}
-  h1{font-size:30px!important;line-height:1.15!important}
-  h2{font-size:27px!important;line-height:1.18!important}
-  h3{font-size:22px!important;line-height:1.2!important}
-  h4{font-size:20px!important}
-  label{font-size:17px!important;font-weight:850!important}
-  .small{font-size:14.5px!important;line-height:1.4!important}
-  input,select,textarea{
-    font-size:19px!important;
-    min-height:52px!important;
-    padding:11px 12px!important;
+  body.small-report-fullscreen #hv1SmallReportBox > .hv1-title h3{
+    font-size:21px!important;
   }
-  .btn{
-    font-size:16.5px!important;
-    min-height:50px!important;
-    border-radius:14px!important;
-    font-weight:950!important;
+  body.small-report-fullscreen #hv1SmallReportBox > .hv1-title p{
+    display:none!important;
   }
-  .login.card{padding:17px!important}
-  .login.card>h2{font-size:27px!important}
-  .login-role-buttons{gap:10px!important}
-  .login-role-btn{
-    min-height:108px!important;
-    padding:14px!important;
-    border-radius:17px!important;
-  }
-  .login-role-btn b{font-size:17px!important}
-  .login-role-btn small{font-size:12.5px!important;line-height:1.35!important}
-  .login-role-icon{font-size:27px!important}
-  .staff-menu-btn{
-    font-size:16px!important;
-    min-height:62px!important;
-    padding:12px!important;
-    border-radius:15px!important;
-  }
-  #hourlyV1Workspace{font-size:18px!important}
-  #hourlyV1Workspace h2{font-size:28px!important}
-  #hourlyV1Workspace h3{font-size:24px!important}
-  #hourlyV1Workspace h4{font-size:21px!important}
-  #hourlyV1Workspace label{font-size:17px!important}
-  #hourlyV1Workspace .small,#hourlyV1Workspace .how-sub,#hourlyV1Workspace .how-info{font-size:15px!important}
-  #hourlyV1Workspace input,#hourlyV1Workspace select,#hourlyV1Workspace textarea{
-    font-size:20px!important;min-height:54px!important
-  }
-  .hv1-card{min-height:145px!important;border-radius:20px!important;padding:18px!important}
-  .hv1-card h4{font-size:22px!important;margin:8px 0!important}
-  .hv1-meta{font-size:15px!important;line-height:1.45!important}
-  .hv1-status{font-size:12px!important;padding:6px 9px!important}
-  .hv1-quick-nav .btn{font-size:14px!important;min-height:48px!important}
-  .small-report-name-btn{font-size:21px!important;min-height:58px!important}
-  .sr-detail-grid span{font-size:15px!important}
-  .sr-detail-grid b{font-size:22px!important}
-  .analytics-metric-btn,.analytics-period-btn{font-size:14px!important;min-height:45px!important}
-  .analytics-summary span{font-size:13px!important}
-  .analytics-summary b{font-size:21px!important}
-  .stock-axis-text{font-size:15px!important}
-  .stock-last-value{font-size:25px!important}
-}
-@media(max-width:430px){
-  body{font-size:18px!important}
-  .login-role-buttons{grid-template-columns:1fr!important}
-  .login-role-btn{
-    min-height:88px!important;
+  .hv1-small-report-actions{
+    width:100%!important;
     display:grid!important;
-    grid-template-columns:42px 1fr!important;
-    grid-template-rows:auto auto!important;
-    column-gap:10px!important;
+    grid-template-columns:1fr 1fr 1fr!important;
+    gap:5px!important;
   }
-  .login-role-icon{grid-row:1/3!important;align-self:center!important}
-  .login-role-btn b,.login-role-btn small{align-self:center}
-  .staff-menu-buttons{grid-template-columns:1fr!important}
-  .hv1-card{min-height:132px!important}
-  .analytics-metric-buttons{grid-template-columns:1fr 1fr!important}
+  .hv1-small-report-actions .btn{
+    min-width:0!important;
+    font-size:11px!important;
+    padding:8px 4px!important;
+  }
+
+  body.small-report-fullscreen .small-report-head{
+    gap:5px!important;
+  }
+  body.small-report-fullscreen .small-report-head h2{
+    font-size:20px!important;
+  }
+  body.small-report-fullscreen .small-report-summary{
+    grid-template-columns:repeat(5,minmax(110px,1fr))!important;
+    display:flex!important;
+    overflow-x:auto!important;
+    gap:5px!important;
+    padding-bottom:3px!important;
+  }
+  body.small-report-fullscreen .small-report-summary .kpi{
+    min-width:118px!important;
+    min-height:56px!important;
+    padding:7px!important;
+  }
+  body.small-report-fullscreen .small-report-summary .kpi span{
+    font-size:10px!important;
+  }
+  body.small-report-fullscreen .small-report-summary .kpi b{
+    font-size:16px!important;
+  }
+
+  body.small-report-fullscreen .small-report-table{
+    min-width:1580px!important;
+  }
+
+  /* Date scrolls on phone; Employee + Shift stay frozen. */
+  body.small-report-fullscreen .small-report-table th:nth-child(1),
+  body.small-report-fullscreen .small-report-table td:nth-child(1){
+    position:static!important;
+    min-width:82px!important;
+    width:82px!important;
+  }
+  body.small-report-fullscreen .small-report-table th:nth-child(2),
+  body.small-report-fullscreen .small-report-table td:nth-child(2){
+    left:0!important;
+    min-width:145px!important;
+    width:145px!important;
+  }
+  body.small-report-fullscreen .small-report-table th:nth-child(3),
+  body.small-report-fullscreen .small-report-table td:nth-child(3){
+    left:145px!important;
+    min-width:72px!important;
+    width:72px!important;
+  }
+  body.small-report-fullscreen .small-report-table td{
+    font-size:12px!important;
+    height:52px!important;
+    padding:6px!important;
+  }
+  body.small-report-fullscreen .small-report-table th{
+    font-size:11px!important;
+    padding:6px!important;
+  }
 }
 
 </style>
@@ -1110,7 +782,7 @@ input:focus,select:focus,textarea:focus{
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.17K LOGIN WELCOME SOUND</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.15 BAR CUMULATIVE PERIOD FIX</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -1121,12 +793,12 @@ input:focus,select:focus,textarea:focus{
 <div style="text-align:center;margin-top:8px">
   <button class="btn light" type="button" onclick="testGlobalMoneyReadyDialog()">Test Money Ready Dialog</button>
 </div>
-<div class="login-role-buttons">
-      <button id="employeeModeBtn" class="login-role-btn on" type="button" onclick="setLoginMode('employee')"><span class="login-role-icon">👤</span><b>EMPLOYEE</b><small>Login, sign up & view reports</small></button>
-      <button id="managerModeBtn" class="login-role-btn" type="button" onclick="setLoginMode('staff','manager')"><span class="login-role-icon">🧾</span><b>MANAGER</b><small>Approvals & management tools</small></button>
-      <button id="ownerModeBtn" class="login-role-btn" type="button" onclick="setLoginMode('staff','owner')"><span class="login-role-icon">★</span><b>OWNER</b><small>Full owner controls</small></button>
-      <button id="hourlyV1ModeBtn" class="login-role-btn tip-calc-login-btn" type="button" onclick="setLoginMode('hourlyv1')"><span class="login-role-icon">🧮</span><b>TIP CALCULATION</b><small>Team Board, BAR & Daily Report</small></button>
-      <button id="boardModeBtn" class="login-role-btn" type="button" onclick="openServerRoomBoard()"><span class="login-role-icon">🔔</span><b>SERVER ROOM</b><small>Money Ready board</small></button>
+<div class="mode login-mode-grid">
+      <button id="employeeModeBtn" class="on" onclick="setLoginMode('employee')">Employee</button>
+      <button id="staffModeBtn" onclick="setLoginMode('staff')">Manager / Owner / Cashier</button>
+      <button id="boardModeBtn" onclick="openServerRoomBoard()">Server Room Board</button>
+      <button id="hourlyModeBtn" onclick="setLoginMode('hourly')">Hourly V01</button>
+      <button id="hourlyV1ModeBtn" onclick="setLoginMode('hourlyv1')">Hourly V1</button>
     </div>
     <div id="employeeLogin">
       <label>Employee Name</label>
@@ -1157,17 +829,16 @@ input:focus,select:focus,textarea:focus{
       </div>
     </div>
     <div id="hourlyV1Login" class="hidden">
-      <div class="notice info" style="margin-bottom:12px"><b>Tip Calculation</b><br>Work on several employees at the same time. Save partial pages and continue later.</div>
+      <div class="notice info" style="margin-bottom:12px"><b>Hourly Adjustment V1 — Batch Workspace</b><br>Work on several employees at the same time. Save partial pages and continue later.</div>
       <label>Username</label><input id="hourlyV1Username" autocomplete="username">
       <div style="height:10px"></div><label>Password</label><input id="hourlyV1Password" type="password" autocomplete="current-password"><label class="show-password-row"><input type="checkbox" onchange="togglePasswordVisibility('hourlyV1Password',this.checked)"><span>Show password</span></label>
       <label class="remember-me-row" style="margin-top:14px">
         <input id="hourlyV1RememberMe" type="checkbox">
-        <span><b>Remember me on this device</b><small>Stay signed in to Tip Calculation.</small></span>
+        <span><b>Remember me on this device</b><small>Stay signed in to Hourly Adjustment V1.</small></span>
       </label>
-      <div style="height:14px"></div><button class="btn green" style="width:100%" onclick="loginHourlyV1Workspace()">Open Tip Calculation</button>
+      <div style="height:14px"></div><button class="btn green" style="width:100%" onclick="loginHourlyV1Workspace()">Open Hourly Adjustment V1</button>
     </div>
     <div id="staffLogin" class="hidden">
-      <div class="login-panel-title"><h3 id="staffLoginTitle">Manager Login</h3><div id="staffLoginHint" class="small">Use your authorized staff username and password.</div></div>
       <label>Username</label><input id="staffUsername" autocomplete="username">
       <div style="height:10px"></div><label>Password</label><input id="staffPassword" type="password" autocomplete="current-password"><label class="show-password-row"><input type="checkbox" onchange="togglePasswordVisibility('staffPassword',this.checked)"><span>Show password</span></label>
 
@@ -1180,6 +851,19 @@ input:focus,select:focus,textarea:focus{
       </label>
 
       <div style="height:14px"></div><button class="btn gold" style="width:100%" onclick="loginStaff()">Login</button>
+    </div>
+    <div id="hourlyLogin" class="hidden">
+      <div class="notice info" style="margin-bottom:12px"><b>Hourly Adjustment Workspace</b><br>Manager / Owner only. Same Firebase database and reports as the main app.</div>
+      <label>Username</label><input id="hourlyUsername" autocomplete="username">
+      <div style="height:10px"></div><label>Password</label><input id="hourlyPassword" type="password" autocomplete="current-password"><label class="show-password-row"><input type="checkbox" onchange="togglePasswordVisibility('hourlyPassword',this.checked)"><span>Show password</span></label>
+      <label class="remember-me-row" style="margin-top:14px">
+        <input id="hourlyRememberMe" type="checkbox">
+        <span>
+          <b>Remember me on this device</b>
+          <small>Stay signed in to Hourly Adjustment after closing the browser. Logout will still sign you out.</small>
+        </span>
+      </label>
+      <div style="height:14px"></div><button class="btn green" style="width:100%" onclick="loginHourlyWorkspace()">Open Hourly Adjustment</button>
     </div>
     <div class="notice" style="margin-bottom:12px"><b>Shared device security:</b> every new tab, refresh, or reopened link requires a fresh login. Sharing this website link does not share the Owner/Manager account.</div>
 <div id="loginMessage" class="small" style="margin-top:12px"></div>
@@ -1338,8 +1022,8 @@ input:focus,select:focus,textarea:focus{
     <div id="staffApp" class="hidden">
       <section id="hourlyV1Workspace" class="hidden hv1-shell">
         <div class="hv1-hero">
-          <div><div class="hv1-kicker">TIP CALCULATION</div><h2>Batch Workspace</h2><p>One date • many employees • partial save • continue anytime</p><div id="hv1CloudStatus" class="hv1-cloud-status">Draft backup: checking…</div></div>
-          <div class="hv1-hero-tools"><button class="btn gold hv1-report-main" type="button" onclick="hv1OpenSmallReport()">DAILY REPORT</button><div class="hv1-date"><label>Work Date</label><input id="hv1Date" type="date" onchange="hv1DateChanged()"></div></div>
+          <div><div class="hv1-kicker">HOURLY ADJUSTMENT V1</div><h2>Batch Workspace</h2><p>One date • many employees • partial save • continue anytime</p><div id="hv1CloudStatus" class="hv1-cloud-status">Draft backup: checking…</div></div>
+          <div class="hv1-date"><label>Work Date</label><input id="hv1Date" type="date" onchange="hv1DateChanged()"></div>
         </div>
         <div id="hv1RecoveryBox" class="hv1-recovery hidden">
           <div>
@@ -1352,12 +1036,12 @@ input:focus,select:focus,textarea:focus{
           </div>
         </div>
         <div id="hv1Setup" class="hv1-box">
-          <div class="hv1-title"><div><h3>Select Today's Employees</h3><p>Choose everyone working on this date.</p></div><div class="actions"><button class="btn dark" type="button" onclick="hv1OpenSmallReport()">DAILY REPORT</button><button class="btn light" type="button" onclick="hv1SelectAll()">Select All</button></div></div>
+          <div class="hv1-title"><div><h3>Select Today's Employees</h3><p>Choose everyone working on this date.</p></div><button class="btn light" type="button" onclick="hv1SelectAll()">Select All</button></div>
           <div id="hv1Roster" class="hv1-roster"></div>
           <button class="btn green" type="button" style="width:100%;margin-top:16px" onclick="hv1CreateBoard()">Create / Update Team Board</button>
         </div>
         <div id="hv1BoardBox" class="hv1-box hidden">
-          <div class="hv1-title"><div><h3>Today's Team</h3><p>Click a name to enter or continue data.</p></div><div class="actions"><button class="btn dark" type="button" onclick="hv1OpenBarCenter()">BAR</button><button class="btn light" type="button" onclick="hv1EditTeam()">Edit Team</button><button class="btn light" type="button" onclick="hv1SyncNow()">Sync Now</button><button class="btn light" type="button" onclick="hv1OpenSmallReport()">Daily Report</button><button class="btn red" type="button" onclick="hv1ClearAllTeam()">Clear All</button></div></div>
+          <div class="hv1-title"><div><h3>Today's Team</h3><p>Click a name to enter or continue data.</p></div><div class="actions"><button class="btn dark" type="button" onclick="hv1OpenBarCenter()">BAR</button><button class="btn light" type="button" onclick="hv1EditTeam()">Edit Team</button><button class="btn light" type="button" onclick="hv1SyncNow()">Sync Now</button><button class="btn light" type="button" onclick="hv1OpenSmallReport()">Small Report</button><button class="btn red" type="button" onclick="hv1ClearAllTeam()">Clear All</button></div></div>
           <div id="hv1Cards" class="hv1-cards"></div>
         </div>
 
@@ -1380,10 +1064,11 @@ input:focus,select:focus,textarea:focus{
 
         <div id="hv1SmallReportBox" class="hv1-box hidden">
           <div class="hv1-title">
-            <div><h3>Tip Calculation — Daily Report</h3><p>This report stays inside Tip Calculation.</p></div>
-            <div class="actions">
+            <div><h3>Hourly V1 — Small Report</h3><p>This report stays inside Hourly Adjustment V1.</p></div>
+            <div class="actions hv1-small-report-actions">
               <button class="btn light" type="button" onclick="hv1CloseSmallReport()">← Team Board</button>
               <button class="btn dark" type="button" onclick="hv1OpenBarCenterFromReport()">BAR</button>
+              <button class="btn red" type="button" onclick="hv1CloseSmallReport()">CLOSE</button>
             </div>
           </div>
           <div id="hv1SmallReportMount" style="margin-top:14px"></div>
@@ -1393,15 +1078,21 @@ input:focus,select:focus,textarea:focus{
         <div><b>Hourly Adjustment Workspace</b><span>Same database • Manager / Owner</span></div>
         <div class="actions">
           <button class="btn dark" type="button" onclick="openHourlyWorkspacePanel('hourly')">Hourly Adjustment V01</button>
+          <button class="btn light" type="button" onclick="openHourlyWorkspacePanel('smallReport')">Small Report</button>
         </div>
       </div>
-      <div class="staff-menu-buttons">
-        <button class="staff-menu-btn on" data-stab="approvals"><span>Employee Approvals</span><span id="approvalBadge" class="badge">0</span></button>
-        <button class="staff-menu-btn ownerOnly" data-stab="users">Users</button>
-        <button class="staff-menu-btn ownerOnly" data-stab="history">History</button>
-        <button class="staff-menu-btn ownerOnly" data-stab="deletedItems"><span>Deleted / Undo</span><span id="deletedItemsBadge" class="badge">0</span></button>
-        <button class="staff-menu-btn" data-stab="analytics">Chart</button>
-        <button class="staff-menu-btn" data-stab="setup">Setup</button>
+      <div class="tabs">
+        <button class="tab on" data-stab="pending">Pending Data <span id="pendingBadge" class="badge">0</span></button>
+        <button class="tab" data-stab="approvals">Employee Approvals <span id="approvalBadge" class="badge">0</span></button>
+        <button class="tab" data-stab="report">Manager Review / Report</button>
+        <button class="tab" data-stab="hourly">Hourly Adjustment V01</button>
+        <button class="tab" data-stab="finalDaily">Final Daily Report</button>
+        <button class="tab managerOwnerOnly" data-stab="smallReport">Small Report</button>
+        <button class="tab ownerOnly" data-stab="users">Users</button>
+        <button class="tab ownerOnly" data-stab="history">History</button>
+        <button class="tab ownerOnly" data-stab="deletedItems">Deleted / Undo <span id="deletedItemsBadge" class="badge">0</span></button>
+        <button class="tab tipCheckTab" data-stab="tipCheck">Check Tip</button>
+        <button class="tab" data-stab="setup">Setup</button>
       </div>
 
       <section id="pending" class="staffPanel">
@@ -1634,14 +1325,14 @@ input:focus,select:focus,textarea:focus{
         <div class="card">
           <div class="small-report-head">
             <div>
-              <h2 style="margin-bottom:4px">Daily Report</h2>
-              <div class="small">Finalized employees only. Click an employee name to open the full report, collect signature, edit, or delete.</div>
+              <h2 style="margin-bottom:4px">Small Report</h2>
+              <div class="small">Automatically updated after Hourly Adjustment is finalized. Manager/Owner can collect the server signature and send SMS directly from each row.</div>
             </div>
             <div class="actions">
               <button class="btn green" type="button" onclick="newHourlyEntryFromSmallReport()">+ New Entry</button>
               <button class="btn light" type="button" onclick="refreshPhoneDirectoryUi()">Refresh Phones</button>
               <button class="btn light" type="button" onclick="downloadSmallReportXls()">Download XLS</button>
-              <button class="btn light" type="button" onclick="downloadSmallReportPdf()">Download All PDF</button>
+              <button class="btn light" type="button" onclick="downloadSmallReportPdf()">Download PDF</button>
               <button class="btn light" type="button" onclick="shareSmallReportXls('whatsapp')">WhatsApp</button>
               <button class="btn light" type="button" onclick="shareSmallReportXls('email')">Email</button>
               <button class="btn red" type="button" onclick="deleteAllSmallReportRows()">Delete All</button>
@@ -1662,9 +1353,7 @@ input:focus,select:focus,textarea:focus{
           </div>
           <div class="actions" style="margin-top:12px">
             <button class="btn green" type="button" onclick="renderSmallReport()">View Report</button>
-            <button class="btn light" type="button" onclick="smallReportToday()">Today</button>
-            <button class="btn light" type="button" onclick="smallReportYesterday()">Yesterday</button>
-            <button class="btn light" type="button" onclick="clearSmallReportFilters()">All Dates</button>
+            <button class="btn light" type="button" onclick="clearSmallReportFilters()">Show All</button>
             <button class="btn gold" type="button" onclick="newHourlyEntryFromSmallReport()">+ New Entry</button>
           </div>
 
@@ -1679,9 +1368,30 @@ input:focus,select:focus,textarea:focus{
           </details>
           <div id="smallReportSummary" class="small-report-summary"></div>
 
-          <div class="tablewrap small-report-wrap simple-name-report" style="margin-top:14px">
+          <div id="smallReportViewport" class="tablewrap small-report-wrap" style="margin-top:14px">
             <table class="small-report-table">
-              <thead><tr><th>Employee Name</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Employee</th>
+                  <th>Shift</th>
+                  <th>Clock In 1</th>
+                  <th>Clock Out 1</th>
+                  <th>Clock In 2</th>
+                  <th>Clock Out 2</th>
+                  <th>Total Hours</th>
+                  <th>Paid Tips</th>
+                  <th>Tip Card Fee</th>
+                  <th>Busser Tip Out</th>
+                  <th>Bar Tip Out / Received</th>
+                  <th>Total Tip Before Meal</th>
+                  <th>Cash Tip</th>
+                  <th>Meal</th>
+                  <th>Total Paid Out</th>
+                  <th>Grand Total<br><span style="font-size:11px">Total Before Meal + Cash Tip</span></th>
+                  <th class="signature-col">Signature</th><th>Action</th>
+                </tr>
+              </thead>
               <tbody id="smallReportBody"></tbody>
             </table>
           </div>
@@ -1774,13 +1484,13 @@ input:focus,select:focus,textarea:focus{
           <div class="owner-user-page-head">
             <div>
               <h2 style="margin-bottom:4px">User Management</h2>
-              <div class="small">View and edit user profile data. SECURITY: Firebase does not expose existing plaintext passwords, even to Owner. Owner can see who created/approved an account and can reset credentials, but the original password/PIN cannot be displayed.</div>
+              <div class="small">View and edit user profile data. Existing PIN/password values are protected.</div>
             </div>
             <button type="button" class="btn blue" onclick="openOwnerPasswordModal()">Change My Owner Password</button>
           </div>
           <div class="grid3">
             <div><label>Username</label><input id="uName" placeholder="john"></div>
-            <div><label>Role</label><select id="uRole"><option value="employee">Employee</option><option value="manager">Manager</option></select></div>
+            <div><label>Role</label><select id="uRole"><option value="employee">Employee</option><option value="manager">Manager</option><option value="cashier">Cashier</option></select></div>
             <div><label>PIN / Password</label><input id="uPass" placeholder="4-digit PIN or password"></div>
           </div>
           <div style="height:10px"></div><button class="btn green" onclick="createUserByOwner()">Create User</button>
@@ -1821,88 +1531,7 @@ input:focus,select:focus,textarea:focus{
         </div>
       </section>
 
-      
-      <section id="analytics" class="staffPanel hidden">
-        <div class="card analytics-card">
-          <div class="analytics-head">
-            <div>
-              <div class="analytics-eyebrow">BUSINESS ANALYTICS</div>
-              <h2>Performance Chart</h2>
-              <div class="small">Trend view based on finalized Tip Calculation reports.</div>
-            </div>
-            <div class="analytics-period-buttons">
-              <button class="analytics-period-btn on" type="button" data-chart-period="daily" onclick="setAnalyticsPeriod('daily')">DAILY</button>
-              <button class="analytics-period-btn" type="button" data-chart-period="weekly" onclick="setAnalyticsPeriod('weekly')">WEEKLY</button>
-              <button class="analytics-period-btn" type="button" data-chart-period="monthly" onclick="setAnalyticsPeriod('monthly')">MONTHLY</button>
-            </div>
-          </div>
-
-          <div class="analytics-filter-grid">
-            <div>
-              <label>From</label>
-              <input id="analyticsFrom" type="date" onchange="renderAnalyticsChart()">
-            </div>
-            <div>
-              <label>To</label>
-              <input id="analyticsTo" type="date" onchange="renderAnalyticsChart()">
-            </div>
-            <div>
-              <label>Employee</label>
-              <select id="analyticsEmployee" onchange="renderAnalyticsChart()">
-                <option value="">All Employees</option>
-              </select>
-            </div>
-            <div class="analytics-range-actions">
-              <button class="btn light" type="button" onclick="analyticsRangeDays(7)">7D</button>
-              <button class="btn light" type="button" onclick="analyticsRangeDays(30)">30D</button>
-              <button class="btn light" type="button" onclick="analyticsRangeDays(90)">90D</button>
-              <button class="btn dark" type="button" onclick="analyticsAllHistory()">ALL</button>
-            </div>
-          </div>
-
-          <div class="analytics-metric-buttons">
-            <button class="analytics-metric-btn on" type="button" data-chart-metric="sales" onclick="setAnalyticsMetric('sales')">Sales</button>
-            <button class="analytics-metric-btn" type="button" data-chart-metric="tip" onclick="setAnalyticsMetric('tip')">Tip</button>
-            <button class="analytics-metric-btn" type="button" data-chart-metric="paidout" onclick="setAnalyticsMetric('paidout')">Paid Out</button>
-            <button class="analytics-metric-btn" type="button" data-chart-metric="cash" onclick="setAnalyticsMetric('cash')">Cash Tip</button>
-            <button class="analytics-metric-btn" type="button" data-chart-metric="busser" onclick="setAnalyticsMetric('busser')">Busser</button>
-            <button class="analytics-metric-btn" type="button" data-chart-metric="bar" onclick="setAnalyticsMetric('bar')">Bar</button>
-            <button class="analytics-metric-btn" type="button" data-chart-metric="tips" onclick="setAnalyticsMetric('tips')">Paid Tips</button>
-            <button class="analytics-metric-btn" type="button" data-chart-metric="hours" onclick="setAnalyticsMetric('hours')">Hours</button>
-          </div>
-
-          <div class="analytics-summary-grid">
-            <div class="analytics-summary"><span id="analyticsMetricLabel">Sales</span><b id="analyticsTotal">$0.00</b><small>Total selected range</small></div>
-            <div class="analytics-summary"><span>Average</span><b id="analyticsAverage">$0.00</b><small>Average per chart period</small></div>
-            <div class="analytics-summary"><span>High</span><b id="analyticsHigh">$0.00</b><small id="analyticsHighLabel">—</small></div>
-            <div class="analytics-summary"><span>Change</span><b id="analyticsChange">—</b><small>First period → latest period</small></div>
-          </div>
-
-          <div class="stock-chart-shell">
-            <div class="stock-chart-title-row">
-              <div>
-                <b id="analyticsChartTitle">Sales Trend</b>
-                <span id="analyticsChartSubtitle">Daily • All Employees</span>
-              </div>
-              <div id="analyticsLastValue" class="stock-last-value">$0.00</div>
-            </div>
-            <div id="analyticsChart" class="stock-chart">
-              <div class="notice">Finalized report data will appear here.</div>
-            </div>
-          </div>
-
-          <div class="analytics-formula-note">
-            <b>Chart definitions:</b>
-            Sales = Grand Total sales.
-            Tip = Total Before Meal + Cash Tip.
-            Paid Out = Total Before Meal − Meal.
-            Busser = Busser Tip Out total.
-            Bar = Bar Tip Out / Bar Tip Out Received.
-          </div>
-        </div>
-      </section>
-
-<section id="setup" class="staffPanel hidden">
+      <section id="setup" class="staffPanel hidden">
         <div class="card">
           <h2>Realtime Status</h2>
           <div id="backendStatus" class="notice"></div>
@@ -1929,7 +1558,7 @@ input:focus,select:focus,textarea:focus{
         <select id="editUserRole" disabled>
           <option value="employee">Employee</option>
           <option value="manager">Manager</option>
-          
+          <option value="cashier">Cashier</option>
           <option value="owner">Owner</option>
         </select>
       </div>
@@ -1949,16 +1578,8 @@ input:focus,select:focus,textarea:focus{
         </select>
       </div>
     </div>
-    <div class="owner-credential-box">
-      <h3>Owner Credential Control</h3>
-      <div class="small">Existing Firebase passwords cannot be displayed in plaintext. Set a new password/PIN here instead.</div>
-      <div style="height:10px"></div>
-      <label>New Password / PIN</label>
-      <div class="owner-password-input-row">
-        <input id="editUserNewPassword" type="password" autocomplete="new-password" placeholder="Enter new password / PIN">
-        <label class="show-password-row"><input type="checkbox" onchange="togglePasswordVisibility('editUserNewPassword',this.checked)"><span>Show password</span></label>
-      </div>
-      <button type="button" class="btn gold" style="margin-top:10px" onclick="ownerResetSelectedUserPassword()">SET NEW PASSWORD / PIN</button>
+    <div class="notice" style="margin-top:12px">
+      Username, role, and existing password are protected. Delete and recreate the account when its login username or role must be changed.
     </div>
     <div class="actions" style="margin-top:14px">
       <button type="button" class="btn light" onclick="closeEditUser()">Cancel</button>
@@ -2012,30 +1633,25 @@ input:focus,select:focus,textarea:focus{
 
 <script>
 (function(){
-  window.setLoginMode = function(mode,roleHint){
-    var emp=document.getElementById('employeeLogin'), staff=document.getElementById('staffLogin'), tip=document.getElementById('hourlyV1Login');
-    if(emp)emp.classList.toggle('hidden',mode!=='employee');
-    if(staff)staff.classList.toggle('hidden',mode!=='staff');
-    if(tip)tip.classList.toggle('hidden',mode!=='hourlyv1');
-    ['employeeModeBtn','managerModeBtn','cashierModeBtn','ownerModeBtn','hourlyV1ModeBtn','boardModeBtn'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.remove('on');});
-    if(mode==='employee')document.getElementById('employeeModeBtn')?.classList.add('on');
-    if(mode==='hourlyv1')document.getElementById('hourlyV1ModeBtn')?.classList.add('on');
-    if(mode==='staff'){
-      roleHint=roleHint||'manager';
-      document.getElementById(roleHint+'ModeBtn')?.classList.add('on');
-      var title=document.getElementById('staffLoginTitle'),hint=document.getElementById('staffLoginHint');
-      if(title)title.textContent=roleHint==='owner'?'Owner Login':roleHint==='cashier'?'Cashier Login':'Manager Login';
-      if(hint)hint.textContent=roleHint==='owner'?'Full owner access after authentication.':roleHint==='cashier'?'Cashier access after authentication.':'Manager tools and employee approvals.';
-    }
+  window.setLoginMode = function(mode){
+    var emp=document.getElementById('employeeLogin');
+    var staff=document.getElementById('staffLogin');
+    var eb=document.getElementById('employeeModeBtn');
+    var sb=document.getElementById('staffModeBtn');
+    if(!emp||!staff||!eb||!sb) return;
+    emp.classList.toggle('hidden',mode!=='employee');
+    staff.classList.toggle('hidden',mode!=='staff');
+    eb.classList.toggle('on',mode==='employee');
+    sb.classList.toggle('on',mode==='staff');
   };
 })();
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v13817k.js?v=13817k"></script>
+<script type="module" src="app-v13815.js?v=13815"></script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13817k.js?v=13817ka',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13815.js?v=13815',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -2063,7 +1679,7 @@ if('serviceWorker' in navigator){
     <h2 style="margin:0 0 6px">Employee / Server Signature <span style="font-size:12px;opacity:.45">v12.1.4</span></h2>
     <div id="pickupSignatureEmployee" class="small" style="margin-bottom:14px"></div>
     <div class="notice good" style="margin-bottom:14px">
-      Employee signs below to confirm the report and money received. The signature is stored with the final report and appears in Daily Report / PDF.
+      Employee signs below to confirm the report and money received. The signature is stored with the final report and appears in Small Report / PDF.
     </div>
 
     <div style="border:2px solid #b8c6d9;border-radius:14px;background:#fff;overflow:hidden">
@@ -2080,7 +1696,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script src="simple-ui-v13817k.js?v=13817ka"></script>
+<script src="simple-ui-v13815.js?v=13815"></script>
 <div id="employeeDirectoryModal" class="modal hidden">
   <div class="modalbox" style="max-width:560px">
     <h3 id="employeeDirectoryModalTitle">Add Employee</h3>
@@ -2091,7 +1707,7 @@ if('serviceWorker' in navigator){
     <label>Mobile Phone</label>
     <input id="employeeDirectoryPhone" inputmode="tel" autocomplete="tel" placeholder="2565551234">
     <div class="small" style="margin-top:8px">
-      This master directory is used by Hourly Adjustment dropdowns and Daily Report SMS.
+      This master directory is used by Hourly Adjustment dropdowns and Small Report SMS.
     </div>
     <div class="actions" style="margin-top:16px">
       <button class="btn light" type="button" onclick="closeEmployeeDirectoryEditor()">Cancel</button>
@@ -2117,25 +1733,6 @@ if('serviceWorker' in navigator){
       <button class="btn light" type="button" onclick="hv1CancelPassword()">Cancel</button>
       <button class="btn red" type="button" onclick="hv1SubmitPassword()">Confirm</button>
     </div>
-  </div>
-</div>
-
-
-<div id="smallReportDetailModal" class="modal hidden" style="z-index:99970">
-  <div class="modalbox small-report-detail-modalbox">
-    <div class="small-report-detail-head">
-      <div>
-        <h2 id="smallReportDetailTitle" style="margin:0">Employee Report</h2>
-        <div id="smallReportDetailSub" class="small"></div>
-      </div>
-      <button class="btn light" type="button" onclick="closeSmallReportDetail()">✕ CLOSE REPORT</button>
-    </div>
-    <div id="smallReportDetailBody" class="small-report-detail-body"></div>
-    <div class="small-report-detail-signature">
-      <h3>Employee Signature</h3>
-      <div id="smallReportDetailSignature"></div>
-    </div>
-    <div id="smallReportDetailActions" class="actions small-report-detail-actions"></div>
   </div>
 </div>
 
