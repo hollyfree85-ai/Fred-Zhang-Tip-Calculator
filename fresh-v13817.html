@@ -514,206 +514,249 @@ body{font-size:17px}
 }
 
 
-/* V13.8.14 — larger Small Report + freeze Date and Employee */
-#smallReport{font-size:19px!important}
-#smallReport h2{font-size:36px!important;line-height:1.1!important}
-#smallReport .kpi span{font-size:17px!important}
-#smallReport .kpi b{font-size:29px!important}
-#smallReport .small{font-size:15px!important}
-#smallReport .tableWrap{
-  overflow:auto!important;
-  max-height:72vh;
-  position:relative;
-  border-radius:14px;
-}
-#smallReport table{
-  border-collapse:separate!important;
-  border-spacing:0!important;
-  font-size:18px!important;
-}
-#smallReport th{
-  position:sticky;
-  top:0;
-  z-index:20;
-  font-size:17px!important;
-  line-height:1.15!important;
-  padding:16px 13px!important;
-  white-space:nowrap;
-}
-#smallReport td{
-  font-size:18px!important;
-  padding:16px 13px!important;
-  white-space:nowrap;
-}
-#smallReport tbody td b{font-size:20px!important}
-#smallReport th:first-child,
-#smallReport td:first-child{
-  position:sticky;
-  left:0;
-  min-width:125px;
-  background:#fff;
-  z-index:12;
-}
-#smallReport th:first-child{
-  background:#10233f;
-  z-index:30;
-}
-#smallReport .sr-freeze-employee{
-  position:sticky!important;
-  left:125px;
-  min-width:220px;
-  background:#fff;
-  z-index:13;
-  box-shadow:8px 0 12px -12px rgba(0,0,0,.7);
-}
-#smallReport th.sr-freeze-employee{
-  background:#10233f;
-  z-index:31;
-}
-#smallReport tbody tr:nth-child(even) td:first-child,
-#smallReport tbody tr:nth-child(even) td.sr-freeze-employee{
-  background:#f8fafc;
-}
-#smallReport .btn{font-size:17px!important;min-height:46px}
-@media(max-width:760px){
-  #smallReport{font-size:18px!important}
-  #smallReport h2{font-size:31px!important}
-  #smallReport th{font-size:16px!important;padding:14px 11px!important}
-  #smallReport td{font-size:17px!important;padding:14px 11px!important}
-  #smallReport th:first-child,#smallReport td:first-child{min-width:112px}
-  #smallReport .sr-freeze-employee{left:112px;min-width:190px}
+/* V13.8.14 — Small Report one-screen viewport + Freeze Pane */
+html.small-report-fullscreen,
+body.small-report-fullscreen{
+  overflow:hidden!important;
+  height:100%!important;
 }
 
-
-/* V13.8.15 — simple Small Report list + full detail modal */
-#smallReport .simple-name-report{
-  max-width:760px;
-  margin-left:auto;
-  margin-right:auto;
-  max-height:62vh;
-}
-#smallReport .simple-name-report table{width:100%!important}
-#smallReport .simple-name-report th{
-  position:sticky!important;top:0!important;left:auto!important;
-  text-align:left!important;font-size:19px!important;padding:16px 18px!important;
-}
-#smallReport .simple-name-report td{
-  position:static!important;
-  padding:8px!important;
-  background:#fff!important;
-}
-.small-report-name-btn{
-  width:100%;
-  border:1px solid #d8e1ec;
-  background:#fff;
-  border-radius:14px;
-  padding:17px 20px;
-  text-align:left;
-  font-size:22px;
-  line-height:1.1;
-  font-weight:1000;
-  color:#10233f;
-  cursor:pointer;
-}
-.small-report-name-btn:hover{background:#f3f7fc}
-.small-report-detail-modalbox{
-  width:min(940px,94vw)!important;
-  max-width:940px!important;
-  max-height:92vh;
-  overflow:auto;
-}
-.small-report-detail-head{
-  display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap;
-  border-bottom:1px solid #dde5ef;padding-bottom:12px;margin-bottom:14px;
-}
-.small-report-detail-head h2{font-size:32px!important}
-.sr-detail-grid{
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;
-}
-.sr-detail-grid>div{
-  border:1px solid #dbe3ed;border-radius:14px;padding:13px;background:#fff;
-}
-.sr-detail-grid span{display:block;font-size:15px;color:#657184;font-weight:800}
-.sr-detail-grid b{display:block;font-size:23px;color:#10233f;margin-top:4px}
-.sr-detail-grid small{display:block;font-size:12px;margin-top:4px;color:#657184}
-.sr-detail-grid .accent{background:#eef8f2;border-color:#b7dec5}
-.sr-detail-grid .grand{background:#fff7df;border-color:#e7c96f}
-.small-report-detail-signature{
-  margin-top:16px;padding:14px;border:1px solid #dbe3ed;border-radius:14px;background:#fafcff;
-}
-.small-report-detail-signature h3{font-size:20px!important;margin:0 0 8px}
-.small-report-detail-actions{margin-top:16px}
-.small-report-detail-actions .btn{font-size:18px!important;min-height:50px}
-@media(max-width:760px){
-  .sr-detail-grid{grid-template-columns:1fr 1fr}
-  .small-report-name-btn{font-size:20px}
-}
-
-
-/* V13.8.16 — V1-only Small Report + true report window */
-body.small-report-modal-open{overflow:hidden!important}
-#smallReportDetailModal{
+body.small-report-fullscreen #hourlyV1Workspace{
   position:fixed!important;
   inset:0!important;
+  z-index:250000!important;
   width:100vw!important;
-  height:100vh!important;
-  z-index:2147483000!important;
-  background:rgba(8,18,34,.72)!important;
-  align-items:center!important;
-  justify-content:center!important;
-  padding:22px!important;
-  overflow:auto!important;
+  height:100dvh!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:0!important;
+  background:#eef2f6!important;
+  overflow:hidden!important;
 }
-#smallReportDetailModal.hidden{display:none!important}
-#smallReportDetailModal .small-report-detail-modalbox{
-  position:relative!important;
-  width:min(980px,96vw)!important;
-  max-width:980px!important;
-  max-height:92vh!important;
-  margin:auto!important;
-  overflow:auto!important;
-  background:#fff!important;
-  border-radius:22px!important;
-  box-shadow:0 28px 90px rgba(0,0,0,.38)!important;
-  padding:24px!important;
+
+body.small-report-fullscreen #hv1SmallReportBox{
+  display:flex!important;
+  flex-direction:column!important;
+  position:absolute!important;
+  inset:0!important;
+  width:100%!important;
+  height:100%!important;
+  max-width:none!important;
+  margin:0!important;
+  padding:12px!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  overflow:hidden!important;
 }
-#smallReportDetailModal .small-report-detail-head{
+
+body.small-report-fullscreen #hv1SmallReportBox > .hv1-title{
+  flex:0 0 auto!important;
+  margin:0 0 8px!important;
+  padding:2px 4px 8px!important;
+  border-bottom:1px solid #dbe3ee;
+}
+
+body.small-report-fullscreen #hv1SmallReportMount{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  margin-top:0!important;
+  overflow:hidden!important;
+}
+
+body.small-report-fullscreen #smallReport{
+  display:flex!important;
+  flex-direction:column!important;
+  height:100%!important;
+  min-height:0!important;
+  overflow:hidden!important;
+}
+
+body.small-report-fullscreen #smallReport > .card{
+  display:flex!important;
+  flex-direction:column!important;
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:100%!important;
+  padding:8px!important;
+  overflow:hidden!important;
+}
+
+body.small-report-fullscreen #smallReport .small-report-head,
+body.small-report-fullscreen #smallReport #phoneDirectoryStatus,
+body.small-report-fullscreen #smallReport details,
+body.small-report-fullscreen #smallReport .small-report-summary{
+  flex:0 0 auto!important;
+}
+
+body.small-report-fullscreen #smallReportViewport{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  height:auto!important;
+  max-height:none!important;
+  width:100%!important;
+  overflow:auto!important;
+  overscroll-behavior:contain;
+  border-radius:12px!important;
+  margin-top:8px!important;
+  background:#fff;
+}
+
+/* Compact enough to use the phone/tablet screen, while retaining horizontal scroll. */
+body.small-report-fullscreen .small-report-table{
+  min-width:1760px!important;
+  width:max-content!important;
+  table-layout:auto!important;
+}
+
+body.small-report-fullscreen .small-report-table th{
   position:sticky!important;
-  top:-24px!important;
-  z-index:8!important;
+  top:0!important;
+  z-index:40!important;
+  padding:8px 8px!important;
+  font-size:12px!important;
+  line-height:1.15!important;
+  height:46px!important;
+}
+
+body.small-report-fullscreen .small-report-table td{
+  padding:8px 8px!important;
+  font-size:13px!important;
+  line-height:1.2!important;
+  height:58px!important;
+}
+
+/* FREEZE PANE: Date + Employee + Shift */
+body.small-report-fullscreen .small-report-table th:nth-child(1),
+body.small-report-fullscreen .small-report-table td:nth-child(1){
+  position:sticky!important;
+  left:0!important;
+  min-width:88px!important;
+  width:88px!important;
+}
+body.small-report-fullscreen .small-report-table th:nth-child(2),
+body.small-report-fullscreen .small-report-table td:nth-child(2){
+  position:sticky!important;
+  left:88px!important;
+  min-width:160px!important;
+  width:160px!important;
+}
+body.small-report-fullscreen .small-report-table th:nth-child(3),
+body.small-report-fullscreen .small-report-table td:nth-child(3){
+  position:sticky!important;
+  left:248px!important;
+  min-width:78px!important;
+  width:78px!important;
+}
+
+/* Frozen header cells stay above frozen body cells. */
+body.small-report-fullscreen .small-report-table th:nth-child(-n+3){
+  z-index:60!important;
+  background:#10213c!important;
+}
+body.small-report-fullscreen .small-report-table td:nth-child(-n+3){
+  z-index:20!important;
   background:#fff!important;
-  padding-top:24px!important;
+  box-shadow:1px 0 0 #e1e7ef;
 }
-#smallReportDetailModal .small-report-detail-head .btn{
-  font-size:17px!important;
-  min-height:48px!important;
+body.small-report-fullscreen .small-report-table tr:nth-child(even) td:nth-child(-n+3){
+  background:#f8fafc!important;
 }
-#hv1SmallReportBox #smallReport{
-  display:block!important;
+
+body.small-report-fullscreen .small-report-table td.signature-cell{
+  min-width:190px!important;
+  width:190px!important;
+  height:74px!important;
 }
-body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
-  display:none!important;
+body.small-report-fullscreen .small-report-signature,
+body.small-report-fullscreen .small-report-signature-pending{
+  width:174px!important;
+  height:58px!important;
 }
-@media(max-width:760px){
-  #smallReportDetailModal{padding:8px!important}
-  #smallReportDetailModal .small-report-detail-modalbox{
-    width:98vw!important;
-    max-height:96vh!important;
-    border-radius:16px!important;
-    padding:16px!important;
+
+.hv1-small-report-actions .btn{
+  min-width:92px;
+}
+
+/* On phones, keep only Employee + Shift frozen to leave more visible data room. */
+@media(max-width:720px){
+  body.small-report-fullscreen #hv1SmallReportBox{
+    padding:6px!important;
   }
-}
+  body.small-report-fullscreen #hv1SmallReportBox > .hv1-title h3{
+    font-size:21px!important;
+  }
+  body.small-report-fullscreen #hv1SmallReportBox > .hv1-title p{
+    display:none!important;
+  }
+  .hv1-small-report-actions{
+    width:100%!important;
+    display:grid!important;
+    grid-template-columns:1fr 1fr 1fr!important;
+    gap:5px!important;
+  }
+  .hv1-small-report-actions .btn{
+    min-width:0!important;
+    font-size:11px!important;
+    padding:8px 4px!important;
+  }
 
+  body.small-report-fullscreen .small-report-head{
+    gap:5px!important;
+  }
+  body.small-report-fullscreen .small-report-head h2{
+    font-size:20px!important;
+  }
+  body.small-report-fullscreen .small-report-summary{
+    grid-template-columns:repeat(5,minmax(110px,1fr))!important;
+    display:flex!important;
+    overflow-x:auto!important;
+    gap:5px!important;
+    padding-bottom:3px!important;
+  }
+  body.small-report-fullscreen .small-report-summary .kpi{
+    min-width:118px!important;
+    min-height:56px!important;
+    padding:7px!important;
+  }
+  body.small-report-fullscreen .small-report-summary .kpi span{
+    font-size:10px!important;
+  }
+  body.small-report-fullscreen .small-report-summary .kpi b{
+    font-size:16px!important;
+  }
 
-/* V13.8.17 — Small Report always reachable in Hourly V1 */
-.hv1-hero-tools{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
-.hv1-report-main{min-height:56px!important;padding:0 24px!important;font-size:17px!important;font-weight:1000!important}
-#hv1Setup .hv1-title .actions{display:flex!important;gap:10px!important;align-items:center!important;flex-wrap:wrap!important}
-#hv1Setup .hv1-title .actions .btn{min-height:48px!important;font-size:16px!important}
-@media(max-width:760px){
-  .hv1-hero-tools{width:100%;justify-content:stretch}
-  .hv1-report-main{flex:1}
-  .hv1-date{flex:1}
+  body.small-report-fullscreen .small-report-table{
+    min-width:1580px!important;
+  }
+
+  /* Date scrolls on phone; Employee + Shift stay frozen. */
+  body.small-report-fullscreen .small-report-table th:nth-child(1),
+  body.small-report-fullscreen .small-report-table td:nth-child(1){
+    position:static!important;
+    min-width:82px!important;
+    width:82px!important;
+  }
+  body.small-report-fullscreen .small-report-table th:nth-child(2),
+  body.small-report-fullscreen .small-report-table td:nth-child(2){
+    left:0!important;
+    min-width:145px!important;
+    width:145px!important;
+  }
+  body.small-report-fullscreen .small-report-table th:nth-child(3),
+  body.small-report-fullscreen .small-report-table td:nth-child(3){
+    left:145px!important;
+    min-width:72px!important;
+    width:72px!important;
+  }
+  body.small-report-fullscreen .small-report-table td{
+    font-size:12px!important;
+    height:52px!important;
+    padding:6px!important;
+  }
+  body.small-report-fullscreen .small-report-table th{
+    font-size:11px!important;
+    padding:6px!important;
+  }
 }
 
 </style>
@@ -761,7 +804,7 @@ body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
 </style>
 </head>
 <body><div style="display:none" data-build="1388" data-hourly-tab="present"></div>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.17 V1 SMALL REPORT ALWAYS VISIBLE</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.17 SAFE RESTORE + BAR + UNDO FIX</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -1002,7 +1045,7 @@ body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
       <section id="hourlyV1Workspace" class="hidden hv1-shell">
         <div class="hv1-hero">
           <div><div class="hv1-kicker">HOURLY ADJUSTMENT V1</div><h2>Batch Workspace</h2><p>One date • many employees • partial save • continue anytime</p><div id="hv1CloudStatus" class="hv1-cloud-status">Draft backup: checking…</div></div>
-          <div class="hv1-hero-tools"><button class="btn gold hv1-report-main" type="button" onclick="hv1OpenSmallReport()">SMALL REPORT</button><div class="hv1-date"><label>Work Date</label><input id="hv1Date" type="date" onchange="hv1DateChanged()"></div></div>
+          <div class="hv1-date"><label>Work Date</label><input id="hv1Date" type="date" onchange="hv1DateChanged()"></div>
         </div>
         <div id="hv1RecoveryBox" class="hv1-recovery hidden">
           <div>
@@ -1015,7 +1058,7 @@ body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
           </div>
         </div>
         <div id="hv1Setup" class="hv1-box">
-          <div class="hv1-title"><div><h3>Select Today's Employees</h3><p>Choose everyone working on this date.</p></div><div class="actions"><button class="btn dark" type="button" onclick="hv1OpenSmallReport()">SMALL REPORT</button><button class="btn light" type="button" onclick="hv1SelectAll()">Select All</button></div></div>
+          <div class="hv1-title"><div><h3>Select Today's Employees</h3><p>Choose everyone working on this date.</p></div><button class="btn light" type="button" onclick="hv1SelectAll()">Select All</button></div>
           <div id="hv1Roster" class="hv1-roster"></div>
           <button class="btn green" type="button" style="width:100%;margin-top:16px" onclick="hv1CreateBoard()">Create / Update Team Board</button>
         </div>
@@ -1044,9 +1087,10 @@ body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
         <div id="hv1SmallReportBox" class="hv1-box hidden">
           <div class="hv1-title">
             <div><h3>Hourly V1 — Small Report</h3><p>This report stays inside Hourly Adjustment V1.</p></div>
-            <div class="actions">
+            <div class="actions hv1-small-report-actions">
               <button class="btn light" type="button" onclick="hv1CloseSmallReport()">← Team Board</button>
               <button class="btn dark" type="button" onclick="hv1OpenBarCenterFromReport()">BAR</button>
+              <button class="btn red" type="button" onclick="hv1CloseSmallReport()">CLOSE</button>
             </div>
           </div>
           <div id="hv1SmallReportMount" style="margin-top:14px"></div>
@@ -1056,6 +1100,7 @@ body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
         <div><b>Hourly Adjustment Workspace</b><span>Same database • Manager / Owner</span></div>
         <div class="actions">
           <button class="btn dark" type="button" onclick="openHourlyWorkspacePanel('hourly')">Hourly Adjustment V01</button>
+          <button class="btn light" type="button" onclick="openHourlyWorkspacePanel('smallReport')">Small Report</button>
         </div>
       </div>
       <div class="tabs">
@@ -1064,7 +1109,7 @@ body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
         <button class="tab" data-stab="report">Manager Review / Report</button>
         <button class="tab" data-stab="hourly">Hourly Adjustment V01</button>
         <button class="tab" data-stab="finalDaily">Final Daily Report</button>
-
+        <button class="tab managerOwnerOnly" data-stab="smallReport">Small Report</button>
         <button class="tab ownerOnly" data-stab="users">Users</button>
         <button class="tab ownerOnly" data-stab="history">History</button>
         <button class="tab ownerOnly" data-stab="deletedItems">Deleted / Undo <span id="deletedItemsBadge" class="badge">0</span></button>
@@ -1303,13 +1348,13 @@ body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
           <div class="small-report-head">
             <div>
               <h2 style="margin-bottom:4px">Small Report</h2>
-              <div class="small">Finalized employees only. Click an employee name to open the full report, collect signature, edit, or delete.</div>
+              <div class="small">Automatically updated after Hourly Adjustment is finalized. Manager/Owner can collect the server signature and send SMS directly from each row.</div>
             </div>
             <div class="actions">
               <button class="btn green" type="button" onclick="newHourlyEntryFromSmallReport()">+ New Entry</button>
               <button class="btn light" type="button" onclick="refreshPhoneDirectoryUi()">Refresh Phones</button>
               <button class="btn light" type="button" onclick="downloadSmallReportXls()">Download XLS</button>
-              <button class="btn light" type="button" onclick="downloadSmallReportPdf()">Download All PDF</button>
+              <button class="btn light" type="button" onclick="downloadSmallReportPdf()">Download PDF</button>
               <button class="btn light" type="button" onclick="shareSmallReportXls('whatsapp')">WhatsApp</button>
               <button class="btn light" type="button" onclick="shareSmallReportXls('email')">Email</button>
               <button class="btn red" type="button" onclick="deleteAllSmallReportRows()">Delete All</button>
@@ -1330,9 +1375,7 @@ body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
           </div>
           <div class="actions" style="margin-top:12px">
             <button class="btn green" type="button" onclick="renderSmallReport()">View Report</button>
-            <button class="btn light" type="button" onclick="smallReportToday()">Today</button>
-            <button class="btn light" type="button" onclick="smallReportYesterday()">Yesterday</button>
-            <button class="btn light" type="button" onclick="clearSmallReportFilters()">All Dates</button>
+            <button class="btn light" type="button" onclick="clearSmallReportFilters()">Show All</button>
             <button class="btn gold" type="button" onclick="newHourlyEntryFromSmallReport()">+ New Entry</button>
           </div>
 
@@ -1347,9 +1390,30 @@ body.hourly-v1-mode #smallReport:not(#hv1SmallReportMount #smallReport){
           </details>
           <div id="smallReportSummary" class="small-report-summary"></div>
 
-          <div class="tablewrap small-report-wrap simple-name-report" style="margin-top:14px">
+          <div id="smallReportViewport" class="tablewrap small-report-wrap" style="margin-top:14px">
             <table class="small-report-table">
-              <thead><tr><th>Employee Name</th></tr></thead>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Employee</th>
+                  <th>Shift</th>
+                  <th>Clock In 1</th>
+                  <th>Clock Out 1</th>
+                  <th>Clock In 2</th>
+                  <th>Clock Out 2</th>
+                  <th>Total Hours</th>
+                  <th>Paid Tips</th>
+                  <th>Tip Card Fee</th>
+                  <th>Busser Tip Out</th>
+                  <th>Bar Tip Out / Received</th>
+                  <th>Total Tip Before Meal</th>
+                  <th>Cash Tip</th>
+                  <th>Meal</th>
+                  <th>Total Paid Out</th>
+                  <th>Grand Total<br><span style="font-size:11px">Total Before Meal + Cash Tip</span></th>
+                  <th class="signature-col">Signature</th><th>Action</th>
+                </tr>
+              </thead>
               <tbody id="smallReportBody"></tbody>
             </table>
           </div>
@@ -1691,25 +1755,6 @@ if('serviceWorker' in navigator){
       <button class="btn light" type="button" onclick="hv1CancelPassword()">Cancel</button>
       <button class="btn red" type="button" onclick="hv1SubmitPassword()">Confirm</button>
     </div>
-  </div>
-</div>
-
-
-<div id="smallReportDetailModal" class="modal hidden" style="z-index:99970">
-  <div class="modalbox small-report-detail-modalbox">
-    <div class="small-report-detail-head">
-      <div>
-        <h2 id="smallReportDetailTitle" style="margin:0">Employee Report</h2>
-        <div id="smallReportDetailSub" class="small"></div>
-      </div>
-      <button class="btn light" type="button" onclick="closeSmallReportDetail()">✕ CLOSE REPORT</button>
-    </div>
-    <div id="smallReportDetailBody" class="small-report-detail-body"></div>
-    <div class="small-report-detail-signature">
-      <h3>Employee Signature</h3>
-      <div id="smallReportDetailSignature"></div>
-    </div>
-    <div id="smallReportDetailActions" class="actions small-report-detail-actions"></div>
   </div>
 </div>
 

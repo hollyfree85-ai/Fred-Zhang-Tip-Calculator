@@ -1087,12 +1087,15 @@ function hv1RenderBarSummaryOnly(state=hv1Load()){
   host.innerHTML=`<h4>Server Bar Tip Out Summary</h4>
     <div class="hv1-bar-total-row head"><div>Server</div><div>AM Fee</div><div>2–4 Fee</div><div>PM Fee</div><div>Total Bar Tip Out</div></div>
     ${allServers.map(name=>{
-      const amGT=Number(state.bar.AM.entries?.[name])||0;
-      const gt24=Number(state.bar["2PM_4PM"].entries?.[name])||0;
-      const pmGT=Number(state.bar.PM.entries?.[name])||0;
-      const am=amGT>0?amGT*0.006:0;
-      const p24=gt24>0?(gt24*0.006-am):0;
-      const pm=pmGT>0?(pmGT*0.006-am-p24):0;
+      const amGT=Math.max(0,Number(state.bar.AM.entries?.[name])||0);
+      const gt24=Math.max(0,Number(state.bar["2PM_4PM"].entries?.[name])||0);
+      const pmGT=Math.max(0,Number(state.bar.PM.entries?.[name])||0);
+      const am=amGT>0?Math.max(0,amGT*0.006):0;
+      const valid24=gt24>0&&gt24>=amGT;
+      const p24=valid24?Math.max(0,gt24*0.006-am):0;
+      const prevCum=valid24?gt24:amGT;
+      const validPM=pmGT>0&&pmGT>=prevCum;
+      const pm=validPM?Math.max(0,pmGT*0.006-am-p24):0;
       return `<div class="hv1-bar-total-row"><b>${esc(name)}</b><span>${fmtMoney(am)}</span><span>${fmtMoney(p24)}</span><span>${fmtMoney(pm)}</span><b>${fmtMoney(am+p24+pm)}</b></div>`;
     }).join("")||'<div class="notice">No server bar entries yet.</div>'}`;
 }
@@ -1526,7 +1529,8 @@ function hv1RestoreSmallReportHome(){
 }
 window.hv1OpenSmallReport=function(){
   hourlyV1Mode=true;
-  document.body.classList.add('hourly-v1-mode','hourly-v1-small-report');
+  document.body.classList.add('hourly-v1-mode','hourly-v1-small-report','small-report-fullscreen');
+  document.documentElement.classList.add('small-report-fullscreen');
   document.body.classList.remove('hourly-v1-editing','hourly-workspace-mode');
   $('hourly')?.classList.add('hidden');
   $('hourlyV1Workspace')?.classList.remove('hidden');
@@ -1539,7 +1543,8 @@ window.hv1OpenSmallReport=function(){
   window.scrollTo(0,0);
 };
 window.hv1CloseSmallReport=function(){
-  document.body.classList.remove('hourly-v1-small-report');
+  document.body.classList.remove('hourly-v1-small-report','small-report-fullscreen');
+  document.documentElement.classList.remove('small-report-fullscreen');
   $('smallReport')?.classList.add('hidden');
   hv1RestoreSmallReportHome();
   $('hv1SmallReportBox')?.classList.add('hidden');
@@ -1554,7 +1559,8 @@ window.hv1OpenBarCenterFromReport=function(){
   $('smallReport')?.classList.add('hidden');
   hv1RestoreSmallReportHome();
   $('hv1SmallReportBox')?.classList.add('hidden');
-  document.body.classList.remove('hourly-v1-small-report');
+  document.body.classList.remove('hourly-v1-small-report','small-report-fullscreen');
+  document.documentElement.classList.remove('small-report-fullscreen');
   window.hv1OpenBarCenter();
 };
 
@@ -1599,15 +1605,11 @@ function applyHourlyWorkspaceMode(on){
 
 window.openHourlyWorkspacePanel=function(name){
   if(!hourlyWorkspaceMode)return;
-  // Small Report is V1-only. Legacy V01 workspace no longer renders it.
-  if(name==="smallReport"){
-    alert("Small Report is inside Hourly Adjustment V1. Open Hourly V1 from the login page.");
-    return;
-  }
-  name="hourly";
+  if(!["hourly","smallReport"].includes(name))name="hourly";
   document.querySelectorAll(".staffPanel").forEach(x=>x.classList.add("hidden"));
-  $("hourly")?.classList.remove("hidden");
-  setTimeout(()=>window.startHourlyWizardFromLegacy?.(),50);
+  $(name)?.classList.remove("hidden");
+  if(name==="smallReport")setTimeout(()=>renderSmallReport(),50);
+  if(name==="hourly")setTimeout(()=>window.startHourlyWizardFromLegacy?.(),50);
 };
 
 window.leaveHourlyWorkspace=function(){
@@ -1734,7 +1736,7 @@ function clearSharedDeviceLoginFields(){
 
 window.logout = async function(){
   hv1RestoreSmallReportHome();
-  hourlyWorkspaceRequested=false;hourlyV1Requested=false;hourlyV1Mode=false;hv1EditingEmployee="";document.body.classList.remove("hourly-v1-mode","hourly-v1-editing","hourly-v1-small-report");
+  hourlyWorkspaceRequested=false;hourlyV1Requested=false;hourlyV1Mode=false;hv1EditingEmployee="";document.body.classList.remove("hourly-v1-mode","hourly-v1-editing","hourly-v1-small-report","small-report-fullscreen");document.documentElement.classList.remove("small-report-fullscreen");
   applyHourlyWorkspaceMode(false);
   try{
     clearSharedDeviceLoginFields();
@@ -2184,9 +2186,7 @@ function employeeFinalReportHTML(r){
       <div class="kpi"><span>Meal</span><b>${money(f.meal ?? r.meal)}</b></div>
       <div class="kpi"><span>Cash Tip</span><b>${money(f.cashTip ?? r.cashTip)}</b></div>
       <div class="kpi"><span>Busser Rate</span><b>${pct(f.busserRate)}</b></div>
-      <div class="kpi"><span>Busser AM</span><b>${money(f.busserTipOutAM??0)}</b></div>
-      <div class="kpi"><span>Busser PM</span><b>${money(f.busserTipOutPM??0)}</b></div>
-      <div class="kpi"><span>Busser Total</span><b>${money(f.busserTipOut)}</b></div>
+      <div class="kpi"><span>Busser Tip Out</span><b>${money(f.busserTipOut)}</b></div>
       <div class="kpi"><span>Bar Tip Out</span><b>${money(f.barTipOut)}</b></div>
       <div class="kpi"><span>Hourly Adjustment</span><b>${money(f.adjustmentSalaryHourly)}</b></div>
       <div class="kpi"><span>TOTAL PAID OUT</span><b>${money(f.totalPaidOut)}</b></div>
@@ -2219,9 +2219,7 @@ function employeeHistoricalReportHtml(r){
       <div class="kpi"><span>Total Tips</span><b>${fmtMoney(r.totalTips||0)}</b></div>
       <div class="kpi"><span>Paid Tips</span><b>${fmtMoney(r.paidTip||0)}</b></div>
       <div class="kpi"><span>Tip Card Fee</span><b>${fmtMoney(r.payCardTipFee??r.cardFee??0)}</b></div>
-      <div class="kpi"><span>Busser AM</span><b>${fmtMoney(r.busserTipOutAM||0)}</b></div>
-      <div class="kpi"><span>Busser PM</span><b>${fmtMoney(r.busserTipOutPM||0)}</b></div>
-      <div class="kpi"><span>Busser Total</span><b>${fmtMoney(r.busserTipOut||0)}</b></div>
+      <div class="kpi"><span>Busser Tip Out</span><b>${fmtMoney(r.busserTipOut||0)}</b></div>
       <div class="kpi"><span>Bar Tip Out / Received</span><b>${fmtMoney(smallReportBarAmount(r))}</b></div>
       <div class="kpi"><span>Total Before Meal</span><b>${fmtMoney(r.totalBeforeMeal||0)}</b></div>
       <div class="kpi"><span>Meal</span><b>${fmtMoney(r.meal||0)}</b></div>
@@ -2663,7 +2661,9 @@ async function archiveCheckTipSheet(sheet){
   if(!["employee","manager","owner"].includes(role))return false;
   if(role==="employee"){
     const mine=String(currentProfile.displayName||currentProfile.username||"").trim();
-    if(String(sheet.employeeName||"").trim()!==mine){alert("You can delete only your own Check Tip status.");return false;}
+    const sameName=String(sheet.employeeName||"").trim()===mine;
+    const sameUid=String(sheet.employeeUid||sheet.submittedByUid||"")===String(currentUser.uid||"");
+    if(!sameName && !sameUid){alert("You can delete only your own Check Tip status.");return false;}
   }
   const archiveRef=doc(db,"deletedItems",`checktip_${sheet.id}`);
   const old=await getDoc(archiveRef);
@@ -2729,7 +2729,7 @@ window.undoDeletedCheckTip=async function(archiveId){
   if(currentProfile?.role!=="owner")return;
   const x=latestDeletedItems.find(r=>r.archiveId===archiveId);if(!x)return;
   if(!confirm(`UNDO delete for ${x.employeeName||"this Check Tip record"}?`))return;
-  try{await deleteDoc(doc(db,"deletedItems",archiveId));await loadTipCheckSheets();alert("Deleted Check Tip restored.");}
+  try{await deleteDoc(doc(db,"deletedItems",archiveId));await loadDeletedItems();await loadTipCheckSheets();alert("Deleted Check Tip restored.");}
   catch(e){alert(`Undo failed: ${e.code||e.message}`);}
 };
 window.permanentDeleteCheckTip=async function(archiveId){
@@ -2739,6 +2739,7 @@ window.permanentDeleteCheckTip=async function(archiveId){
   try{
     await deleteTipCheckSheetApi({sheetId:x.itemId});
     await deleteDoc(doc(db,"deletedItems",archiveId));
+    await loadDeletedItems();
     await loadTipCheckSheets();
     alert("Check Tip permanently deleted.");
   }catch(e){alert(`Permanent delete failed: ${e.message||e.code}`);}
@@ -2751,7 +2752,7 @@ window.undoAllDeletedCheckTips=async function(){
     for(let i=0;i<latestDeletedItems.length;i+=350){
       const b=writeBatch(db);latestDeletedItems.slice(i,i+350).forEach(x=>b.delete(doc(db,"deletedItems",x.archiveId)));await b.commit();
     }
-    await loadTipCheckSheets();alert("All deleted Check Tip records restored.");
+    await loadDeletedItems();await loadTipCheckSheets();alert("All deleted Check Tip records restored.");
   }catch(e){alert(`Undo All failed: ${e.code||e.message}`);}
 };
 window.permanentDeleteAllCheckTips=async function(){
@@ -2763,7 +2764,7 @@ window.permanentDeleteAllCheckTips=async function(){
       await deleteTipCheckSheetApi({sheetId:x.itemId});
       await deleteDoc(doc(db,"deletedItems",x.archiveId));
     }
-    await loadTipCheckSheets();alert("All deleted Check Tip records permanently deleted.");
+    await loadDeletedItems();await loadTipCheckSheets();alert("All deleted Check Tip records permanently deleted.");
   }catch(e){alert(`Permanent Delete All failed: ${e.message||e.code}`);}
 };
 
@@ -4061,8 +4062,8 @@ function pdfRate(v){
 function pdfBool(v){ return v?"YES":"NO"; }
 
 function pdfField(label,value,x,y){
-  return `BT /F1 11 Tf ${x} ${y} Td (${pdfEscape(label)}) Tj ET\n`+
-         `BT /F2 16 Tf ${x} ${y-17} Td (${pdfEscape(value)}) Tj ET\n`;
+  return `BT /F1 9.5 Tf ${x} ${y} Td (${pdfEscape(label)}) Tj ET\n`+
+         `BT /F2 14 Tf ${x} ${y-15} Td (${pdfEscape(value)}) Tj ET\n`;
 }
 
 
@@ -4118,9 +4119,7 @@ function pdfReportContent(r,index,total){
   ];
 
   const right=[
-    ["Busser AM",pdfMoney(r.busserTipOutAM)],
-    ["Busser PM",pdfMoney(r.busserTipOutPM)],
-    ["Busser Total",pdfMoney(r.busserTipOut)],
+    ["Busser Tip Out",pdfMoney(r.busserTipOut)],
     ["AM Bar Sales",pdfBool(r.amBarSales)],
     ["AM Bar Tip",pdfMoney(r.amBarTip)],
     ["PM Bar Sales",pdfBool(r.pmBarSales)],
@@ -4148,7 +4147,7 @@ function pdfReportContent(r,index,total){
 
   let c="";
   // Original report-style header.
-  c+="BT /F2 21 Tf 28 758 Td (TIP CALCULATOR BY FRED ZHANG - EMPLOYEE REPORT) Tj ET\n";
+  c+="BT /F2 19 Tf 28 758 Td (TIP CALCULATOR BY FRED ZHANG - EMPLOYEE REPORT) Tj ET\n";
   c+=`BT /F1 10 Tf 28 739 Td (Report ${index+1} of ${total}) Tj ET\n`;
   c+="0.9 w 28 725 m 584 725 l S\n";
 
@@ -4360,7 +4359,7 @@ function smallReportFilteredRows(){
   return [...latestHourlyReports]
     .filter(r=>(!date||r.date===date)&&(!employee||r.employee===employee))
     .sort((a,b)=>{
-      const d=String(b.date||"").localeCompare(String(a.date||""));
+      const d=String(a.date||"").localeCompare(String(b.date||""));
       return d || String(a.employee||"").localeCompare(String(b.employee||""));
     });
 }
@@ -4542,16 +4541,18 @@ function buildSmallReportPrintableHtml(rows){
 }
 
 window.downloadSmallReportPdf=function(){
-  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  if(!["manager","owner"].includes(currentProfile?.role||"")) return;
   const rows=smallReportFilteredRows();
-  if(!rows.length){alert("No Small Report data for this filter.");return;}
-  const normalized=rows.map(r=>({
-    ...r,
-    totalPaidOut:smallReportPaidOut(r),
-    employeeGrandTotal:smallReportGrandTotal(r)
-  }));
-  const date=$("smallReportDate")?.value||todayLocal();
-  downloadBlob(simplePdfBlob(normalized),`Fred_Zhang_Small_Report_ALL_${date}.pdf`);
+  if(!rows.length){ alert("No Small Report data for this filter."); return; }
+
+  // Use the browser's native Save as PDF so the wide signature column stays readable.
+  const w=window.open("","_blank");
+  if(!w){ alert("Please allow pop-ups to download the PDF."); return; }
+  w.document.open();
+  w.document.write(buildSmallReportPrintableHtml(rows));
+  w.document.close();
+  w.focus();
+  setTimeout(()=>w.print(),350);
 };
 
 
@@ -4697,77 +4698,6 @@ function findEmployeeUserByName(name){
   const cached=employeePhoneDirectory.get(key);
   return cached?{displayName:cached.name,phone:cached.phone}:null;
 }
-
-
-window.openSmallReportDetail=function(reportId){
-  if(!["manager","owner"].includes(currentProfile?.role||""))return;
-  const r=latestHourlyReports.find(x=>x.id===reportId);
-  if(!r){alert("Report not found.");return;}
-  const c=smallReportClockFields(r);
-  const barLabel=String(r.position||"").toLowerCase()==="bartender"?"Bar Tip Out Received":"Bar Tip Out";
-  $("smallReportDetailTitle").textContent=r.employee||"Employee Report";
-  $("smallReportDetailSub").textContent=`${r.date||""} • ${r.position||""} • ${r.shift||""}`;
-  $("smallReportDetailBody").innerHTML=`
-    <div class="sr-detail-grid">
-      <div><span>Clock In 1</span><b>${esc(c.in1||"-")}</b></div>
-      <div><span>Clock Out 1</span><b>${esc(c.out1||"-")}</b></div>
-      <div><span>Clock In 2</span><b>${esc(c.in2||"-")}</b></div>
-      <div><span>Clock Out 2</span><b>${esc(c.out2||"-")}</b></div>
-      <div><span>Total Hours</span><b>${Number(r.totalHoursWork??r.totalHours??0).toFixed(2)}</b></div>
-      <div><span>Paid Tip</span><b>${fmtMoney(r.paidTip)}</b></div>
-      <div><span>Tip Card Fee</span><b>${fmtMoney(r.payCardTipFee??r.cardFee)}</b></div>
-      <div><span>Busser AM</span><b>${fmtMoney(r.busserTipOutAM||0)}</b></div>
-      <div><span>Busser PM</span><b>${fmtMoney(r.busserTipOutPM||0)}</b></div>
-      <div><span>Busser Total</span><b>${fmtMoney(r.busserTipOut||0)}</b></div>
-      <div><span>${barLabel}</span><b>${fmtMoney(smallReportBarAmount(r))}</b></div>
-      <div><span>Total Before Meal</span><b>${fmtMoney(r.totalBeforeMeal)}</b></div>
-      <div><span>Cash Tip</span><b>${fmtMoney(r.cashTip)}</b></div>
-      <div><span>Meal</span><b>${fmtMoney(r.meal)}</b></div>
-      <div class="accent"><span>Total Paid Out</span><b>${fmtMoney(smallReportPaidOut(r))}</b></div>
-      <div class="accent grand"><span>Grand Total</span><b>${fmtMoney(smallReportGrandTotal(r))}</b><small>Total Before Meal + Cash Tip</small></div>
-    </div>`;
-  $("smallReportDetailSignature").innerHTML=smallReportSignatureHtml(r);
-  $("smallReportDetailActions").innerHTML=`
-    <button class="btn green" type="button" onclick="signSmallReportFromDetail('${r.id}')">${Array.isArray(r.pickupSignature?.strokes)&&r.pickupSignature.strokes.length?"RE-SIGN":"SIGN"}</button>
-    <button class="btn gold" type="button" onclick="editSmallReportFromDetail('${r.id}')">EDIT</button>
-    <button class="btn red" type="button" onclick="deleteSmallReportFromDetail('${r.id}')">DELETE</button>`;
-  const modal=$("smallReportDetailModal");
-  modal.classList.remove("hidden");
-  modal.style.display="flex";
-  document.body.classList.add("small-report-modal-open");
-  requestAnimationFrame(()=>modal.querySelector(".small-report-detail-modalbox")?.scrollTo(0,0));
-};
-window.closeSmallReportDetail=function(){
-  const modal=$("smallReportDetailModal");
-  modal?.classList.add("hidden");
-  if(modal)modal.style.display="none";
-  document.body.classList.remove("small-report-modal-open");
-  // Always return to V1 Small Report — never to legacy Hourly V01.
-  if(hourlyV1Mode){
-    document.body.classList.add("hourly-v1-mode","hourly-v1-small-report");
-    $("hourlyV1Workspace")?.classList.remove("hidden");
-    $("hv1SmallReportBox")?.classList.remove("hidden");
-  }
-};
-document.addEventListener("click",e=>{
-  if(e.target?.id==="smallReportDetailModal")closeSmallReportDetail();
-});
-document.addEventListener("keydown",e=>{
-  if(e.key==="Escape" && !$("smallReportDetailModal")?.classList.contains("hidden"))closeSmallReportDetail();
-});
-
-window.signSmallReportFromDetail=function(id){
-  closeSmallReportDetail();
-  signSmallReport(id);
-};
-window.editSmallReportFromDetail=function(id){
-  closeSmallReportDetail();
-  editSubmittedHourlyFromSmallReport(id);
-};
-window.deleteSmallReportFromDetail=function(id){
-  closeSmallReportDetail();
-  deleteSmallReportRow(id);
-};
 
 window.signSmallReport=function(reportId){
   if(!["manager","owner"].includes(currentProfile?.role||""))return;
@@ -5044,17 +4974,6 @@ window.clearSmallReportFilters=function(){
   if($("smallReportEmployee"))$("smallReportEmployee").value="";
   renderSmallReport();
 };
-window.smallReportToday=function(){
-  if($("smallReportDate"))$("smallReportDate").value=todayLocal();
-  renderSmallReport();
-};
-window.smallReportYesterday=function(){
-  const d=new Date();
-  d.setDate(d.getDate()-1);
-  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");
-  if($("smallReportDate"))$("smallReportDate").value=`${y}-${m}-${day}`;
-  renderSmallReport();
-};
 
 window.renderSmallReport=function(){
   populateSmallReportEmployeeFilter();
@@ -5080,16 +4999,45 @@ window.renderSmallReport=function(){
     <div class="kpi"><span>Signatures</span><b>${signed}/${rows.length}</b></div>`;
 
   if(!rows.length){
-    body.innerHTML='<tr><td colspan="1" style="padding:24px;text-align:center">No finalized Hourly Adjustment reports for this filter.</td></tr>';
+    body.innerHTML='<tr><td colspan="19" style="padding:24px;text-align:center">No finalized Hourly Adjustment reports for this filter.</td></tr>';
     return;
   }
 
   body.innerHTML=rows.map(r=>{
-    return `<tr class="small-report-name-row">
+    const c=smallReportClockFields(r);
+    const barLabel=String(r.position||"").toLowerCase()==="bartender"
+      ?"Bar Tip Out Received"
+      :"Bar Tip Out";
+    return `<tr>
+      <td>${esc(r.date||"")}</td>
+      <td><b>${esc(r.employee||"")}</b><div class="small">${esc(r.position||"")}</div></td>
+      <td>${esc(r.shift||"")}</td>
+      <td>${esc(c.in1||"-")}</td>
+      <td>${esc(c.out1||"-")}</td>
+      <td>${esc(c.in2||"-")}</td>
+      <td>${esc(c.out2||"-")}</td>
+      <td>${Number(r.totalHoursWork??r.totalHours??0).toFixed(2)}</td>
+      <td>${fmtMoney(r.paidTip)}</td>
+      <td>${fmtMoney(r.payCardTipFee??r.cardFee)}</td>
+      <td>${fmtMoney(r.busserTipOut)}</td>
+      <td><b>${fmtMoney(smallReportBarAmount(r))}</b><div class="small">${barLabel}</div></td>
+      <td>${fmtMoney(r.totalBeforeMeal)}</td>
+      <td>${fmtMoney(r.cashTip)}</td>
+      <td>${fmtMoney(r.meal)}</td>
+      <td><b>${fmtMoney(smallReportPaidOut(r))}</b></td>
+      <td><b>${fmtMoney(smallReportGrandTotal(r))}</b><div class="small">Before Meal + Cash</div></td>
+      <td class="signature-cell">${smallReportSignatureHtml(r)}</td>
       <td>
-        <button class="small-report-name-btn" type="button" onclick="openSmallReportDetail('${r.id}')">
-          ${esc(r.employee||"")}
-        </button>
+        <div class="actions" style="flex-wrap:wrap;min-width:330px">
+          <button class="btn gold small-report-edit-btn" type="button"
+            onclick="editSubmittedHourlyFromSmallReport('${r.id}')">EDIT</button>
+          <button class="btn green" type="button"
+            onclick="signSmallReport('${r.id}')">${Array.isArray(r.pickupSignature?.strokes)&&r.pickupSignature.strokes.length?"RE-SIGN":"SIGN"}</button>
+          <button class="btn light" type="button"
+            onclick="sendSmallReportSms('${r.id}')">PDF / SMS${recoveredPhoneForEmployeeName(r.employee)?` • ${recoveredPhoneForEmployeeName(r.employee).slice(-4)}`:""}</button>
+          <button class="btn red small-report-delete-btn" type="button"
+            onclick="deleteSmallReportRow('${r.id}')">DELETE</button>
+        </div>
       </td>
     </tr>`;
   }).join("");
@@ -5123,9 +5071,7 @@ function smallReportHtmlXlsBlob(rows){
       <td>${Number(r.totalHoursWork??r.totalHours??0).toFixed(2)}</td>
       <td>${money(r.paidTip)}</td>
       <td>${money(r.payCardTipFee??r.cardFee)}</td>
-      <td>${money(r.busserTipOutAM||0)}</td>
-      <td>${money(r.busserTipOutPM||0)}</td>
-      <td>${money(r.busserTipOut||0)}</td>
+      <td>${money(r.busserTipOut)}</td>
       <td>${money(bar)}</td>
       <td>${money(r.totalBeforeMeal)}</td>
       <td>${money(r.cashTip)}</td>
@@ -5162,7 +5108,7 @@ function smallReportHtmlXlsBlob(rows){
         <th>Date</th><th>Employee</th><th>Shift</th>
         <th>Clock In 1</th><th>Clock Out 1</th><th>Clock In 2</th><th>Clock Out 2</th>
         <th>Total Hours</th><th>Paid Tips</th><th>Tip Card Fee</th>
-        <th>Busser AM</th><th>Busser PM</th><th>Busser Total</th><th>Bar Tip Out / Received</th>
+        <th>Busser Tip Out</th><th>Bar Tip Out / Received</th>
         <th>Total Tip Before Meal</th><th>Cash Tip</th><th>Meal</th><th>Total Paid Out</th><th>Grand Total (Total Before Meal + Cash Tip)</th><th>Signature</th>
       </tr></thead>
       <tbody>${body}</tbody>
@@ -5511,7 +5457,7 @@ window.openStaffTab=function(name){
 };
 
 function listenHourlyReports(){
-  const q=query(collection(db,"hourlyReports"),orderBy("createdAt","desc"),limit(1000));
+  const q=query(collection(db,"hourlyReports"),orderBy("createdAt","desc"),limit(200));
   unsubs.push(onSnapshot(q,snap=>{
     latestHourlyReports=snap.docs.map(d=>({id:d.id,...d.data()}));
     renderFinalDailyByName();
@@ -5927,32 +5873,6 @@ window.calculateHourlyV01=function(){
     }
   }
 
-  // V13.8.17 Busser split. Preserve the existing V01 total busser formula,
-  // but show/store the amount separately as Busser AM and Busser PM.
-  {
-    const br=Number(lastHourlyResult.busserRate||0)/100;
-    const totalBusser=Math.max(0,Number(lastHourlyResult.busserTipOut||0));
-    const resultShift=String(lastHourlyResult.shift||shift||"").toUpperCase();
-    let busserAM=0,busserPM=0;
-
-    if(String(lastHourlyResult.position||"").toLowerCase()==="bartender"){
-      busserAM=0; busserPM=0;
-    }else if(resultShift==="PM"){
-      busserPM=totalBusser;
-    }else if(resultShift==="DOUBLE"){
-      const totalAM=Math.max(0,Number(lastHourlyResult.totalAM||0));
-      const withBusserAM=String($("hBusserAM")?.value||"WITHOUT").toUpperCase()==="WITH";
-      const expectedAM=withBusserAM?Math.max(0,totalAM*br):0;
-      busserAM=Math.min(totalBusser,expectedAM);
-      busserPM=Math.max(0,totalBusser-busserAM);
-    }else{
-      busserAM=totalBusser;
-    }
-
-    lastHourlyResult.busserTipOutAM=busserAM;
-    lastHourlyResult.busserTipOutPM=busserPM;
-  }
-
   // V13.8.17 payout rule: employee payout is Total Before Meal minus Meal.
   lastHourlyResult.totalPaidOut=Number(lastHourlyResult.totalBeforeMeal||0)-Number(lastHourlyResult.meal||0);
 
@@ -5973,15 +5893,6 @@ window.calculateHourlyV01=function(){
   $("hrPaidTip").textContent=m(r.paidTip);
   $("hrBusserRate").textContent=`${Number(r.busserRate||0).toFixed(2)}%`;
   $("hrBusserTip").textContent=m(r.busserTipOut);
-  let busserSplitLine=$("hrBusserSplitLine");
-  if(!busserSplitLine){
-    busserSplitLine=document.createElement("div");
-    busserSplitLine.id="hrBusserSplitLine";
-    busserSplitLine.innerHTML='Busser AM <b id="hrBusserAM"></b> &nbsp; • &nbsp; Busser PM <b id="hrBusserPM"></b>';
-    $("hrBusserTip")?.parentElement?.insertAdjacentElement("afterend",busserSplitLine);
-  }
-  if($("hrBusserAM"))$("hrBusserAM").textContent=m(r.busserTipOutAM);
-  if($("hrBusserPM"))$("hrBusserPM").textContent=m(r.busserTipOutPM);
   $("hrBarAM").textContent=m(r.barTipAM);
   $("hrBarPM").textContent=m(r.barTipPM);
   $("hrBarOut").textContent=m(r.barTipOut);
@@ -6051,8 +5962,6 @@ window.saveHourlyV01=async function(){
           paidTip:Number(r.paidTip||0),
           busserRate:Number(r.busserRate||0),
           busserTipOut:Number(r.busserTipOut||0),
-          busserTipOutAM:Number(r.busserTipOutAM||0),
-          busserTipOutPM:Number(r.busserTipOutPM||0),
           barTipOut:Number(r.barTipOut||0),
     bartenderBarTipReceived:Number(r.bartenderBarTipReceived||0),
           grandTotalTip:Number(r.grandTotalTip||0),
@@ -6129,7 +6038,7 @@ window.exportCSV=function(){
 
 $("eDate").value=todayLocal();
 $("hDate").value=todayLocal();
-if($("smallReportDate")) $("smallReportDate").value="";
+if($("smallReportDate")) $("smallReportDate").value=todayLocal();
 populateRoster();
 refreshClockMode();
 syncHourlyShift();
@@ -7172,10 +7081,6 @@ setTimeout(loadHourlyRememberPreference,0);
 
 // V13.8.17 Grand Total = Total Before Meal + Cash Tip.
 
-// V13.8.17 larger Small Report; frozen Date + Employee columns.
+// V13.8.17 Small Report fullscreen one-screen viewport + freeze pane + close.
 
-// V13.8.17 simple Small Report list, detail modal, Busser AM/PM split.
-
-// V13.8.17 Small Report stays in Hourly V1; employee detail is a true modal; history retained.
-
-// V13.8.17 Small Report always visible in Hourly V1.
+// V13.8.17 = V13.8.14 UI restored; BAR cumulative + Deleted/Undo refresh fixes only.
