@@ -435,13 +435,153 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
 .employee-delete-checktip{margin-top:10px;width:100%}
 
 
-/* V13.8.13 Employee simplified + Cashier payout */
-.cashier-payout-table th,.cashier-payout-table td{vertical-align:middle}
-.cashier-payout-check{width:26px!important;height:26px!important;accent-color:#16a05d}
+/* V13.8.10 Hourly V1 edit/autosave quick navigation */
+.hv1-quick-nav{
+  position:sticky;top:0;z-index:45;
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;
+  padding:10px;margin:-4px 0 16px;
+  background:rgba(255,255,255,.96);
+  border:1px solid #dbe3ee;border-radius:16px;
+  box-shadow:0 8px 22px rgba(16,33,60,.10);
+  backdrop-filter:blur(8px);
+}
+.hv1-quick-nav .btn{min-height:48px}
+.hv1-autosave-note{
+  grid-column:1/-1;text-align:center;
+  font-size:12px;font-weight:900;color:#08703d;
+}
 @media(max-width:700px){
-  .cashier-payout-table th,.cashier-payout-table td{padding:12px 8px!important;font-size:14px}
-  .cashier-payout-table th:nth-child(1),.cashier-payout-table td:nth-child(1){min-width:100px}
-  .cashier-payout-table th:nth-child(2),.cashier-payout-table td:nth-child(2){min-width:150px}
+  .hv1-quick-nav{grid-template-columns:1fr 1fr 1fr;gap:6px;padding:7px}
+  .hv1-quick-nav .btn{font-size:12px;padding:9px 5px}
+}
+
+
+/* V13.8.11 direct final edit + BAR two-way sync */
+.hv1-quick-nav{
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+}
+.how-quick-edit-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  margin-top:16px;
+}
+.how-quick-bar{margin-top:16px}
+@media(max-width:760px){
+  .hv1-quick-nav{
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  .hv1-quick-nav .btn{font-size:11px!important;padding:8px 4px!important}
+  .how-quick-edit-grid{grid-template-columns:1fr}
+}
+
+
+/* V13.8.12 larger readable text */
+body{font-size:17px}
+#hourlyV1Workspace,
+#smallReport{font-size:17px}
+#hourlyV1Workspace h2,
+#smallReport h2{font-size:32px!important}
+#hourlyV1Workspace h3,
+#smallReport h3{font-size:25px!important}
+#hourlyV1Workspace h4{font-size:21px!important}
+#hourlyV1Workspace label,
+#hourlyV1Workspace .how-label,
+#hourlyV1Workspace .how-sub,
+#hourlyV1Workspace .how-info,
+#smallReport label,
+#smallReport .small{font-size:16px!important}
+#hourlyV1Workspace input,
+#hourlyV1Workspace select,
+#hourlyV1Workspace textarea{font-size:20px!important}
+#hourlyV1Workspace .btn,
+#smallReport .btn{font-size:17px!important;font-weight:900}
+#hourlyV1Workspace .how-metric span,
+#hourlyV1Workspace .how-summary small,
+#smallReport .kpi span{font-size:15px!important}
+#hourlyV1Workspace .how-metric b,
+#hourlyV1Workspace .how-summary b,
+#smallReport .kpi b{font-size:24px!important}
+#smallReport table{font-size:16px!important}
+#smallReport th{font-size:15px!important;padding:12px 10px!important}
+#smallReport td{font-size:16px!important;padding:12px 10px!important}
+#smallReport .signature-cell{min-width:260px}
+@media(max-width:760px){
+  body{font-size:17px}
+  #hourlyV1Workspace h2,#smallReport h2{font-size:28px!important}
+  #hourlyV1Workspace input,#hourlyV1Workspace select{font-size:19px!important}
+  #smallReport table{font-size:15px!important}
+}
+
+
+/* V13.8.14 — larger Small Report + freeze Date and Employee */
+#smallReport{font-size:19px!important}
+#smallReport h2{font-size:36px!important;line-height:1.1!important}
+#smallReport .kpi span{font-size:17px!important}
+#smallReport .kpi b{font-size:29px!important}
+#smallReport .small{font-size:15px!important}
+#smallReport .tableWrap{
+  overflow:auto!important;
+  max-height:72vh;
+  position:relative;
+  border-radius:14px;
+}
+#smallReport table{
+  border-collapse:separate!important;
+  border-spacing:0!important;
+  font-size:18px!important;
+}
+#smallReport th{
+  position:sticky;
+  top:0;
+  z-index:20;
+  font-size:17px!important;
+  line-height:1.15!important;
+  padding:16px 13px!important;
+  white-space:nowrap;
+}
+#smallReport td{
+  font-size:18px!important;
+  padding:16px 13px!important;
+  white-space:nowrap;
+}
+#smallReport tbody td b{font-size:20px!important}
+#smallReport th:first-child,
+#smallReport td:first-child{
+  position:sticky;
+  left:0;
+  min-width:125px;
+  background:#fff;
+  z-index:12;
+}
+#smallReport th:first-child{
+  background:#10233f;
+  z-index:30;
+}
+#smallReport .sr-freeze-employee{
+  position:sticky!important;
+  left:125px;
+  min-width:220px;
+  background:#fff;
+  z-index:13;
+  box-shadow:8px 0 12px -12px rgba(0,0,0,.7);
+}
+#smallReport th.sr-freeze-employee{
+  background:#10233f;
+  z-index:31;
+}
+#smallReport tbody tr:nth-child(even) td:first-child,
+#smallReport tbody tr:nth-child(even) td.sr-freeze-employee{
+  background:#f8fafc;
+}
+#smallReport .btn{font-size:17px!important;min-height:46px}
+@media(max-width:760px){
+  #smallReport{font-size:18px!important}
+  #smallReport h2{font-size:31px!important}
+  #smallReport th{font-size:16px!important;padding:14px 11px!important}
+  #smallReport td{font-size:17px!important;padding:14px 11px!important}
+  #smallReport th:first-child,#smallReport td:first-child{min-width:112px}
+  #smallReport .sr-freeze-employee{left:112px;min-width:190px}
 }
 
 </style>
@@ -489,7 +629,7 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
 </style>
 </head>
 <body><div style="display:none" data-build="1388" data-hourly-tab="present"></div>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.14 EMPLOYEE REPORT ONLY</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.14 BIG SMALL REPORT + FREEZE NAME</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -622,8 +762,107 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
   <div class="wrap">
 
     <div id="employeeApp" class="hidden">
+      <div class="tabs" style="margin-bottom:12px">
+        <button class="tab on" data-etab="shift">Tip Report</button>
+        <button class="tab" data-etab="tipcheck">Check Tip</button>
+      </div>
       <div id="employeeShiftContent">
-        <div class="card"><h2>My Tip Reports</h2><div class="notice good" style="margin-bottom:10px"><b>Your finalized tip reports stay linked to your employee name.</b><br>Reports created before you signed up will appear here after you log in.</div><div id="employeeHistoricalReports"><div class="small">Loading finalized reports...</div></div>
+      <div id="employeeReadyReport" class="card hidden"></div>
+      <div id="employeeEntryCard" class="card">
+        <h2>My Shift Submission</h2>
+        <div class="grid">
+          <div><label>Date</label><input id="eDate" type="date"></div>
+          <div><label>Position</label><select id="ePosition"><option>Server</option><option>Bartender</option><option>Host</option><option>Cashier</option></select></div>
+        </div>
+        <h3>Shift</h3>
+        <div class="shiftbox">
+          <button class="shift on" data-eshift="AM">AM</button>
+          <button class="shift" data-eshift="PM">PM</button>
+          <button class="shift" data-eshift="DOUBLE">DOUBLE</button>
+          <button class="shift" data-eshift="LONG">LONG</button>
+        </div>
+        <h3>Clock In / Out</h3>
+        <div id="singleClock" class="grid">
+          <div><label>Clock In</label><input id="eIn" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock Out</label><input id="eOut" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+        </div>
+
+        <div id="longDoubleOptions" class="hidden">
+          <div class="grid" style="margin-bottom:10px">
+            <div>
+              <label>Break Option</label>
+              <select id="eBreakMode">
+                <option value="without">Without Break</option>
+                <option value="with">With Break</option>
+              </select>
+            </div>
+            <div class="small" style="align-self:end;padding-bottom:12px">
+              Without Break = Clock In AM → Clock Out PM. With Break = AM In/Out + PM In/Out.
+            </div>
+          </div>
+        </div>
+
+        <div id="continuousClock" class="grid hidden">
+          <div><label>Clock In AM</label><input id="eContIn" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock Out PM</label><input id="eContOut" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+        </div>
+
+        <div id="doubleClock" class="grid hidden">
+          <div><label>Clock In AM</label><input id="eAmIn" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock Out AM</label><input id="eAmOut" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock In PM</label><input id="ePmIn" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+          <div><label>Clock Out PM</label><input id="ePmOut" inputmode="numeric" maxlength="5" placeholder="HH:MM"></div>
+        </div>
+
+        <h3>Tip Report</h3>
+        <div class="grid">
+          <div><label>Grand Total ($)</label><input id="eGrandTotal" type="number" step=".01" min="0" value="0"></div>
+          <div id="totalAmWrap" class="hidden"><label>Total AM ($) — Double / Longshift</label><input id="eTotalAM" type="number" step=".01" min="0" value="0"></div>
+        </div>
+        <div class="small" style="margin-top:7px">User Report note: for <b>Total AM</b>, use the AM selection. For <b>Grand Total</b>, do not select AM/PM.</div>
+        <div id="employeeBusserPreview" class="notice hidden" style="margin-top:10px">
+          <b>Busser Tip Out (Auto): <span id="eBusserRate">0.00%</span> • <span id="eBusserAmount">$0.00</span></b>
+          <div class="small">Calculated automatically from the work date, shift, Grand Total and Total AM.</div>
+          <div class="small" style="margin-top:6px"><b>Double / Longshift note:</b> Total Tips shown in the POS report may not be final. If there is no AM busser, the system automatically adjusts Busser Tip Out using only the PM portion.</div>
+        </div>
+
+        <h3>Meal & Cash Tip</h3>
+        <div class="grid">
+          <div><label>Meal ($)</label><input id="eMeal" type="number" step=".01" min="0" value="0"></div>
+          <div><label>Cash Tip ($)</label><input id="eCash" type="number" step=".01" min="0" value="0"></div>
+        </div>
+
+        <h3>Bar Sales</h3>
+        <div id="eBarAMWrap" class="hidden">
+          <label><input id="eBarAM" type="checkbox"> WITH BAR AM</label>
+        </div>
+        <div id="eBarPMWrap" class="hidden">
+          <label><input id="eBarPM" type="checkbox"> WITH BAR PM</label>
+        </div>
+        <div style="height:12px"></div>
+        <div class="notice good">Your submission is stored in the shared Firestore database and appears on Manager/Owner devices in realtime.</div>
+      </div>
+      <div class="card"><h2>Current / Pending Report</h2><div id="mySubmissions"></div></div>
+      </div>
+
+      <div id="employeeTipCheckContent" class="hidden">
+        <div class="card">
+          <h2>Check Tip</h2>
+          <div class="notice">Enter the date and up to 50 lines from your paper: Check Number, Table, and Tip. Leave unused lines blank.</div>
+          <div class="grid" style="margin-top:12px">
+            <div><label>Date</label><input id="eTipCheckDate" type="date"></div>
+            <div><label>Employee</label><input id="eTipCheckEmployee" readonly></div>
+          </div>
+          <div class="tablewrap" style="margin-top:12px;max-height:600px">
+            <table class="tip-check-table"><thead><tr><th>#</th><th>Check Number</th><th>Table</th><th>Tip ($)</th></tr></thead><tbody id="eTipCheckRows"></tbody></table>
+          </div>
+          <div class="actions" style="margin-top:14px">
+            <button class="btn light" type="button" onclick="clearEmployeeTipCheck()">Clear</button>
+            <button class="btn green" type="button" onclick="submitEmployeeTipCheck()">Submit to Cashier</button>
+          </div>
+        </div>
+        <div class="card"><h2>My Check Tip Status</h2><div id="employeeTipCheckStatus"></div></div>
+        <div class="card"><h2>My Tip Reports</h2><div class="notice good" style="margin-bottom:10px"><b>Your finalized tip reports stay linked to your employee name.</b><br>Reports created before you signed up will appear here after you log in.</div><div id="employeeHistoricalReports"><div class="small">Loading finalized reports...</div></div></div>
       </div>
     </div>
 
@@ -699,7 +938,6 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
         <button class="tab ownerOnly" data-stab="history">History</button>
         <button class="tab ownerOnly" data-stab="deletedItems">Deleted / Undo <span id="deletedItemsBadge" class="badge">0</span></button>
         <button class="tab tipCheckTab" data-stab="tipCheck">Check Tip</button>
-        <button class="tab cashierOnly" data-stab="cashierPayout">Cashier</button>
         <button class="tab" data-stab="setup">Setup</button>
       </div>
 
@@ -981,7 +1219,7 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Employee</th>
+                  <th class="sr-freeze-employee">Employee</th>
                   <th>Shift</th>
                   <th>Clock In 1</th>
                   <th>Clock Out 1</th>
@@ -996,6 +1234,7 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
                   <th>Cash Tip</th>
                   <th>Meal</th>
                   <th>Total Paid Out</th>
+                  <th>Grand Total<br><span style="font-size:11px">Total Before Meal + Cash Tip</span></th>
                   <th class="signature-col">Signature</th><th>Action</th>
                 </tr>
               </thead>
@@ -1045,28 +1284,6 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
             </div>
           </div>
           <div id="deletedItemsList" style="margin-top:14px"><div class="small">No deleted records.</div></div>
-        </div>
-      </section>
-
-
-      <section id="cashierPayout" class="staffPanel hidden cashierOnly">
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;flex-wrap:wrap">
-            <div>
-              <h2 style="margin:0 0 4px">Cashier Payout</h2>
-              <div class="small">Simple payout list — Date, Employee, Paid Out, and Checklist.</div>
-            </div>
-            <button class="btn red" type="button" onclick="clearCashierPayoutBoard()">Delete All</button>
-          </div>
-          <div class="notice good" style="margin-top:12px">
-            Checking a row only marks it for the Cashier. <b>Delete All</b> clears the Cashier screen only; it does not delete Hourly Adjustment or Small Report data.
-          </div>
-          <div class="tablewrap" style="margin-top:14px">
-            <table class="cashier-payout-table">
-              <thead><tr><th>Date</th><th>Employee</th><th>Paid Out</th><th>Checklist</th></tr></thead>
-              <tbody id="cashierPayoutBody"><tr><td colspan="4" class="small">Loading payout reports...</td></tr></tbody>
-            </table>
-          </div>
         </div>
       </section>
 
@@ -1257,6 +1474,9 @@ body.hourly-v1-mode.hourly-v1-small-report #hv1BarBox{display:none!important}
 
 <div style="margin:10px 0"><button class="btn blue" type="button" onclick="requestNotify()">Enable Background Notifications</button>
         <span class="small" style="margin-left:8px">Push alerts for approval / Money Ready, including background/lock screen.</span></div>
+<div id="employeeBottom" class="bottom hidden"><div class="inner"><button id="employeeClearBtn" class="btn light" type="button" onclick="clearEmployeeForm()">Clear</button><button class="btn gold" type="button" onclick="submitEmployee()">Submit to Manager</button></div></div>
+
+
 <script>
 (function(){
   window.setLoginMode = function(mode){

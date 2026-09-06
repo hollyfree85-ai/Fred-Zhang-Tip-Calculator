@@ -491,6 +491,77 @@ body{font-size:17px}
   #smallReport table{font-size:15px!important}
 }
 
+
+/* V13.8.14 — larger Small Report + freeze Date and Employee */
+#smallReport{font-size:19px!important}
+#smallReport h2{font-size:36px!important;line-height:1.1!important}
+#smallReport .kpi span{font-size:17px!important}
+#smallReport .kpi b{font-size:29px!important}
+#smallReport .small{font-size:15px!important}
+#smallReport .tableWrap{
+  overflow:auto!important;
+  max-height:72vh;
+  position:relative;
+  border-radius:14px;
+}
+#smallReport table{
+  border-collapse:separate!important;
+  border-spacing:0!important;
+  font-size:18px!important;
+}
+#smallReport th{
+  position:sticky;
+  top:0;
+  z-index:20;
+  font-size:17px!important;
+  line-height:1.15!important;
+  padding:16px 13px!important;
+  white-space:nowrap;
+}
+#smallReport td{
+  font-size:18px!important;
+  padding:16px 13px!important;
+  white-space:nowrap;
+}
+#smallReport tbody td b{font-size:20px!important}
+#smallReport th:first-child,
+#smallReport td:first-child{
+  position:sticky;
+  left:0;
+  min-width:125px;
+  background:#fff;
+  z-index:12;
+}
+#smallReport th:first-child{
+  background:#10233f;
+  z-index:30;
+}
+#smallReport .sr-freeze-employee{
+  position:sticky!important;
+  left:125px;
+  min-width:220px;
+  background:#fff;
+  z-index:13;
+  box-shadow:8px 0 12px -12px rgba(0,0,0,.7);
+}
+#smallReport th.sr-freeze-employee{
+  background:#10233f;
+  z-index:31;
+}
+#smallReport tbody tr:nth-child(even) td:first-child,
+#smallReport tbody tr:nth-child(even) td.sr-freeze-employee{
+  background:#f8fafc;
+}
+#smallReport .btn{font-size:17px!important;min-height:46px}
+@media(max-width:760px){
+  #smallReport{font-size:18px!important}
+  #smallReport h2{font-size:31px!important}
+  #smallReport th{font-size:16px!important;padding:14px 11px!important}
+  #smallReport td{font-size:17px!important;padding:14px 11px!important}
+  #smallReport th:first-child,#smallReport td:first-child{min-width:112px}
+  #smallReport .sr-freeze-employee{left:112px;min-width:190px}
+}
+
 </style>
 
 <style>
@@ -536,7 +607,7 @@ body{font-size:17px}
 </style>
 </head>
 <body>
-<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.13 GRAND TOTAL FORMULA FIX</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
+<div id="top" class="top hidden"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.14 BIG SMALL REPORT + FREEZE NAME</small></div><div style="display:flex;gap:8px;align-items:center"><span id="onlinePill" class="role" style="background:#dff3e6;color:#146c43">ONLINE</span><span id="rolePill" class="role"></span><button class="btn light" style="padding:7px 10px" onclick="logout()">Logout</button></div></div></div>
 
 <div id="loginView" class="wrap">
   <div class="login card">
@@ -1126,7 +1197,7 @@ body{font-size:17px}
               <thead>
                 <tr>
                   <th>Date</th>
-                  <th>Employee</th>
+                  <th class="sr-freeze-employee">Employee</th>
                   <th>Shift</th>
                   <th>Clock In 1</th>
                   <th>Clock Out 1</th>
@@ -1401,10 +1472,10 @@ body{font-size:17px}
 </script>
 
 <script src="hourly-logic.js"></script>
-<script type="module" src="app-v13813.js?v=13813"></script>
+<script type="module" src="app-v13814.js?v=13814"></script>
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13813.js?v=13813',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13814.js?v=13814',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -1449,7 +1520,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script src="simple-ui-v13813.js?v=13813"></script>
+<script src="simple-ui-v13814.js?v=13814"></script>
 <div id="employeeDirectoryModal" class="modal hidden">
   <div class="modalbox" style="max-width:560px">
     <h3 id="employeeDirectoryModalTitle">Add Employee</h3>
