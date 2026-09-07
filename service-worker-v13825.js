@@ -68,7 +68,7 @@ self.addEventListener("notificationclick",event=>{
 });
 
 const CACHE="fz-tip-v13825";
-const CORE=["./","./index.html","./fresh-v13825.html","./app-v13825.js?v=13825","./simple-ui-v13825.js?v=13825","./firebase-config.js","./push-config.js","./hourly-logic.js","./manifest.webmanifest","./money-ready-chime.wav"];
+const CORE=["./", "./index.html", "./fresh-v13825.html", "./app-v13825.js?v=13825", "./hourly-logic-v13825.js?v=13825", "./host-cashier-tip-v13825.js?v=13825", "./simple-ui-v13824p1.js?v=138241a", "./board-hotfix-v13825.js?v=13825", "./firebase-config.js", "./push-config.js", "./manifest.webmanifest", "./money-ready-chime.wav", "./icon-192.png", "./caishen-intro.png"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();
@@ -92,10 +92,11 @@ self.addEventListener("fetch",event=>{
   if(localCode){
     event.respondWith(
       fetch(req,{cache:"no-store"}).then(res=>{
+        if(!res.ok)throw new Error("Asset request failed");
         const copy=res.clone();
         caches.open(CACHE).then(c=>c.put(req,copy));
         return res;
-      }).catch(()=>caches.match(req).then(r=>r||caches.match("./index.html")))
+      }).catch(()=>caches.match(req).then(r=>r||(req.mode==="navigate"?caches.match("./index.html"):Response.error())))
     );
     return;
   }

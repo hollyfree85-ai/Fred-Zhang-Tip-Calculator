@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 
 <html lang="en">
-<head><meta name="fz-build" content="13825">
+<head><meta name="fz-build" content="1382417">
 <meta content="no-cache, no-store, must-revalidate" http-equiv="Cache-Control"/>
 <meta content="no-cache" http-equiv="Pragma"/>
 <meta content="0" http-equiv="Expires"/>
@@ -1075,6 +1075,20 @@ input:focus,select:focus,textarea:focus{
   .login-sound-test .btn{width:100%;font-size:15px!important}
 }
 
+
+/* P23 — partial-entry escape hatch */
+.hv1-back-team-bottom{
+  display:flex!important;
+  justify-content:center!important;
+  margin:22px 0 8px!important;
+}
+.hv1-back-team-bottom .btn{
+  width:min(760px,100%)!important;
+  min-height:58px!important;
+  font-size:18px!important;
+  font-weight:950!important;
+}
+
 </style>
 <style>
   #hourlyResult .grid3, #hourlyReportsList .grid3 { gap:14px !important; }
@@ -1278,43 +1292,403 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
   .fz-report-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
 
-</style></head>
+</style>
+<style id="hcP6VisualUpgrade">
+/* V13.8.24-P6 — HOST/CASHIER UI ONLY. NO FORMULA OR DATA LOGIC CHANGES. */
+#hostCashierTip{
+  position:relative;padding:18px!important;
+  background:
+    radial-gradient(circle at 10% 5%,rgba(69,182,235,.15),transparent 24%),
+    radial-gradient(circle at 94% 4%,rgba(255,194,68,.16),transparent 28%),
+    linear-gradient(180deg,#f3f9fc 0%,#edf5fa 56%,#f9fbfd 100%);
+}
+#hostCashierTip .hc-shell{max-width:1480px;margin:0 auto}
+#hostCashierTip .hc-hero{
+  position:relative;overflow:hidden;padding:24px 26px;border-radius:28px;
+  border:1px solid rgba(117,190,223,.45);
+  background:linear-gradient(125deg,#08233d 0%,#0b4967 48%,#106b75 72%,#d69b24 145%);
+  box-shadow:0 22px 58px rgba(8,42,67,.22),inset 0 1px 0 rgba(255,255,255,.28);
+}
+#hostCashierTip .hc-hero:before{
+  content:"";position:absolute;width:310px;height:310px;border-radius:50%;
+  right:-120px;top:-170px;
+  background:radial-gradient(circle,rgba(255,229,129,.78),rgba(255,183,54,.12) 48%,transparent 70%);
+}
+#hostCashierTip .hc-hero:after{
+  content:"";position:absolute;inset:auto 0 0 0;height:2px;
+  background:linear-gradient(90deg,#4cc0e0,#5b9ed3,#f1bf49);opacity:.8;
+}
+#hostCashierTip .hc-kicker{letter-spacing:.18em;color:#ffd46a}
+#hostCashierTip .hc-hero h2{font-size:36px;letter-spacing:-.025em}
+#hostCashierTip .hc-date-card{
+  border:1px solid rgba(255,255,255,.22);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2),0 10px 25px rgba(0,0,0,.12);
+}
+#hostCashierTip .hc-card{
+  border:1px solid #d7e5ee;border-radius:24px;
+  background:linear-gradient(180deg,#fff,#fbfdff);
+  box-shadow:0 14px 34px rgba(17,55,80,.09),inset 0 1px 0 rgba(255,255,255,.95);
+}
+#hostCashierTip .hc-roster{gap:12px}
+#hostCashierTip .hc-roster-item{
+  min-height:94px;border-radius:18px;border:1px solid #d7e4ed;
+  background:linear-gradient(145deg,#fff,#f2f7fa);
+  box-shadow:0 9px 20px rgba(17,52,76,.08),inset 0 1px 0 #fff;
+  transition:.16s ease;
+}
+#hostCashierTip .hc-roster-item:hover{transform:translateY(-2px);box-shadow:0 13px 26px rgba(17,52,76,.12),inset 0 1px 0 #fff}
+#hostCashierTip .hc-roster-item:has(input:checked){
+  border-color:#5cb9d7;background:linear-gradient(145deg,#f5fcff,#e7f6fb);
+  box-shadow:0 13px 28px rgba(28,145,183,.17),inset 0 1px 0 #fff;
+}
+#hostCashierTip .hc-roster-item b{font-size:16px;color:#0f2c46}
+
+#hostCashierTip .hc-pool-grid,#hostCashierTip .hc-shift-grid{gap:22px}
+#hostCashierTip .hc-pool{
+  position:relative;overflow:hidden;min-height:330px;padding:21px;border-radius:24px;
+  box-shadow:0 16px 36px rgba(18,56,81,.11),inset 0 1px 0 rgba(255,255,255,.95);
+}
+#hostCashierTip .hc-am{
+  border:1px solid #f0d38a;
+  background:radial-gradient(circle at 92% 8%,rgba(255,204,73,.35),transparent 26%),linear-gradient(145deg,#fffdf7,#fff6d8);
+  box-shadow:0 16px 36px rgba(188,132,23,.13),inset 0 6px 0 #f2b438;
+}
+#hostCashierTip .hc-pm{
+  border:1px solid #bcd8f1;
+  background:radial-gradient(circle at 92% 8%,rgba(67,145,228,.30),transparent 26%),linear-gradient(145deg,#f8fbff,#eaf4ff);
+  box-shadow:0 16px 36px rgba(33,111,180,.13),inset 0 6px 0 #378bd9;
+}
+#hostCashierTip .hc-pool h4{margin:0 0 16px;font-size:30px;letter-spacing:-.025em;color:#102c47}
+#hostCashierTip .hc-am h4:before{content:"☀️ "}
+#hostCashierTip .hc-pm h4:before{content:"🌙 "}
+#hostCashierTip .hc-pool label{font-weight:900;color:#43586b}
+#hostCashierTip .hc-pool input{
+  min-height:54px;border-radius:14px;border:1px solid #d5e2eb;background:#fff;
+  font-size:19px;font-weight:800;box-shadow:inset 0 2px 6px rgba(20,53,74,.05);
+}
+#hostCashierTip .hc-kpis{gap:10px}
+#hostCashierTip .hc-kpis>div{
+  min-height:88px;display:flex;flex-direction:column;justify-content:center;border-radius:15px;
+  box-shadow:0 8px 18px rgba(25,58,79,.07),inset 0 1px 0 #fff;
+}
+#hostCashierTip .hc-am .hc-kpis>div{background:linear-gradient(145deg,#fff,#fff4d0);border-color:#ecd393}
+#hostCashierTip .hc-pm .hc-kpis>div{background:linear-gradient(145deg,#fff,#eaf5ff);border-color:#c2dbf1}
+#hostCashierTip .hc-kpis b{font-size:25px}
+
+#hostCashierTip .hc-shift-grid>.hc-card:first-child{border-top:7px solid #f0b438;background:linear-gradient(180deg,#fffdf8,#fff)}
+#hostCashierTip .hc-shift-grid>.hc-card:last-child{border-top:7px solid #378bd9;background:linear-gradient(180deg,#f7fbff,#fff)}
+#hostCashierTip .hc-shift-grid>.hc-card:first-child .hc-shift-head h3:before{content:"☀️ "}
+#hostCashierTip .hc-shift-grid>.hc-card:last-child .hc-shift-head h3:before{content:"🌙 "}
+#hostCashierTip .hc-shift-head h3{font-size:26px;letter-spacing:-.02em}
+#hostCashierTip .hc-rows{gap:11px}
+#hostCashierTip .hc-row{
+  min-height:74px;border-radius:17px;border:1px solid #dbe7ef;
+  box-shadow:0 8px 18px rgba(18,53,76,.075),inset 0 1px 0 #fff;transition:.16s ease;
+}
+#hostCashierTip .hc-row:hover{transform:translateY(-2px);box-shadow:0 12px 24px rgba(18,53,76,.11),inset 0 1px 0 #fff}
+#hostCashierTip .hc-shift-grid>.hc-card:first-child .hc-row{background:linear-gradient(100deg,#fff9e9,#fff)}
+#hostCashierTip .hc-shift-grid>.hc-card:last-child .hc-row{background:linear-gradient(100deg,#edf7ff,#fff)}
+#hostCashierTip .hc-row-num{
+  display:grid;place-items:center;width:34px;height:34px;border-radius:11px;
+  font-size:15px;font-weight:1000;box-shadow:inset 0 1px 0 #fff;
+}
+#hostCashierTip .hc-shift-grid>.hc-card:first-child .hc-row-num{background:#ffebb0;color:#815600}
+#hostCashierTip .hc-shift-grid>.hc-card:last-child .hc-row-num{background:#d9edff;color:#075b9d}
+#hostCashierTip .hc-employee-select{
+  min-height:52px;border-radius:13px!important;background:#fff!important;font-weight:850;color:#15324b;
+}
+#hostCashierTip .hc-tip{
+  min-height:52px;display:grid;place-items:center;border-radius:13px;font-size:20px!important;font-weight:1000;
+}
+#hostCashierTip .hc-shift-grid>.hc-card:first-child .hc-tip{background:#fff4cf;border:1px solid #ecd391;color:#895900}
+#hostCashierTip .hc-shift-grid>.hc-card:last-child .hc-tip{background:#e7f4ff;border:1px solid #bfdaf0;color:#075d9e}
+#hostCashierTip .hc-sign-btn{min-height:48px;border-radius:12px}
+#hostCashierTip .hc-signed{background:#e4f7ec!important;color:#0b7442!important;border-color:#b8e3c8!important}
+#hostCashierTip .hc-actions{gap:10px}
+#hostCashierTip .hc-actions .btn,#hostCashierTip #hcCreateTeamBtn,#hostCashierTip #hcSaveBtn,#hostCashierTip #hcReloadBtn{
+  min-height:52px;border-radius:14px;box-shadow:0 8px 17px rgba(18,53,76,.10);
+}
+@media(max-width:820px){
+  #hostCashierTip{padding:8px!important}
+  #hostCashierTip .hc-pool-grid,#hostCashierTip .hc-shift-grid{grid-template-columns:1fr!important}
+  #hostCashierTip .hc-row{grid-template-columns:32px minmax(0,1fr) 110px!important}
+  #hostCashierTip .hc-sign-btn{grid-column:2/-1!important}
+}
+</style>
+
+\n<style id="fzP7UiExpert">\n/* P7 UI expert pass — visual grouping only; calculations untouched except optional 2–4 rule. */\n#hourlyOriginalWizard .how-card{border-radius:24px!important;border:1px solid #d7e4ed!important;box-shadow:0 14px 34px rgba(15,52,78,.10)!important;background:linear-gradient(180deg,#fff,#fbfdff)!important;padding:20px!important}\n#hourlyOriginalWizard .how-title{font-size:30px!important;letter-spacing:-.025em!important;color:#102d47!important;margin-bottom:4px!important}\n#hourlyOriginalWizard .how-sub{font-size:14px!important;color:#64788a!important;margin-bottom:16px!important}\n#hourlyOriginalWizard .how-info{border-radius:15px!important;background:linear-gradient(135deg,#edf8ff,#f7fbff)!important;border:1px solid #cce2f1!important;padding:14px!important}\n#hourlyOriginalWizard .how-quick-edit-grid{gap:12px!important}\n#hourlyOriginalWizard .how-field{padding:12px!important;border:1px solid #e0e8ee!important;border-radius:16px!important;background:#fff!important;box-shadow:0 6px 15px rgba(18,54,77,.055)!important}\n#hourlyOriginalWizard .how-field label,#hourlyOriginalWizard .how-label{font-weight:950!important;color:#29445b!important}\n#hourlyOriginalWizard .how-choices{gap:10px!important}\n#hourlyOriginalWizard [data-how-choice]{border-radius:15px!important;min-height:54px!important;box-shadow:0 7px 16px rgba(17,52,76,.07)!important}\n/* BAR section gets its own strong visual identity */\n#hourlyOriginalWizard .how-quick-bar{margin-top:18px!important;padding:18px!important;border-radius:22px!important;border:2px solid #a9d5ed!important;background:linear-gradient(145deg,#effaff,#f8fcff)!important;box-shadow:0 13px 28px rgba(28,121,166,.10)!important}\n#hourlyOriginalWizard .check-card{min-height:92px!important;padding:16px 18px!important;border-radius:18px!important;border:2px solid #cbdce7!important;background:linear-gradient(145deg,#fff,#f5f9fc)!important;box-shadow:0 9px 20px rgba(18,54,77,.08)!important;display:flex!important;align-items:center!important;gap:16px!important;margin-top:12px!important}\n#hourlyOriginalWizard .check-card:has(input:checked){border-color:#1496c2!important;background:linear-gradient(145deg,#eafaff,#dff5fc)!important;box-shadow:0 12px 26px rgba(20,150,194,.17)!important}\n#hourlyOriginalWizard .check-card input[type=checkbox]{appearance:auto!important;-webkit-appearance:checkbox!important;width:34px!important;height:34px!important;min-width:34px!important;accent-color:#087fa9!important;transform:scale(1.08)!important;cursor:pointer!important}\n#hourlyOriginalWizard .check-card strong{font-size:19px!important;color:#0d3955!important;letter-spacing:.015em!important}\n#hourlyOriginalWizard .check-card span span{font-size:13px!important;color:#647b8c!important;margin-top:5px!important;display:block!important}\n#hourlyOriginalWizard .how-metrics{gap:10px!important;margin-top:14px!important}\n#hourlyOriginalWizard .how-metric{border-radius:15px!important;border:1px solid #d7e4ed!important;background:#fff!important;box-shadow:0 7px 16px rgba(17,52,76,.06)!important}\n#hv1BarBox{background:linear-gradient(180deg,#f1f8fc,#f9fbfd)!important;border-radius:26px!important;padding:16px!important}\n#hv1BarBox .hv1-bar-card{border-radius:24px!important;box-shadow:0 15px 32px rgba(15,52,78,.10)!important;overflow:hidden!important}\n#hv1BarBox .hv1-bar-card:nth-child(1){border-top:7px solid #f0b43c!important;background:linear-gradient(180deg,#fffdf5,#fff)!important}\n#hv1BarBox .hv1-bar-card:nth-child(2){border-top:7px solid #8b7ed8!important;background:linear-gradient(180deg,#faf8ff,#fff)!important}\n#hv1BarBox .hv1-bar-card:nth-child(3){border-top:7px solid #378bd9!important;background:linear-gradient(180deg,#f5faff,#fff)!important}\n#hv1BarBox .formula{padding:10px 12px!important;border-radius:12px!important;background:#edf5fa!important;color:#31546c!important;font-weight:800!important}\n#hv1BarBox [data-hv1-bar-gt]{min-height:50px!important;border-radius:13px!important;font-weight:850!important}\n#hv1BarBox .hv1-bar-fee{font-size:17px!important;font-weight:950!important}\n@media(max-width:700px){#hourlyOriginalWizard .check-card{min-height:100px!important}#hourlyOriginalWizard .check-card input[type=checkbox]{width:38px!important;height:38px!important;min-width:38px!important}}\n</style>
+
+<style id="hcP8CreditCombinedStyle">
+#hostCashierTip .hc-credit-entry{display:grid;grid-template-columns:1fr auto;gap:9px;align-items:center}
+#hostCashierTip .hc-credit-entry input[readonly]{cursor:pointer;background:linear-gradient(145deg,#fff,#f7fbfe)!important}
+#hostCashierTip .hc-calc-btn{
+  min-height:54px!important;padding:0 16px!important;border-radius:13px!important;
+  background:linear-gradient(145deg,#173d5e,#0d6f8d)!important;color:#fff!important;border:0!important;
+  font-weight:950!important;box-shadow:0 8px 18px rgba(15,76,107,.20)!important;white-space:nowrap;
+}
+#hostCashierTip .hc-combined-card{
+  border-top:7px solid #22a06b!important;
+  background:linear-gradient(145deg,#fbfffd,#edf9f3)!important;
+}
+#hostCashierTip .hc-combined-total{
+  min-width:190px;padding:12px 16px;border-radius:16px;
+  background:linear-gradient(145deg,#e6f8ee,#d9f2e5);
+  border:1px solid #b9dfc9;box-shadow:0 8px 18px rgba(24,125,78,.10);
+}
+#hostCashierTip .hc-combined-total span{display:block;font-size:11px;font-weight:950;color:#507261;text-transform:uppercase}
+#hostCashierTip .hc-combined-total b{display:block;margin-top:3px;font-size:25px;color:#087043}
+#hostCashierTip .hc-combined-table-wrap{overflow:auto;margin-top:14px;border-radius:16px;border:1px solid #d5e8dd;background:#fff}
+#hostCashierTip .hc-combined-table{width:100%;border-collapse:collapse;min-width:560px}
+#hostCashierTip .hc-combined-table th{
+  padding:12px 14px;background:#e8f6ee;color:#204c36;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.04em
+}
+#hostCashierTip .hc-combined-table td{padding:13px 14px;border-top:1px solid #e2ece6;font-weight:800}
+#hostCashierTip .hc-combined-table td:last-child{font-size:19px;font-weight:1000;color:#087043}
+#hostCashierTip .hc-combined-double{background:linear-gradient(90deg,#fbfff9,#eef9f2)}
+#hostCashierTip .hc-shift-pill{display:inline-block;padding:3px 7px;border-radius:999px;font-size:10px;font-weight:1000;margin-left:7px}
+#hostCashierTip .hc-shift-pill.double{background:#e7f7ed;color:#087043}
+.hc-credit-modal-card{max-width:650px!important}
+.hc-credit-calc-rows{display:grid;gap:9px;margin-top:16px}
+.hc-credit-calc-row{
+  display:grid;grid-template-columns:42px 1fr 140px 44px;gap:8px;align-items:center;
+  padding:9px;border:1px solid #d9e5ed;border-radius:13px;background:linear-gradient(145deg,#fbfdff,#f2f7fa)
+}
+.hc-credit-calc-row .hc-acct-num{font-weight:1000;color:#5f7180;text-align:center}
+.hc-credit-calc-row input{min-height:48px!important}
+.hc-credit-calc-remove{
+  min-height:44px!important;padding:0!important;border-radius:11px!important;background:#ffe9e9!important;color:#a42525!important;border:1px solid #f3c6c6!important
+}
+.hc-credit-calc-footer{display:flex;justify-content:space-between;gap:14px;align-items:center;margin-top:14px;flex-wrap:wrap}
+.hc-credit-calc-total{
+  min-width:190px;padding:11px 14px;border-radius:14px;background:#eef7ff;border:1px solid #c8e0f2
+}
+.hc-credit-calc-total span{display:block;font-size:10px;text-transform:uppercase;font-weight:950;color:#667988}
+.hc-credit-calc-total b{display:block;font-size:25px;color:#0d5e91}
+@media(max-width:650px){
+  #hostCashierTip .hc-credit-entry{grid-template-columns:1fr}
+  .hc-credit-calc-row{grid-template-columns:34px 1fr 100px 38px}
+  .hc-credit-calc-row .hc-account-label{grid-column:2/4}
+}
+</style>
+
+
+<style id="hcP9Roster3x3">
+/* P9 UI ONLY — 9 Host/Cashier employees shown as 3 columns x 3 rows on desktop */
+#hostCashierTip .hc-roster{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:14px!important;
+  align-items:stretch!important;
+}
+#hostCashierTip .hc-roster-item{
+  min-height:112px!important;
+  padding:14px!important;
+  display:grid!important;
+  grid-template-columns:34px minmax(0,1fr)!important;
+  grid-template-rows:auto auto!important;
+  gap:8px 10px!important;
+  align-items:center!important;
+}
+#hostCashierTip .hc-roster-item input[type="checkbox"]{
+  width:28px!important;
+  height:28px!important;
+  margin:0!important;
+  accent-color:#1687b7;
+}
+#hostCashierTip .hc-roster-item>div{
+  min-width:0!important;
+}
+#hostCashierTip .hc-roster-item b{
+  display:block!important;
+  font-size:17px!important;
+  line-height:1.2!important;
+}
+#hostCashierTip .hc-roster-item .small{
+  margin-top:3px!important;
+  font-size:12px!important;
+  opacity:.74!important;
+}
+#hostCashierTip .hc-roster-item select{
+  grid-column:1/-1!important;
+  min-height:48px!important;
+  border-radius:13px!important;
+  font-size:15px!important;
+  font-weight:850!important;
+}
+@media(max-width:980px){
+  #hostCashierTip .hc-roster{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
+@media(max-width:620px){
+  #hostCashierTip .hc-roster{
+    grid-template-columns:1fr!important;
+    gap:10px!important;
+  }
+  #hostCashierTip .hc-roster-item{
+    min-height:100px!important;
+  }
+}
+</style>
+
+
+<style id="hcP10EmployeeRows3Col">
+/* P10 — compact 3-column employee payout cards */
+#hostCashierTip .hc-shift-grid{
+  grid-template-columns:1fr 1fr!important;
+  align-items:start!important;
+}
+#hostCashierTip .hc-rows{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  gap:12px!important;
+}
+#hostCashierTip .hc-row{
+  min-height:154px!important;
+  display:grid!important;
+  grid-template-columns:38px 1fr!important;
+  grid-template-rows:auto auto auto!important;
+  gap:8px!important;
+  padding:12px!important;
+  align-items:center!important;
+}
+#hostCashierTip .hc-row-num{
+  grid-column:1!important;
+  grid-row:1!important;
+  width:34px!important;
+  height:34px!important;
+}
+#hostCashierTip .hc-employee-select{
+  grid-column:1/-1!important;
+  grid-row:2!important;
+  width:100%!important;
+}
+#hostCashierTip .hc-tip{
+  grid-column:1/-1!important;
+  grid-row:3!important;
+  width:100%!important;
+  min-height:48px!important;
+}
+#hostCashierTip .hc-sign-btn{
+  grid-column:2!important;
+  grid-row:1!important;
+  justify-self:end!important;
+  min-height:36px!important;
+  padding:6px 12px!important;
+  width:auto!important;
+}
+@media(max-width:1250px){
+  #hostCashierTip .hc-rows{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
+@media(max-width:900px){
+  #hostCashierTip .hc-shift-grid{
+    grid-template-columns:1fr!important;
+  }
+  #hostCashierTip .hc-rows{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+}
+@media(max-width:600px){
+  #hostCashierTip .hc-rows{
+    grid-template-columns:1fr!important;
+  }
+}
+</style>
+
+
+<style id="fzP18SingleLoginStyle">
+#loginView{min-height:100dvh!important;align-items:flex-start!important;padding-top:clamp(18px,6vh,70px)!important}
+#loginView .login{max-width:700px!important}
+.fz-auth-backend{display:none!important}
+.fz-unified-auth{max-width:560px;margin:18px auto 0}
+.fz-auth-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px;background:#edf4f9;border:1px solid #d1e0ea;border-radius:16px;margin-bottom:16px}
+.fz-auth-tab{border:0;border-radius:12px;min-height:48px;background:transparent;color:#52687b;font-weight:950;letter-spacing:.05em;cursor:pointer}
+.fz-auth-tab.on{color:#fff;background:linear-gradient(125deg,#123e61,#1684a3);box-shadow:0 8px 20px rgba(20,102,140,.20)}
+#fzUnifiedSignupPanel .signup-box{margin:0!important;padding:0!important;border:0!important}
+#fzUnifiedSignupPanel .signup-box>.small:first-child,#fzUnifiedSignupPanel .signup-box>button:first-of-type{display:none!important}
+#fzUnifiedSignupPanel #signupPanel,#fzUnifiedSignupPanel #signupPanel.hidden{display:block!important;margin-top:0!important}
+.fz-role-home{max-width:1150px;margin:12px auto 30px;padding:4px}
+.fz-role-home-hero{position:relative;overflow:hidden;padding:26px;border-radius:26px;color:#fff;background:linear-gradient(120deg,#0b2038,#145575 68%,#287d8d);box-shadow:0 18px 46px rgba(13,53,82,.22)}
+.fz-role-home-hero:after{content:"";position:absolute;width:280px;height:280px;right:-90px;top:-150px;border-radius:50%;background:radial-gradient(circle,rgba(255,218,106,.44),transparent 68%)}
+.fz-role-home-hero .eyebrow{font-size:12px;letter-spacing:.16em;font-weight:950;color:#9ee9f4}
+.fz-role-home-hero h2{margin:6px 0 4px!important;color:#fff!important;font-size:32px!important}
+.fz-role-home-hero p{margin:0;color:rgba(255,255,255,.78)}
+.fz-role-menu{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px}
+.fz-role-menu button{border:1px solid #cfe0eb;background:linear-gradient(145deg,#fff,#eef7fc);border-radius:22px;min-height:150px;padding:20px;text-align:left;cursor:pointer;box-shadow:0 13px 30px rgba(29,77,111,.10);color:#102b43;transition:.15s ease}
+.fz-role-menu button:hover{transform:translateY(-3px);box-shadow:0 18px 36px rgba(29,77,111,.15)}
+.fz-role-menu .icon{font-size:31px;display:block;margin-bottom:12px}
+.fz-role-menu b{display:block;font-size:20px;margin-bottom:5px}.fz-role-menu small{font-size:13px;color:#607487;line-height:1.4}
+#fzHomeBtn{display:none}body.fz-staff-logged-in #fzHomeBtn{display:inline-flex}
+@media(max-width:760px){.fz-role-menu{grid-template-columns:1fr}.fz-role-menu button{min-height:112px}.fz-role-home-hero{padding:20px}.fz-role-home-hero h2{font-size:27px!important}}
+</style>
+
+<style id="fzP21AuthNoteStyle">
+#fzP21AuthNote{margin-top:12px;font-size:12px;color:#607487;text-align:center}
+</style>
+<style>.how-team-back{display:block;width:100%;margin-top:12px;min-height:52px;font-size:16px;font-weight:800}</style>
+</head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.25 · ROBUST HISTORICAL SYNC</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.25 · RESTORED MODULES + LOGIC REPAIR + BAR RECEIVED FIX · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
 <h2 style="text-align:center;margin-bottom:4px">Fred Zhang Tip Calculator</h2>
-<div class="small" style="text-align:center;margin-bottom:18px">One App • Employee • Manager • Owner</div>
+<div class="small" style="text-align:center;margin-bottom:18px">One App • Employee • Manager • Owner</div><div class="fz-no-sound-note">Silent Mode • No Voice • No App Sounds</div>
 <div class="small" id="globalAlertStatus" style="text-align:center;margin-top:10px;color:#146c43;font-weight:800">Money Ready dialog alerts are active while this page is open.</div>
-<div style="text-align:center;margin-top:8px">
-<button class="btn light" onclick="testGlobalMoneyReadyDialog()" type="button">Test Money Ready Dialog</button>
-</div>
-<div class="login-role-buttons">
-<button class="login-role-btn on" id="employeeModeBtn" onclick="setLoginMode('employee')" type="button"><span class="login-role-icon">👤</span><b>EMPLOYEE</b><small>Login, sign up &amp; view reports</small></button>
-<button class="login-role-btn" id="managerModeBtn" onclick="setLoginMode('staff','manager')" type="button"><span class="login-role-icon">🧾</span><b>MANAGER</b><small>Approvals &amp; management tools</small></button>
-<button class="login-role-btn" id="ownerModeBtn" onclick="setLoginMode('staff','owner')" type="button"><span class="login-role-icon">★</span><b>OWNER</b><small>Full owner controls</small></button>
-<button class="login-role-btn tip-calc-login-btn" id="hourlyV1ModeBtn" onclick="setLoginMode('hourlyv1')" type="button"><span class="login-role-icon">🧮</span><b>TIP CALCULATION</b><small>Team Board, BAR &amp; Daily Report</small></button>
-<button class="login-role-btn" id="boardModeBtn" onclick="openServerRoomBoard()" type="button"><span class="login-role-icon">🔔</span><b>SERVER ROOM</b><small>Money Ready board</small></button>
-</div>
-<div id="employeeLogin">
-<label>Employee Name</label>
-<select id="employeeUsername"></select>
-<div style="height:10px"></div>
-<label>4-digit PIN</label>
-<input id="employeePin" inputmode="numeric" maxlength="4" placeholder="••••" type="password"/><label class="show-password-row"><input onchange="togglePasswordVisibility('employeePin',this.checked)" type="checkbox"/><span>Show password</span></label>
-<div style="height:14px"></div>
-<button class="btn gold" onclick="loginEmployee()" style="width:100%">Login as Employee</button>
-<div class="fz-guest-report-box">
-  <b>View My Reports - No Sign Up Required</b>
-  <div class="small" style="margin-top:5px">If a Manager/Owner sent you a private report link, open that link to view your work reports without creating an account.</div>
-  <div style="height:10px"></div>
-  <label>Private Report Code</label>
-  <input id="guestReportCode" autocomplete="off" placeholder="Paste report code">
-  <div style="height:10px"></div>
-  <button class="btn light" type="button" style="width:100%" onclick="openGuestReportCode()">View My Reports</button>
-</div>
-<div class="signup-box">
+
+
+<div class="fz-unified-auth">
+  <div class="fz-auth-tabs">
+    <button class="fz-auth-tab on" id="fzLoginTabBtn" type="button" onclick="fzSetAuthTab('login')">LOGIN</button>
+    <button class="fz-auth-tab" id="fzSignupTabBtn" type="button" onclick="fzSetAuthTab('signup')">SIGN UP</button>
+  </div>
+  <div id="fzUnifiedLoginPanel">
+    <div class="login-panel-title">
+      <h3>Welcome Back</h3>
+      <div class="small">Choose your role, then sign in once.</div>
+    </div>
+
+    <label>Login As</label>
+    <select id="fzUnifiedRole" onchange="fzLoginRoleChanged()">
+      <option value="employee">Employee</option>
+      <option value="manager">Manager</option>
+      <option value="owner">Owner</option>
+    <option value="cashier">Cashier</option></select>
+
+    <div id="fzEmployeeIdentityWrap" style="margin-top:12px">
+      <label>Employee Name</label>
+      <select id="fzUnifiedEmployeeName"></select>
+    </div>
+
+    <div id="fzStaffIdentityWrap" class="hidden" style="margin-top:12px">
+      <label>Username</label>
+      <input id="fzUnifiedStaffName" autocomplete="username" placeholder="Enter Manager / Owner username"/>
+    </div>
+
+    <div style="height:10px"></div>
+    <label id="fzSecretLabel">4-digit PIN</label>
+    <input id="fzUnifiedSecret" autocomplete="current-password" type="password" placeholder="Enter PIN"/>
+    <label class="show-password-row">
+      <input type="checkbox" onchange="togglePasswordVisibility('fzUnifiedSecret',this.checked)"/>
+      <span>Show password</span>
+    </label>
+
+    <label class="remember-me-row hidden" id="fzUnifiedRememberRow" style="margin-top:14px">
+      <input id="fzUnifiedRemember" type="checkbox"/>
+      <span><b>Remember me on this device</b><small>Manager / Owner can stay signed in until Logout.</small></span>
+    </label>
+
+    <div style="height:14px"></div>
+    <button class="btn gold" id="fzUnifiedLoginBtn" type="button" onclick="fzUnifiedLogin()" style="width:100%">LOGIN</button><div id="fzP21AuthNote">Secure login uses the original app authentication and role validation.</div>
+  </div>
+  <div class="hidden" id="fzUnifiedSignupPanel">
+    <div class="login-panel-title">
+      <h3>Employee Sign Up</h3>
+      <div class="small">Register here, then wait for Manager / Owner approval.</div>
+    </div>
+    <div class="signup-box">
 <div class="small" style="margin-bottom:8px"><b>First time?</b> Register yourself, then wait for Manager approval.</div>
 <button class="btn light" onclick="toggleSignup(true)" style="width:100%">Employee Sign Up</button>
 <div class="hidden" id="signupPanel" style="margin-top:12px">
@@ -1332,6 +1706,37 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 </div>
 </div>
 </div>
+  </div>
+</div>
+<div class="fz-auth-backend hidden" aria-hidden="true">
+<div id="employeeLogin">
+<label>Employee Name</label>
+<select id="employeeUsername"></select>
+<div style="height:10px"></div>
+<label>4-digit PIN</label>
+<input id="employeePin" inputmode="numeric" maxlength="4" placeholder="••••" type="password"/><label class="show-password-row"><input onchange="togglePasswordVisibility('employeePin',this.checked)" type="checkbox"/><span>Show password</span></label>
+<div style="height:14px"></div>
+<button class="btn gold" onclick="loginEmployee()" style="width:100%">Login as Employee</button>
+<div class="fz-guest-report-box">
+  <b>View My Reports - No Sign Up Required</b>
+  <div class="small" style="margin-top:5px">If a Manager/Owner sent you a private report link, open that link to view your work reports without creating an account.</div>
+  <div style="height:10px"></div>
+  <label>Private Report Code</label>
+  <input id="guestReportCode" autocomplete="off" placeholder="Paste report code">
+  <div style="height:10px"></div>
+  <button class="btn light" type="button" style="width:100%" onclick="openGuestReportCode()">View My Reports</button>
+</div>
+
+</div>
+<div class="hidden" id="hostCashierLogin">
+<div class="notice info" style="margin-bottom:12px"><b>Host / Cashier Tip</b><br/>Daily AM / PM tip split. Manager / Owner access only.</div>
+<label>Username</label><input autocomplete="username" id="hostCashierUsername"/>
+<div style="height:10px"></div><label>Password</label><input autocomplete="current-password" id="hostCashierPassword" type="password"/><label class="show-password-row"><input onchange="togglePasswordVisibility('hostCashierPassword',this.checked)" type="checkbox"/><span>Show password</span></label>
+<label class="remember-me-row" style="margin-top:14px">
+<input id="hostCashierRememberMe" type="checkbox"/>
+<span><b>Remember me on this device</b><small>Stay signed in to Host / Cashier Tip.</small></span>
+</label>
+<div style="height:14px"></div><button class="btn green" onclick="loginHostCashierWorkspace()" style="width:100%">Open Host / Cashier Tip</button>
 </div>
 <div class="hidden" id="hourlyV1Login">
 <div class="notice info" style="margin-bottom:12px"><b>Tip Calculation</b><br/>Work on several employees at the same time. Save partial pages and continue later.</div>
@@ -1356,12 +1761,9 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 </label>
 <div style="height:14px"></div><button class="btn gold" onclick="loginStaff()" style="width:100%">Login</button>
 </div>
+</div><!-- /fz-auth-backend -->
 <div class="notice" style="margin-bottom:12px"><b>Shared device security:</b> every new tab, refresh, or reopened link requires a fresh login. Sharing this website link does not share the Owner/Manager account.</div>
 <div class="small" id="loginMessage" style="margin-top:12px"></div>
-<div class="login-sound-test">
-<button class="btn light" onclick="primeLoginWelcomeAudio();setTimeout(()=&gt;playSuccessfulLoginWelcome(),60)" type="button">🔊 TEST WELCOME SOUND</button>
-<span class="small">If your phone blocks audio, tap this once.</span>
-</div>
 </div>
 </div>
 <div class="hidden" id="serverRoomBoard" style="min-height:100vh;background:#07111f;color:white;padding:calc(22px + env(safe-area-inset-top)) 18px calc(22px + env(safe-area-inset-bottom))">
@@ -1373,22 +1775,18 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 </div>
 <button class="btn light" onclick="closeServerRoomBoard()">Back</button>
 </div>
-<div class="notice" id="boardSetup" style="background:#fff7df;color:#7a5200;margin-bottom:16px">
-      Tap <b>Enable Board + Sound + Voice</b> to connect the board. Then tap <b>Enable Audio + Voice</b> once each browser session so Chrome allows automatic announcements.
-      <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
-<button class="btn gold" onclick="enableBoardHotfix()" type="button">Enable Board + Sound + Voice</button>
-<button class="btn light" onclick="testServerRoomChime()" type="button">Test Chime</button><button class="btn light" onclick="testBoardVoice()" type="button">Test Voice</button>
-</div>
-<div class="small" id="boardError" style="margin-top:10px;color:#a61b1b;font-weight:700"></div>
-</div>
-<div class="notice good hidden" id="boardStatus" style="margin-bottom:16px">
+<div class="notice" id="boardSetup" style="background:#eef7ff;color:#0e4e73;margin-bottom:16px">
+      <b>Server Room Board:</b> visual Money Ready alerts only. All voice and sound features are disabled.
+      <div class="small" id="boardError" style="margin-top:10px;color:#a61b1b;font-weight:700"></div>
+    </div>
+    <div class="notice good hidden" id="boardStatus" style="margin-bottom:16px">
 <b>Board is active.</b> Waiting for Money Ready...
       <div class="small" style="margin-top:4px;opacity:.72">Picked Up removes the employee immediately. If not picked up, the Server Room card automatically disappears after 30 minutes.</div>
 <div class="small" id="boardLiveInfo" style="margin-top:6px"></div>
 <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
-<button class="btn gold" onclick="unlockServerRoomAudio()" type="button">Enable Audio + Voice</button>
-<button class="btn light" onclick="testServerRoomAudio()" type="button">Test Sound</button>
-<button class="btn light" onclick="testBoardVoice()" type="button">Test Voice</button>
+
+
+
 </div>
 <div class="small" id="boardAudioStatus" style="margin-top:8px;font-weight:800"></div>
 </div>
@@ -1543,9 +1941,9 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div class="hidden" id="fzRemovedCards"></div></div>
 <div class="hv1-box hidden" id="hv1BarBox">
 <div class="hv1-title">
-<div><h3>BAR Tip-Out Center</h3><p>Same 0.6% formulas. Enter each server's Grand Total by bar checkpoint.</p><div class="hv1-bar-save-note">Bartender selections + Grand Totals are backed up with the Batch Workspace.</div></div>
+<div><h3>BAR Tip-Out Center</h3><p>Same 0.6% formulas. Select Today’s Team once, then enter each server’s cumulative Grand Total directly in BAR AM / 2–4 / PM.</p><div class="hv1-bar-save-note">Bartender selections + Grand Totals are backed up with the Batch Workspace.</div></div>
 <div class="actions">
-<button class="btn light" onclick="hv1BackFromBar()" type="button">← Team Board</button>
+<button class="btn light" onclick="hv1BackFromBar()" type="button">BACK TO TEAM BOARD</button>
 <button class="btn green" onclick="hv1SaveBarCenter()" type="button">Save BAR</button>
 <button class="btn red" onclick="hv1ClearAllBar()" type="button">Clear All</button>
 </div>
@@ -1561,7 +1959,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div class="hv1-title">
 <div><h3>Tip Calculation — Daily Report</h3><p>This report stays inside Tip Calculation.</p></div>
 <div class="actions">
-<button class="btn light" onclick="hv1CloseSmallReport()" type="button">← Team Board</button>
+<button class="btn light" onclick="hv1CloseSmallReport()" type="button">BACK TO TEAM BOARD</button>
 <button class="btn dark" onclick="hv1OpenBarCenterFromReport()" type="button">BAR</button>
 </div>
 </div>
@@ -1581,7 +1979,106 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <button class="staff-menu-btn ownerOnly" data-stab="deletedItems"><span>Deleted / Undo</span><span class="badge" id="deletedItemsBadge">0</span></button>
 <button class="staff-menu-btn" data-stab="analytics">Chart</button>
 <button class="staff-menu-btn" data-stab="setup">Setup</button>
+
 </div>
+<section class="staffPanel hidden" id="hostCashierTip">
+  <div class="hc-shell">
+    <div class="hc-hero">
+      <div>
+        <div class="hc-kicker">HOST / CASHIER TIP</div>
+        <h2>Daily Tip Split</h2>
+        <p>Select today’s team first, then enter AM / PM cash and credit tips.</p>
+      </div>
+      <div class="hc-date-card">
+        <label>Work Date</label>
+        <input id="hcDate" type="date"/>
+      </div>
+    </div>
+
+    <div class="hc-card">
+      <div class="hc-title-row">
+        <div><h3>1. Select Today’s Host / Cashier Team</h3><p>Choose each employee and shift. DOUBLE counts in both AM and PM.</p></div>
+        <button class="btn green" id="hcCreateTeamBtn" type="button">Create / Update Team</button>
+      </div>
+      <div id="hcRoster" class="hc-roster"></div>
+    </div>
+
+    <div id="hcBoard" class="hidden">
+      <div class="hc-card">
+        <div class="hc-title-row">
+          <div><h3>2. Enter Tip Pools</h3><p>Tip per employee updates automatically.</p></div>
+          <div class="actions">
+            <button class="btn green" id="hcSaveBtn" type="button">Save</button>
+            <button class="btn light" id="hcReloadBtn" type="button">Reload</button>
+          </div>
+        </div>
+
+        <div class="hc-pool-grid">
+          <div class="hc-pool hc-am">
+            <h4>AM</h4>
+            <label>Cash AM</label><input id="hcCashAM" inputmode="decimal" type="number" step="0.01" min="0" value="0"/>
+            <label>Credit AM</label><div class="hc-credit-entry"><input id="hcCreditAM" inputmode="decimal" type="number" step="0.01" min="0" value="0" readonly onclick="window.hostCashierCreditCalc?.('AM')"/><button class="btn hc-calc-btn" id="hcCreditAMCalcBtn" type="button" onclick="window.hostCashierCreditCalc?.('AM')">🧮 Add Accounts</button></div>
+            <div class="hc-kpis">
+              <div><span>Total AM Pool</span><b id="hcPoolAM">$0.00</b></div>
+              <div><span>Employees</span><b id="hcCountAM">0</b></div>
+              <div><span>Tip / Employee</span><b id="hcEachAM">$0.00</b></div>
+            </div>
+          </div>
+          <div class="hc-pool hc-pm">
+            <h4>PM</h4>
+            <label>Cash PM</label><input id="hcCashPM" inputmode="decimal" type="number" step="0.01" min="0" value="0"/>
+            <label>Credit PM</label><div class="hc-credit-entry"><input id="hcCreditPM" inputmode="decimal" type="number" step="0.01" min="0" value="0" readonly onclick="window.hostCashierCreditCalc?.('PM')"/><button class="btn hc-calc-btn" id="hcCreditPMCalcBtn" type="button" onclick="window.hostCashierCreditCalc?.('PM')">🧮 Add Accounts</button></div>
+            <div class="hc-kpis">
+              <div><span>Total PM Pool</span><b id="hcPoolPM">$0.00</b></div>
+              <div><span>Employees</span><b id="hcCountPM">0</b></div>
+              <div><span>Tip / Employee</span><b id="hcEachPM">$0.00</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hc-shift-grid">
+        <div class="hc-card">
+          <div class="hc-shift-head"><h3>Employee AM</h3><span>(Cash AM + Credit AM) ÷ AM employee count</span></div>
+          <div id="hcRowsAM" class="hc-rows"></div>
+        </div>
+        <div class="hc-card">
+          <div class="hc-shift-head"><h3>Employee PM</h3><span>(Cash PM + Credit PM) ÷ PM employee count</span></div>
+          <div id="hcRowsPM" class="hc-rows"></div>
+        </div>
+      </div>
+
+
+      <div class="hc-card hc-combined-card">
+        <div class="hc-title-row">
+          <div>
+            <h3>💰 Combined Employee Payout</h3>
+            <p>If the same employee works AM + PM, both shift tips are combined into one payment.</p>
+          </div>
+          <div class="hc-combined-total"><span>Total Daily Pool</span><b id="hcCombinedDailyTotal">$0.00</b></div>
+        </div>
+        <div class="hc-combined-table-wrap">
+          <table class="hc-combined-table">
+            <thead><tr><th>Employee</th><th>AM</th><th>PM</th><th>Total to Pay</th></tr></thead>
+            <tbody id="hcCombinedRows"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="hc-card">
+        <div class="hc-title-row">
+          <div><h3>Report & Sharing</h3><p>Saved report includes AM / PM totals, split values and employee signatures.</p></div>
+        </div>
+        <div class="actions hc-actions">
+          <button class="btn light" id="hcXlsBtn" type="button">Download XLS</button>
+          <button class="btn dark" id="hcPdfBtn" type="button">Download PDF</button>
+          <button class="btn light" id="hcEmailBtn" type="button">Send to Email</button>
+          <button class="btn green" id="hcWhatsAppBtn" type="button">Send to WhatsApp</button>
+        </div>
+        <div id="hcSaveStatus" class="small" style="margin-top:10px"></div>
+      </div>
+    </div>
+  </div>
+</section>
 <section class="staffPanel" id="pending">
 <div class="card"><h2>Pending Employee Submissions</h2><div id="pendingList"></div></div>
 </section>
@@ -1633,7 +2130,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div><label>Date</label><input id="hDate" type="date"/></div>
 <div><label>Employee</label><select id="hEmployee"></select></div>
 <div><label>Position</label><select id="hPosition"><option>Server</option><option>Bartender</option></select></div>
-<div><label>Shift</label><select id="hShift"><option>AM</option><option>PM</option><option>DOUBLE</option></select></div>
+<div><label>Shift</label><select id="hShift"><option>AM</option><option>PM</option><option>DOUBLE</option><option value="LONG">LONG</option></select></div>
 <div><label>Busser AM</label><select id="hBusserAM"><option value="WITHOUT">WITHOUT BUSSER AM</option><option value="WITH">WITH BUSSER AM</option></select></div>
 <div><label>Meal ($)</label><input id="hMeal" step=".01" type="number" value="0"/></div>
 </div>
@@ -2145,13 +2642,15 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <script>
 (function(){
   window.setLoginMode = function(mode,roleHint){
-    var emp=document.getElementById('employeeLogin'), staff=document.getElementById('staffLogin'), tip=document.getElementById('hourlyV1Login');
+    var emp=document.getElementById('employeeLogin'), staff=document.getElementById('staffLogin'), tip=document.getElementById('hourlyV1Login'), hc=document.getElementById('hostCashierLogin');
     if(emp)emp.classList.toggle('hidden',mode!=='employee');
     if(staff)staff.classList.toggle('hidden',mode!=='staff');
     if(tip)tip.classList.toggle('hidden',mode!=='hourlyv1');
-    ['employeeModeBtn','managerModeBtn','cashierModeBtn','ownerModeBtn','hourlyV1ModeBtn','boardModeBtn'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.remove('on');});
+    if(hc)hc.classList.toggle('hidden',mode!=='hostcashier');
+    ['employeeModeBtn','managerModeBtn','cashierModeBtn','ownerModeBtn','hourlyV1ModeBtn','hostCashierModeBtn','boardModeBtn'].forEach(function(id){var el=document.getElementById(id);if(el)el.classList.remove('on');});
     if(mode==='employee')document.getElementById('employeeModeBtn')?.classList.add('on');
     if(mode==='hourlyv1')document.getElementById('hourlyV1ModeBtn')?.classList.add('on');
+    if(mode==='hostcashier')document.getElementById('hostCashierModeBtn')?.classList.add('on');
     if(mode==='staff'){
       roleHint=roleHint||'manager';
       document.getElementById(roleHint+'ModeBtn')?.classList.add('on');
@@ -2162,16 +2661,187 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
   };
 })();
 </script>
-<script src="hourly-logic.js"></script>
+<script src="hourly-logic-v13825.js?v=13825"></script>
 <script src="app-v13825.js?v=13825" type="module"></script>
+
+<script id="fzP18SingleLoginScript">
+(function(){
+  const $=id=>document.getElementById(id);
+  let lastRole="";
+  function collectNames(){
+    const src=$("employeeUsername"),dst=$("fzUnifiedEmployeeName");
+    if(!src||!dst)return;
+    const signature=[...src.options].map(o=>o.value+"|"+o.textContent).join("\n");
+    if(dst.dataset.rosterSignature===signature)return;
+    dst.dataset.rosterSignature=signature;
+    const current=dst.value;
+    dst.innerHTML="";
+    [...src.options].forEach(o=>{
+      const v=String(o.value||"").trim(),t=String(o.textContent||"").trim();
+      if(!v || /^select/i.test(t))return;
+      const n=document.createElement("option");n.value=v;n.textContent=t||v;dst.appendChild(n);
+    });
+    if(current && [...dst.options].some(o=>o.value===current))dst.value=current;
+  }
+  window.fzSetAuthTab=function(tab){
+    const login=tab!=="signup";
+    $("fzUnifiedLoginPanel")?.classList.toggle("hidden",!login);
+    $("fzUnifiedSignupPanel")?.classList.toggle("hidden",login);
+    $("fzLoginTabBtn")?.classList.toggle("on",login);
+    $("fzSignupTabBtn")?.classList.toggle("on",!login);
+    if(!login){try{window.toggleSignup?.(true)}catch(e){};$("signupPanel")?.classList.remove("hidden");}
+  };
+  function ensureEmployeeOption(name){
+    const sel=$("employeeUsername"); if(!sel)return;
+    if(![...sel.options].some(o=>o.value===name)){const o=document.createElement("option");o.value=name;o.textContent=name;sel.appendChild(o)}
+    sel.value=name;
+  }
+  function waitForLogin(timeout=2300){return new Promise(resolve=>{const start=Date.now();const t=setInterval(()=>{const ok=$("loginView")?.classList.contains("hidden")&&!$("appView")?.classList.contains("hidden");if(ok||Date.now()-start>timeout){clearInterval(t);resolve(ok)}},90)})}
+  async function employeeAttempt(name,secret){
+    try{window.setLoginMode?.("employee")}catch(e){}
+    ensureEmployeeOption(name);
+    if($("employeePin"))$("employeePin").value=secret;
+    try{await window.loginEmployee?.()}catch(e){console.error("P21 employee login:",e);return false}
+    return waitForLogin(5000);
+  }
+  async function staffAttempt(name,secret,role){
+    try{
+      window.setLoginMode?.("staff",role||"manager");
+    }catch(e){console.warn("P21 set staff role:",e)}
+    if($("staffUsername"))$("staffUsername").value=name;
+    if($("staffPassword"))$("staffPassword").value=secret;
+    if($("staffRememberMe"))$("staffRememberMe").checked=!!$("fzUnifiedRemember")?.checked;
+    try{
+      await window.loginStaff?.();
+    }catch(e){
+      console.error("P21 staff login:",e);
+      return false;
+    }
+    return waitForLogin(5000);
+  }
+  window.fzLoginRoleChanged=function(){
+    const role=String($("fzUnifiedRole")?.value||"employee");
+    const emp=role==="employee";
+    $("fzEmployeeIdentityWrap")?.classList.toggle("hidden",!emp);
+    $("fzStaffIdentityWrap")?.classList.toggle("hidden",emp);
+    $("fzUnifiedRememberRow")?.classList.toggle("hidden",emp);
+    if($("fzSecretLabel"))$("fzSecretLabel").textContent=emp?"4-digit PIN":"Password";
+    if($("fzUnifiedSecret"))$("fzUnifiedSecret").placeholder=emp?"Enter 4-digit PIN":"Enter password";
+
+    // CRITICAL: keep the original app's role state in sync.
+    // The core login code validates the authenticated profile against this selected role.
+    try{
+      if(emp){
+        window.setLoginMode?.("employee");
+      }else{
+        window.setLoginMode?.("staff",role);
+      }
+    }catch(e){console.warn("P21 role sync:",e)}
+
+    if(!emp){
+      const staff=$("fzUnifiedStaffName");
+      if(role==="owner"){
+        if(staff && !staff.value)staff.value="Fred1985";
+      }else if(role==="manager"){
+        if(staff && !staff.value)staff.value="Ekky";
+      }
+    }
+  };
+
+  window.fzUnifiedLogin=async function(){
+    const role=String($("fzUnifiedRole")?.value||"employee");
+    const secret=String($("fzUnifiedSecret")?.value||"");
+    const btn=$("fzUnifiedLoginBtn");
+    if(btn){btn.disabled=true;btn.textContent="SIGNING IN..."}
+    try{
+      let ok=false;
+      if(role==="employee"){
+        const name=String($("fzUnifiedEmployeeName")?.value||"").trim();
+        if(!name||!secret){if($("loginMessage"))$("loginMessage").textContent="Select your employee name and enter your PIN.";return}
+        ok=await employeeAttempt(name,secret);
+      }else{
+        const name=String($("fzUnifiedStaffName")?.value||"").trim();
+        if(!name||!secret){if($("loginMessage"))$("loginMessage").textContent=`Enter your ${role} username and password.`;return}
+        ok=await staffAttempt(name,secret,role);
+      }
+      if(!ok && $("loginMessage") && !$("loginMessage").textContent){
+        $("loginMessage").textContent="Login failed. Check your username / PIN / password.";
+      }
+    }finally{
+      if(btn){btn.disabled=false;btn.textContent="LOGIN"}
+    }
+  };
+  function injectHomeButton(){
+    if($("fzHomeBtn"))return;
+    const logout=[...document.querySelectorAll("#top button")].find(b=>/logout/i.test(b.textContent||""));if(!logout)return;
+    const b=document.createElement("button");b.id="fzHomeBtn";b.type="button";b.className="btn light";b.style.padding="7px 10px";b.textContent="Home";b.onclick=()=>window.fzOpenRoleHome();logout.parentNode.insertBefore(b,logout);
+  }
+  function ensureRoleHome(){
+    if($("fzRoleHome"))return $("fzRoleHome");
+    const wrap=$("appView")?.querySelector(".wrap");if(!wrap)return null;
+    const sec=document.createElement("section");sec.id="fzRoleHome";sec.className="fz-role-home hidden";wrap.insertBefore(sec,wrap.firstChild);return sec;
+  }
+  function hideOperational(){
+    if(document.body.classList.contains("hourly-v1-editing"))window.hv1SaveStay?.();
+    $("employeeApp")?.classList.add("hidden");$("staffApp")?.classList.add("hidden");$("hourlyV1Workspace")?.classList.add("hidden");$("hostCashierTip")?.classList.add("hidden");
+    document.querySelectorAll(".staffPanel").forEach(x=>x.classList.add("hidden"));
+    document.body.classList.remove("hourly-v1-mode","hourly-v1-editing","hourly-v1-small-report","hourly-workspace-mode","small-report-fullscreen");
+    document.documentElement.classList.remove("small-report-fullscreen");
+  }
+  window.fzOpenRoleHome=function(){
+    const role=String(window.__getCurrentRole?.()||"");
+    if(role==="employee"){$("fzRoleHome")?.classList.add("hidden");$("staffApp")?.classList.add("hidden");$("employeeApp")?.classList.remove("hidden");return}
+    if(!["manager","owner"].includes(role))return;
+    hideOperational();const home=ensureRoleHome();if(!home)return;const isOwner=role==="owner";
+    home.innerHTML=`<div class="fz-role-home-hero"><div class="eyebrow">${isOwner?"OWNER ACCESS":"MANAGER ACCESS"}</div><h2>${isOwner?"Owner Home":"Manager Home"}</h2><p>Login once, then move between your authorized workspaces without signing in again.</p></div><div class="fz-role-menu"><button type="button" onclick="fzOpenManagerTools()"><span class="icon">${isOwner?"★":"🧾"}</span><b>${isOwner?"Owner / Manager":"Manager"} Tools</b><small>Approvals, ${isOwner?"Users, History, Deleted / Undo, ":""}Chart and Setup.</small></button><button type="button" onclick="fzOpenHostCashier()"><span class="icon">💵</span><b>Host / Cashier Tip</b><small>AM / PM daily tip split, signatures and reports.</small></button><button type="button" onclick="fzOpenTipCalculation()"><span class="icon">🧮</span><b>Tip Calculation</b><small>Team Board, BAR Center and Daily Report.</small></button></div>`;
+    home.classList.remove("hidden");document.body.classList.add("fz-staff-logged-in");window.scrollTo({top:0,left:0,behavior:"instant"});
+  };
+  window.fzOpenManagerTools=function(){
+    const role=String(window.__getCurrentRole?.()||"");if(!["manager","owner"].includes(role))return;
+    $("fzRoleHome")?.classList.add("hidden");document.body.classList.remove("hourly-v1-mode","hourly-v1-editing","hourly-v1-small-report","hourly-workspace-mode");
+    $("hourlyV1Workspace")?.classList.add("hidden");$("staffApp")?.classList.remove("hidden");document.querySelectorAll(".staffPanel").forEach(x=>x.classList.add("hidden"));
+    const target=document.querySelector('[data-stab="approvals"]');if(target)target.click();else $("approvals")?.classList.remove("hidden");window.scrollTo({top:0,left:0,behavior:"instant"});
+  };
+  window.fzOpenHostCashier=async function(){
+    const role=String(window.__getCurrentRole?.()||"");if(!["manager","owner"].includes(role))return;
+    $("fzRoleHome")?.classList.add("hidden");$("staffApp")?.classList.remove("hidden");
+    try{if(window.hostCashierOpenWorkspace)await window.hostCashierOpenWorkspace();else{document.querySelectorAll(".staffPanel").forEach(x=>x.classList.add("hidden"));$("hostCashierTip")?.classList.remove("hidden")}}
+    catch(e){alert("Host / Cashier Tip could not open: "+(e.message||e))}
+    window.scrollTo({top:0,left:0,behavior:"instant"});
+  };
+  window.fzOpenTipCalculation=async function(){
+    const role=String(window.__getCurrentRole?.()||"");if(!["manager","owner"].includes(role))return;
+    $("fzRoleHome")?.classList.add("hidden");$("staffApp")?.classList.remove("hidden");document.querySelectorAll(".staffPanel").forEach(x=>x.classList.add("hidden"));
+    document.body.classList.add("hourly-v1-mode");document.body.classList.remove("hourly-v1-editing","hourly-v1-small-report","hourly-workspace-mode");$("hourly")?.classList.add("hidden");$("hourlyV1Workspace")?.classList.remove("hidden");
+    if($("hv1Date")&&!$("hv1Date").value){const d=new Date(),z=n=>String(n).padStart(2,"0");$("hv1Date").value=`${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`}
+    try{await window.hv1EnterWorkspace?.()}catch(e){console.warn("Tip Calculation open:",e)}
+    window.scrollTo({top:0,left:0,behavior:"instant"});
+  };
+  function handleLoggedIn(){
+    injectHomeButton();const role=String(window.__getCurrentRole?.()||"").toLowerCase();if(!role||role==="board")return;
+    if(role==="employee"){document.body.classList.remove("fz-staff-logged-in");$("fzRoleHome")?.classList.add("hidden");$("staffApp")?.classList.add("hidden");$("employeeApp")?.classList.remove("hidden")}
+    else if(role==="manager"||role==="owner"){if(lastRole!==role||$("fzRoleHome")?.classList.contains("hidden"))setTimeout(()=>window.fzOpenRoleHome(),120)}
+    lastRole=role;
+  }
+  document.addEventListener("DOMContentLoaded",()=>{
+    collectNames();setInterval(collectNames,1200);window.fzSetAuthTab("login");injectHomeButton();
+    $("fzUnifiedSecret")?.addEventListener("keydown",e=>{if(e.key==="Enter")window.fzUnifiedLogin()});
+    $("fzUnifiedStaffName")?.addEventListener("keydown",e=>{if(e.key==="Enter")$("fzUnifiedSecret")?.focus()});
+    window.fzLoginRoleChanged();
+    const top=$("top");if(top)new MutationObserver(()=>{if(!top.classList.contains("hidden"))setTimeout(handleLoggedIn,80);else{document.body.classList.remove("fz-staff-logged-in");lastRole="";$("fzRoleHome")?.classList.add("hidden")}}).observe(top,{attributes:true,attributeFilter:["class"]});
+    const pill=$("rolePill");if(pill)new MutationObserver(handleLoggedIn).observe(pill,{childList:true,subtree:true});
+  });
+})();
+</script>
+
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13825.js?v=13825a',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13825.js?v=13825',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
 </script>
-<script src="./board-hotfix.js?v=1322" type="module"></script>
+<script src="./board-hotfix-v13825.js?v=13825" type="module"></script>
 <div class="hidden" id="globalMoneyReadyDialog" style="position:fixed;inset:0;z-index:120000;background:rgba(3,13,27,.82);display:none;align-items:center;justify-content:center;padding:20px">
 <div style="width:min(720px,94vw);background:white;color:#10213c;border-radius:24px;padding:28px;text-align:center;box-shadow:0 30px 90px rgba(0,0,0,.42)">
 <div style="font-size:15px;letter-spacing:.15em;font-weight:900;color:#0a7a43">MONEY READY</div>
@@ -2185,7 +2855,7 @@ if('serviceWorker' in navigator){
 </div>
 </div>
 </div>
-<audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
+
 <div class="hidden" id="pickupSignatureModal" style="position:fixed;inset:0;background:rgba(3,13,27,.72);z-index:99999;display:none;align-items:center;justify-content:center;padding:18px">
 <div style="background:white;color:#0b1830;border-radius:20px;width:min(760px,96vw);padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.35)">
 <h2 style="margin:0 0 6px">Employee / Server Signature <span style="font-size:12px;opacity:.45">v12.1.4</span></h2>
@@ -2204,7 +2874,7 @@ if('serviceWorker' in navigator){
 </div>
 </div>
 </div>
-<script src="simple-ui-v13825.js?v=13825a"></script>
+<script src="simple-ui-v13824p1.js?v=138241a"></script>
 <div class="modal hidden" id="employeeDirectoryModal">
 <div class="modalbox" style="max-width:560px">
 <h3 id="employeeDirectoryModalTitle">Add Employee</h3>
@@ -2258,6 +2928,43 @@ if('serviceWorker' in navigator){
 <div class="actions small-report-detail-actions" id="smallReportDetailActions"></div>
 </div>
 </div>
+<div id="hcCreditCalcModal" class="hc-modal hidden">
+  <div class="hc-modal-card hc-credit-modal-card">
+    <div class="hc-title-row">
+      <div>
+        <h3 id="hcCreditCalcTitle">Credit Tip Calculator</h3>
+        <p>Enter each account separately. Press OK to send the total into Credit AM / PM.</p>
+      </div>
+      <button class="btn light" id="hcCreditCalcClose" type="button">Close</button>
+    </div>
+    <div id="hcCreditCalcRows" class="hc-credit-calc-rows"></div>
+    <div class="hc-credit-calc-footer">
+      <button class="btn light" id="hcCreditCalcAdd" type="button">+ Add Account</button>
+      <div class="hc-credit-calc-total"><span>Total Credit</span><b id="hcCreditCalcTotal">$0.00</b></div>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn light" id="hcCreditCalcCancel" type="button">Cancel</button>
+      <button class="btn green" id="hcCreditCalcOk" type="button">OK — Use This Total</button>
+    </div>
+  </div>
+</div>
+
+<div id="hcSignatureModal" class="hc-modal hidden">
+  <div class="hc-modal-card">
+    <div class="hc-title-row">
+      <div><h3 id="hcSignatureTitle">Employee Signature</h3><p>Sign inside the box, then Save Signature.</p></div>
+      <button class="btn light" id="hcSigClose" type="button">Close</button>
+    </div>
+    <canvas id="hcSignatureCanvas" width="760" height="260"></canvas>
+    <div class="actions" style="margin-top:12px">
+      <button class="btn light" id="hcSigClear" type="button">Clear</button>
+      <button class="btn green" id="hcSigSave" type="button">Save Signature</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="host-cashier-tip-v13825.js?v=13825"></script>
+<audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
 <style>
@@ -2268,4 +2975,599 @@ if('serviceWorker' in navigator){
 <style>
 /* V13.4.5 — Employee Check Tip only */
 #employeeBottom { display:none !important; }
+</style>
+
+
+<style id="hcP11ModalPlacementFix">
+/* P11 — hard isolate Host/Cashier dialogs from Tip Calculation document flow */
+#hcCreditCalcModal,
+#hcSignatureModal{
+  position:fixed!important;
+  inset:0!important;
+  z-index:2147482500!important;
+  width:100vw!important;
+  height:100vh!important;
+  margin:0!important;
+  padding:20px!important;
+  box-sizing:border-box!important;
+  align-items:center!important;
+  justify-content:center!important;
+  overflow:auto!important;
+  background:rgba(4,17,30,.76)!important;
+  backdrop-filter:blur(7px)!important;
+}
+#hcCreditCalcModal.hidden,
+#hcSignatureModal.hidden{
+  display:none!important;
+}
+#hcCreditCalcModal:not(.hidden),
+#hcSignatureModal:not(.hidden){
+  display:flex!important;
+}
+#hcCreditCalcModal>.hc-modal-card,
+#hcSignatureModal>.hc-modal-card{
+  position:relative!important;
+  width:min(760px,96vw)!important;
+  max-height:90vh!important;
+  overflow:auto!important;
+  margin:auto!important;
+  padding:22px!important;
+  border:1px solid #d8e5ee!important;
+  border-radius:24px!important;
+  background:#fff!important;
+  box-shadow:0 28px 80px rgba(0,0,0,.34)!important;
+}
+#hcSignatureModal>.hc-modal-card{
+  width:min(900px,96vw)!important;
+}
+#hcSignatureCanvas{
+  display:block!important;
+  width:100%!important;
+  height:260px!important;
+  min-height:260px!important;
+  margin-top:14px!important;
+  border:2px solid #b8cbd8!important;
+  border-radius:14px!important;
+  background:#fff!important;
+  touch-action:none!important;
+}
+</style>
+
+
+<style id="hcP12ButtonFixStyle">
+#hostCashierTip .hc-calc-btn{
+  cursor:pointer!important;
+  pointer-events:auto!important;
+  user-select:none!important;
+}
+#hostCashierTip .hc-calc-btn:active{
+  transform:translateY(1px) scale(.99)!important;
+}
+#hostCashierTip #hcCreditAM,
+#hostCashierTip #hcCreditPM{
+  cursor:pointer!important;
+  pointer-events:auto!important;
+}
+</style>
+
+
+<style id="hcP13SignatureFixStyle">
+#hostCashierTip .hc-sign-btn{cursor:pointer!important;pointer-events:auto!important;position:relative!important;z-index:2!important}
+#hostCashierTip .hc-sign-btn:active{transform:translateY(1px)!important}
+</style>
+
+
+<style id="fzP14FullAppDesignSystem">
+/* =========================================================
+   V13.8.24-P14 — FULL APP UI DESIGN SYSTEM
+   VISUAL / UX LAYER ONLY. NO CALCULATION FORMULAS CHANGED.
+   ========================================================= */
+
+:root{
+  --fz-navy:#0b2340;
+  --fz-navy2:#123d61;
+  --fz-blue:#267fe7;
+  --fz-cyan:#33b6d8;
+  --fz-gold:#f3b53e;
+  --fz-gold-soft:#fff2c8;
+  --fz-pm-soft:#eaf4ff;
+  --fz-green:#13a261;
+  --fz-green-soft:#e8f8ef;
+  --fz-red:#df4545;
+  --fz-red-soft:#fff0f0;
+  --fz-purple:#7653df;
+  --fz-purple-soft:#f1edff;
+  --fz-teal:#11879a;
+  --fz-ink:#102a43;
+  --fz-muted:#66788b;
+  --fz-line:#d9e6ef;
+  --fz-surface:#ffffff;
+  --fz-bg:#eef6fb;
+  --fz-radius:20px;
+  --fz-shadow:0 12px 30px rgba(15,51,77,.10);
+}
+
+html{background:var(--fz-bg)!important}
+body{
+  background:
+    radial-gradient(circle at 6% 4%,rgba(50,177,218,.10),transparent 25%),
+    radial-gradient(circle at 94% 3%,rgba(245,186,63,.11),transparent 27%),
+    linear-gradient(180deg,#f6fbfe,#edf5fa 55%,#f8fbfd)!important;
+  color:var(--fz-ink)!important;
+}
+
+/* Typography */
+body,button,input,select,textarea{font-family:Arial,Helvetica,sans-serif!important}
+h1,h2,h3,h4,.brand-title,.login-title{letter-spacing:-.025em!important}
+label{font-weight:800!important;color:#40576c!important}
+.small,.muted,.sub,.hint{color:var(--fz-muted)!important}
+
+/* Main surfaces */
+.card,.panel,.box,.staffPanel>div,.employee-card,.report-card,.login-card,
+.hv1-card,.hv1-panel,.bar-card,.money-card{
+  border-color:var(--fz-line)!important;
+}
+.card,.panel,.box,.employee-card,.report-card,.hv1-card,.bar-card,.money-card{
+  border-radius:var(--fz-radius)!important;
+  box-shadow:var(--fz-shadow)!important;
+}
+
+/* Header */
+.topbar,.app-header,.staff-header,#appHeader{
+  background:linear-gradient(115deg,#091d36,#123c5e 68%,#174f6d)!important;
+  color:#fff!important;
+  box-shadow:0 10px 28px rgba(8,31,52,.18)!important;
+}
+.topbar button,.app-header button,.staff-header button{border-radius:13px!important}
+
+/* Buttons: consistent meaning by color */
+.btn,button{
+  border-radius:13px!important;
+  font-weight:850!important;
+  transition:transform .14s ease,box-shadow .14s ease,filter .14s ease!important;
+}
+.btn:hover,button:hover{filter:brightness(1.02)}
+.btn:active,button:active{transform:translateY(1px)}
+.btn.green,.green{box-shadow:0 8px 18px rgba(19,162,97,.17)}
+.btn.gold,.gold{box-shadow:0 8px 18px rgba(243,181,62,.17)}
+.btn.dark,.dark{box-shadow:0 8px 18px rgba(11,35,64,.15)}
+button[style*="red"],.danger,.btn.danger{box-shadow:0 8px 18px rgba(223,69,69,.14)!important}
+
+/* Inputs */
+input,select,textarea{
+  border-radius:13px!important;
+  border:1px solid #cfdde7!important;
+  background:#fff!important;
+  box-shadow:inset 0 2px 5px rgba(18,50,72,.04)!important;
+}
+input:focus,select:focus,textarea:focus{
+  border-color:#45a9d1!important;
+  box-shadow:0 0 0 3px rgba(69,169,209,.13)!important;
+  outline:none!important;
+}
+
+/* Login/home: make each role visually distinct */
+.login-role-btn,.role-card,.home-mode-card{
+  border-radius:20px!important;
+  border:1px solid #d6e5ee!important;
+  background:linear-gradient(145deg,#fff,#f3f8fb)!important;
+  box-shadow:0 10px 24px rgba(18,54,79,.08)!important;
+}
+.login-role-btn:hover,.role-card:hover,.home-mode-card:hover{
+  transform:translateY(-2px)!important;
+  box-shadow:0 15px 30px rgba(18,54,79,.12)!important;
+}
+#employeeModeBtn{box-shadow:inset 0 5px 0 #7552d8,0 10px 24px rgba(18,54,79,.08)!important}
+#managerModeBtn{box-shadow:inset 0 5px 0 #267fe7,0 10px 24px rgba(18,54,79,.08)!important}
+#ownerModeBtn{box-shadow:inset 0 5px 0 #f3b53e,0 10px 24px rgba(18,54,79,.08)!important}
+#tipCalculationModeBtn{box-shadow:inset 0 5px 0 #12a7a1,0 10px 24px rgba(18,54,79,.08)!important}
+#hostCashierModeBtn{box-shadow:inset 0 5px 0 #13a261,0 10px 24px rgba(18,54,79,.08)!important}
+#serverRoomModeBtn{box-shadow:inset 0 5px 0 #e9a52b,0 10px 24px rgba(18,54,79,.08)!important}
+
+/* Staff/Owner navigation */
+.staff-menu,.staff-tabs,.owner-tabs,.employee-tabs,.hv1-nav{
+  gap:8px!important;
+}
+.staff-menu-btn,.staff-tab,.owner-tab,.employee-tab,.hv1-nav button{
+  border-radius:13px!important;
+  background:#eef4f8!important;
+  color:#183750!important;
+}
+.staff-menu-btn.active,.staff-tab.active,.owner-tab.active,.employee-tab.active,.hv1-nav button.active{
+  background:linear-gradient(135deg,#0d3152,#176489)!important;
+  color:#fff!important;
+  box-shadow:0 8px 18px rgba(18,78,111,.18)!important;
+}
+
+/* Tip Calculation / Team Board */
+#hv1TeamBoard,.hv1-team-board,.team-board{
+  background:linear-gradient(180deg,#fff,#f8fbfd)!important;
+}
+.hv1-team-card,.team-card{
+  border-radius:18px!important;
+  box-shadow:0 9px 20px rgba(18,53,76,.08)!important;
+}
+.hv1-team-card:hover,.team-card:hover{transform:translateY(-2px)!important}
+.hv1-card-status,.status-pill,.badge{
+  border-radius:999px!important;
+  font-weight:900!important;
+}
+
+/* BAR: strong visual hierarchy */
+[id*="bar" i] .card,[class*="bar-" i].card,.bar-card{
+  border-radius:20px!important;
+}
+.bar-am,.barAM,.bar-period-am{
+  background:linear-gradient(145deg,#fffdf7,#fff1c7)!important;
+  border-color:#efd188!important;
+}
+.bar-24,.bar24,.bar-period-24{
+  background:linear-gradient(145deg,#f7fcff,#e8f7fb)!important;
+  border-color:#b8dfe9!important;
+}
+.bar-pm,.barPM,.bar-period-pm{
+  background:linear-gradient(145deg,#f8fbff,#e7f2ff)!important;
+  border-color:#bad6f0!important;
+}
+
+/* Make BAR sales checkboxes/toggles hard to miss */
+input[type="checkbox"]{
+  width:24px!important;height:24px!important;accent-color:#1688b8!important;
+}
+.bar-sales-check input[type="checkbox"],
+[id*="bar" i] input[type="checkbox"]{
+  width:30px!important;height:30px!important;
+}
+.bar-sales-check:has(input:checked){
+  background:linear-gradient(145deg,#e9f8ff,#dff3fb)!important;
+  border-color:#61b8d5!important;
+  box-shadow:0 8px 18px rgba(30,140,178,.13)!important;
+}
+
+/* Hourly adjustment / calculation steps */
+.hv1-step,.hourly-step,.calc-section{
+  border-radius:20px!important;
+  border:1px solid var(--fz-line)!important;
+  box-shadow:0 10px 24px rgba(17,52,76,.07)!important;
+}
+.hv1-step:nth-of-type(odd),.calc-section:nth-of-type(odd){background:linear-gradient(180deg,#fff,#fbfdff)!important}
+.hv1-step:nth-of-type(even),.calc-section:nth-of-type(even){background:linear-gradient(180deg,#f8fbff,#fff)!important}
+
+/* Results */
+.total-paid-out,.money-ready,.final-total,.grand-total{
+  border-radius:18px!important;
+}
+.total-paid-out,.money-ready{
+  background:linear-gradient(145deg,#e8f8ef,#dff4e8)!important;
+  border-color:#b7e1c7!important;
+}
+.grand-total,.final-total{
+  background:linear-gradient(145deg,#fff7dc,#ffedb5)!important;
+  border-color:#edd086!important;
+}
+
+/* Reports */
+table{
+  border-collapse:separate!important;
+  border-spacing:0!important;
+}
+thead th{
+  background:linear-gradient(180deg,#153c5f,#0e2e4b)!important;
+  color:#fff!important;
+  font-weight:900!important;
+}
+tbody tr:nth-child(even){background:#f7fafc!important}
+tbody tr:hover{background:#eef7fb!important}
+
+/* Money Ready */
+#moneyReadyBoard,.money-ready-board{
+  background:linear-gradient(180deg,#f7fff9,#eef9f3)!important;
+}
+.money-ready-card,.money-card{
+  border-left:6px solid var(--fz-green)!important;
+}
+
+/* Delete / recovery */
+.deleted-card,.recovery-card,.recently-deleted{
+  background:linear-gradient(145deg,#fffafa,#fff0f0)!important;
+  border-color:#efc7c7!important;
+}
+.undo,.restore{background:#e9f5ff!important;color:#0b6098!important}
+
+/* Host/Cashier keeps P13 functionality but aligns with full app */
+#hostCashierTip .hc-hero{
+  background:linear-gradient(125deg,#08233d,#0e5573 58%,#d6a22e 145%)!important;
+}
+#hostCashierTip .hc-am{background:linear-gradient(145deg,#fffdf7,#fff1c7)!important}
+#hostCashierTip .hc-pm{background:linear-gradient(145deg,#f7fbff,#e6f2ff)!important}
+#hostCashierTip .hc-combined-card{background:linear-gradient(145deg,#fbfffd,#e9f8ef)!important}
+
+/* Responsive cleanup */
+@media(max-width:900px){
+  .login-role-grid,.home-grid{grid-template-columns:1fr 1fr!important}
+}
+@media(max-width:620px){
+  body{font-size:15px!important}
+  .login-role-grid,.home-grid{grid-template-columns:1fr!important}
+  .btn,button{min-height:46px}
+}
+</style>
+
+
+<style id="fzP15ResponsiveTypography">
+/* =========================================================
+   V13.8.24-P15 — RESPONSIVE TYPOGRAPHY SYSTEM
+   Larger text, tuned per device. UI ONLY.
+   ========================================================= */
+
+:root{
+  --fz-font-base: clamp(16px, 0.55vw + 13px, 19px);
+  --fz-font-small: clamp(13px, 0.30vw + 11px, 15px);
+  --fz-font-label: clamp(14px, 0.35vw + 12px, 16px);
+  --fz-font-button: clamp(15px, 0.42vw + 12px, 18px);
+  --fz-font-card-title: clamp(19px, 0.75vw + 15px, 26px);
+  --fz-font-section: clamp(24px, 1.15vw + 17px, 36px);
+  --fz-font-page: clamp(30px, 1.55vw + 20px, 48px);
+  --fz-font-money: clamp(22px, 1.15vw + 16px, 34px);
+}
+
+body{
+  font-size:var(--fz-font-base)!important;
+  line-height:1.42!important;
+}
+
+p,li,td,th,span,div{
+  line-height:1.38;
+}
+
+.small,.muted,.sub,.hint,
+small,
+[class*="small"],
+[class*="hint"]{
+  font-size:var(--fz-font-small)!important;
+  line-height:1.35!important;
+}
+
+label,
+.form-label,
+.field-label{
+  font-size:var(--fz-font-label)!important;
+  line-height:1.28!important;
+}
+
+input,select,textarea{
+  font-size:var(--fz-font-base)!important;
+}
+
+button,.btn,
+.login-role-btn,
+.staff-menu-btn,
+.staff-tab,
+.owner-tab,
+.employee-tab,
+.hv1-nav button{
+  font-size:var(--fz-font-button)!important;
+  line-height:1.2!important;
+}
+
+h1,.page-title,.login-title,.brand-title{
+  font-size:var(--fz-font-page)!important;
+  line-height:1.05!important;
+}
+
+h2,.section-title,.hc-hero h2{
+  font-size:var(--fz-font-section)!important;
+  line-height:1.10!important;
+}
+
+h3,h4,
+.card-title,
+.hc-shift-head h3,
+.hc-pool h4{
+  font-size:var(--fz-font-card-title)!important;
+  line-height:1.12!important;
+}
+
+/* High-priority numeric / payout visibility */
+.money,
+.amount,
+.total,
+.grand-total,
+.final-total,
+.total-paid-out,
+.money-ready,
+.hc-tip,
+.hc-kpis b,
+.hc-combined-total b,
+[id*="Total" i],
+[id*="Paid" i][id*="Out" i]{
+  font-size:var(--fz-font-money)!important;
+  font-weight:900!important;
+}
+
+/* Tables and report readability */
+table th{
+  font-size:clamp(14px,0.38vw + 12px,17px)!important;
+  line-height:1.2!important;
+}
+table td{
+  font-size:clamp(15px,0.42vw + 12px,18px)!important;
+  line-height:1.3!important;
+}
+
+/* Team / employee cards */
+.hv1-team-card,
+.team-card,
+.hc-roster-item,
+.hc-row,
+.employee-card,
+.report-card{
+  font-size:var(--fz-font-base)!important;
+}
+.hv1-team-card b,
+.team-card b,
+.hc-roster-item b,
+.employee-card b{
+  font-size:clamp(17px,0.55vw + 13px,21px)!important;
+}
+
+/* BAR check labels need extra visibility */
+.bar-sales-check,
+[id*="bar" i] label{
+  font-size:clamp(16px,0.50vw + 13px,20px)!important;
+  font-weight:900!important;
+}
+.bar-sales-check input[type="checkbox"],
+[id*="bar" i] input[type="checkbox"]{
+  width:32px!important;
+  height:32px!important;
+}
+
+/* Header / account identity */
+.topbar,
+.app-header,
+.staff-header,
+#appHeader{
+  font-size:clamp(15px,0.40vw + 12px,18px)!important;
+}
+
+/* Responsive tuning */
+@media (min-width: 1440px){
+  body{font-size:19px!important}
+  input,select,textarea{min-height:54px!important}
+  button,.btn{min-height:50px}
+}
+
+@media (min-width: 900px) and (max-width: 1439px){
+  body{font-size:17px!important}
+  input,select,textarea{min-height:50px!important}
+  button,.btn{min-height:48px}
+}
+
+@media (min-width: 621px) and (max-width: 899px){
+  body{font-size:16px!important}
+  h1,.page-title,.login-title,.brand-title{font-size:clamp(28px,4.5vw,38px)!important}
+  h2,.section-title,.hc-hero h2{font-size:clamp(23px,3.8vw,31px)!important}
+  h3,h4,.card-title,.hc-shift-head h3,.hc-pool h4{font-size:clamp(18px,3vw,24px)!important}
+  input,select,textarea{min-height:50px!important}
+  button,.btn{min-height:48px}
+}
+
+@media (max-width: 620px){
+  body{font-size:16px!important}
+  h1,.page-title,.login-title,.brand-title{font-size:clamp(27px,8vw,34px)!important}
+  h2,.section-title,.hc-hero h2{font-size:clamp(22px,6.5vw,29px)!important}
+  h3,h4,.card-title,.hc-shift-head h3,.hc-pool h4{font-size:clamp(18px,5.2vw,23px)!important}
+  .small,.muted,.sub,.hint,small,[class*="small"],[class*="hint"]{
+    font-size:14px!important;
+  }
+  label,.form-label,.field-label{font-size:15px!important}
+  input,select,textarea{
+    min-height:52px!important;
+    font-size:17px!important;
+  }
+  button,.btn{
+    min-height:50px!important;
+    font-size:16px!important;
+  }
+  table th{font-size:14px!important}
+  table td{font-size:15px!important}
+  .money,.amount,.total,.grand-total,.final-total,.total-paid-out,.money-ready,.hc-tip,.hc-kpis b,.hc-combined-total b{
+    font-size:clamp(22px,6.5vw,30px)!important;
+  }
+}
+
+/* Extra-small phones */
+@media (max-width: 390px){
+  body{font-size:15px!important}
+  h1,.page-title,.login-title,.brand-title{font-size:26px!important}
+  h2,.section-title,.hc-hero h2{font-size:22px!important}
+  h3,h4,.card-title,.hc-shift-head h3,.hc-pool h4{font-size:18px!important}
+  button,.btn{font-size:15px!important}
+}
+</style>
+
+
+<style id="fzP16CaiShenIntro">
+#fzCinematicIntro{
+  position:fixed!important;inset:0!important;z-index:2147483000!important;
+  display:flex!important;align-items:center!important;justify-content:center!important;
+  overflow:hidden!important;
+  background:
+    radial-gradient(circle at 50% 45%,rgba(255,190,55,.18),transparent 32%),
+    linear-gradient(180deg,#170604 0%,#3c0d08 56%,#0a111b 100%)!important;
+  transition:opacity .65s ease,visibility .65s ease!important;
+}
+#fzCinematicIntro.fz-intro-hide{opacity:0!important;visibility:hidden!important;pointer-events:none!important}
+#fzCinematicIntro .fz-stars{opacity:.18!important}
+#fzCinematicIntro .fz-sun,
+#fzCinematicIntro .fz-horizon,
+#fzCinematicIntro .fz-globe-wrap{display:none!important}
+.fz-caishen-stage{
+  position:relative;
+  width:min(62vw,430px);
+  height:min(68vh,520px);
+  display:grid;place-items:center;
+  transform:translateY(-3vh);
+  animation:fzCaiShenRise 1.15s cubic-bezier(.18,.78,.18,1) both;
+}
+.fz-caishen-glow{
+  position:absolute;
+  width:78%;aspect-ratio:1;border-radius:50%;
+  background:radial-gradient(circle,#ffd86f 0%,rgba(255,173,29,.32) 42%,transparent 72%);
+  filter:blur(2px);
+  animation:fzCaiShenPulse 2.2s ease-in-out infinite;
+}
+.fz-caishen-img{
+  position:relative;z-index:2;
+  width:100%;height:100%;object-fit:contain;
+  border-radius:28px;
+  filter:drop-shadow(0 28px 45px rgba(0,0,0,.46));
+}
+.fz-gold-dust{
+  position:absolute;inset:-8%;z-index:3;pointer-events:none;
+  background-image:
+    radial-gradient(circle,#ffd35f 0 2px,transparent 2.6px),
+    radial-gradient(circle,#ffb52f 0 1.5px,transparent 2.2px);
+  background-size:84px 84px,113px 113px;
+  background-position:8px 18px,41px 55px;
+  opacity:.42;
+  animation:fzGoldDrift 4s linear infinite;
+}
+#fzCinematicIntro .fz-copy{
+  bottom:5.5%!important;
+  animation:fzCopyIn .75s ease 1.1s forwards!important;
+}
+#fzCinematicIntro .fz-copy .fz-small{color:#ffd25f!important}
+#fzCinematicIntro .fz-copy h1{
+  font-size:clamp(28px,5.5vw,50px)!important;
+  text-shadow:0 8px 28px rgba(0,0,0,.5)!important;
+}
+#fzCinematicIntro .fz-copy .fz-sub{color:rgba(255,239,198,.84)!important}
+@keyframes fzCaiShenRise{
+  from{opacity:0;transform:translateY(7vh) scale(.88)}
+  to{opacity:1;transform:translateY(-3vh) scale(1)}
+}
+@keyframes fzCaiShenPulse{
+  0%,100%{transform:scale(.92);opacity:.72}
+  50%{transform:scale(1.06);opacity:1}
+}
+@keyframes fzGoldDrift{
+  from{transform:translateY(0)}
+  to{transform:translateY(-84px)}
+}
+@media(max-width:620px){
+  .fz-caishen-stage{width:min(82vw,390px);height:min(62vh,470px);transform:translateY(-5vh)}
+  #fzCinematicIntro .fz-copy{bottom:4%!important}
+}
+</style>
+
+
+<style id="fzP16NoSound">
+.login-sound-test,[data-sound-control],.sound-control,.voice-control{display:none!important}
+.fz-no-sound-note{
+  margin:10px auto 0;padding:7px 11px;border-radius:999px;
+  width:max-content;max-width:100%;
+  background:#edf5fb;color:#436077;font-size:13px;font-weight:800
+}
 </style>
