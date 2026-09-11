@@ -1,0 +1,8981 @@
+
+// V13.8.24-P16 — reusable Show Password checkbox for all password/PIN inputs.
+window.togglePasswordVisibility=function(inputId,show){
+  const el=document.getElementById(inputId);
+  if(!el)return;
+  el.type=show?"text":"password";
+};
+
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInAnonymously, setPersistence, inMemoryPersistence, reauthenticateWithCredential, EmailAuthProvider, updatePassword, browserLocalPersistence, browserSessionPersistence} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import {getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, runTransaction} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
+import { getMessaging, getToken, isSupported as isMessagingSupported } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js";
+import { FIREBASE_CONFIG } from "./firebase-config.js";
+import { PUSH_VAPID_PUBLIC_KEY } from "./push-config.js";
+
+const firebaseApp = initializeApp(FIREBASE_CONFIG);
+const auth = getAuth(firebaseApp);
+
+// V11.1 shared-link security: Owner, Manager, and Employee sessions live only in this tab.
+const authSecurityReady=(async()=>{
+  try{
+    await setPersistence(auth,inMemoryPersistence);
+    // Remove any account session left behind by older versions before this page is usable.
+    if(auth.currentUser && !auth.currentUser.isAnonymous){
+      await signOut(auth);
+    }
+  }catch(e){
+    console.warn("Auth security init:",e);
+  }
+})();
+
+const db = getFirestore(firebaseApp);
+const functions = getFunctions(firebaseApp, "us-central1");
+const createUserAdmin = httpsCallable(functions, "createAppUser");
+const deleteUserAdmin = httpsCallable(functions, "deleteAppUser");
+const resendMoneyReadySms = httpsCallable(functions, "resendMoneyReadySms");
+const registerPushDevice = httpsCallable(functions, "registerPushDevice");
+const unregisterPushDevice = httpsCallable(functions, "unregisterPushDevice");
+const saveTipCheckSheetApi = httpsCallable(functions, "saveTipCheckSheet");
+const listTipCheckSheetsApi = httpsCallable(functions, "listTipCheckSheets");
+const completeTipCheckSheetApi = httpsCallable(functions, "completeTipCheckSheet");
+const deleteTipCheckSheetApi = httpsCallable(functions, "deleteTipCheckSheetAdmin");
+const clearTipCheckSheetsApi = httpsCallable(functions, "clearTipCheckSheetsAdmin");
+const createCashierUserApi = httpsCallable(functions, "createCashierUser");
+const updateTipCheckRowApi = httpsCallable(functions, "updateTipCheckRow");
+const reopenTipCheckSheetApi = httpsCallable(functions, "reopenTipCheckSheet");
+let messagingInstance=null;
+
+let currentUser = null;
+let currentProfile = null;
+window.__getCurrentRole=()=>String(currentProfile?.role||"");
+window.__getCurrentProfile=()=>currentProfile ? {role:currentProfile.role,displayName:currentProfile.displayName||currentProfile.username||""} : null;
+let eShift = "AM";
+let unsubs = [];
+let latestRows = [];
+let knownPending = new Set();
+let lastHourlyResult = null;
+let currentHourlySubmissionId = null;
+let currentHourlyReportId = null;
+let latestHourlyReports = [];
+let userNameByUid = {};
+let latestUsers = [];
+let employeePhoneDirectory=new Map();
+let employeePhoneDirectoryLoadedAt=0;
+let historicalAccountAutoSyncStarted=false;
+
+let boardUnsub=null;
+let boardAudioCtx=null;
+let boardKnownReady=new Set();
+let boardMode=false;
+
+// Realtime phone/tablet alerts while the web app is open.
+let realtimeAlertCtx=null;
+let realtimeAlertsEnabled=false;
+let employeeKnownStatuses=new Map();
+let staffFirstSnapshot=true;
+
+// Global Money Ready watcher: survives login/logout and never clears the employee form.
+let globalMoneyReadyUnsub=null;
+let globalMoneyReadyInitialized=false;
+let globalMoneyReadyKnown=new Set();
+let globalDialogQueue=[];
+let globalDialogShowing=false;
+let globalAudioUnlocked=false;
+let alertFirebaseApp=null;
+let alertAuth=null;
+let alertDb=null;
+
+// Check Tip workflow
+let latestTipCheckSheets=[];
+let latestDeletedItems=[];
+let tipCheckEditId="";
+let tipCheckPollTimer=null;
+
+
+
+const EMPLOYEE_ROSTER = Object.freeze(["Adrieanna Walker", "Aida Gonzales", "Alainna Montalvo", "Angela Grizzad", "Ariana Garner", "Ashley Garcia", "Brandi Copeland", "Caitlin Dillon", "Christina Gurley", "Cynthia Risner", "Dorothy Makovicka", "Fred Zhang", "Hannah Dempsey", "Jesus Ovalle-Munoz", "Katelyn Ramsey", "Libby Lane", "Megan Meadows", "Megan Sisk", "Mia Burress", "Mia Gibson", "Ruwini Rathnayaka", "Sara Swift", "Sarah Kibler", "Sasha Safitri", "Shaniya Scott", "T'Aljah Boyd", "Vidya Caroline"]);
+
+const RECOVERED_EMPLOYEE_PHONES = Object.freeze({"Adrieanna Walker":"9382181403","Aida Gonzales":"2567555902","Alainna Montalvo":"2563211032","Angela Grizzad":"2569455956","Ariana Garner":"2569539676","Ashley Garcia":"2568366171","Brandi Copeland":"2565596641","Caitlin Dillon":"2568933734","Christina Gurley":"2564796386","Cynthia Risner":"2566795133","Dorothy Makovicka":"2566985722","Fred Zhang":"9098718416","Hanif Fitroh":"8502389020","Hannah Dempsey":"9316522095","Jesus Ovalle-Munoz":"7028329771","Katelyn Ramsey":"2055229939","Libby Lane":"2565728615","Megan Meadows":"9314922850","Megan Sisk":"2562867040","Mia Burress":"8646140631","Mia Gibson":"12563615765","Rizky Santoso":"18502380977","Ruwini Rathnayaka":"2566521938","Sara Swift":"2565052238","Sarah Kibler":"5105891306","Sasha Safitri":"3347132951","T'Aijah Boyd":"2565518870","Vidya Caroline":"8187494818","Shaniya Scott":"13147042742","T'Aljah Boyd":"2565518870"});
+
+const ANGELA_WORK_PROFILES=Object.freeze([
+  Object.freeze({name:"Angela Bar",position:"Bartender",personName:"Angela Grizzad"}),
+  Object.freeze({name:"Angela Server",position:"Server",personName:"Angela Grizzad"})
+]);
+const WORK_PROFILES=Object.freeze([
+  ...ANGELA_WORK_PROFILES,
+  Object.freeze({name:"Caitlin Bar",position:"Bartender",personName:"Caitlin Dillon"})
+]);
+const accountEmployeeRoster=new Map();
+function employeeWorkProfile(name){
+  const key=slugFor(name);
+  const known=WORK_PROFILES.find(p=>slugFor(p.name)===key);
+  if(known)return known;
+  const account=accountEmployeeRoster.get(normalizeEmployeeNameKey(name));
+  return account && ["Server","Bartender"].includes(account.workPosition)
+    ? {name:account.displayName,position:account.workPosition,personName:account.personName||account.displayName}:null;
+}
+function applyWorkProfilePosition(name=$("hEmployee")?.value){
+  const profile=employeeWorkProfile(name);
+  if(profile){howSetSilent("hPosition",profile.position);hourlyWizardState.position=profile.position;}
+  return profile;
+}
+function applyEmployeeWorkProfile(){
+  const profile=employeeWorkProfile(currentProfile?.displayName||currentProfile?.username);
+  if($("ePosition")){$("ePosition").disabled=!!profile;if(profile)$("ePosition").value=profile.position;}
+}
+
+const dynamicEmployeeRoster=new Set([...EMPLOYEE_ROSTER,...ANGELA_WORK_PROFILES.map(p=>p.name)]);
+function getEmployeeRoster(){
+  const names=new Map([...dynamicEmployeeRoster].filter(Boolean).map(n=>[normalizeEmployeeNameKey(n),n]));
+  for(const [key,u] of accountEmployeeRoster)if(!names.has(key))names.set(key,u.displayName);
+  return [...names.values()].sort((a,b)=>a.localeCompare(b));
+}
+function syncEmployeeAccountRoster(users){
+  accountEmployeeRoster.clear();
+  for(const u of users||[]){
+    if(String(u.role||'').toLowerCase()!=='employee' || u.active===false
+      || String(u.approvalStatus||'').toLowerCase()!=='approved')continue;
+    const name=String(u.displayName||u.username||'').trim().replace(/\s+/g,' ');
+    if(name)accountEmployeeRoster.set(normalizeEmployeeNameKey(name),{...u,displayName:name});
+  }
+  populateRoster();populateBartenderServerDropdowns();hv1RenderRoster(true);
+}
+async function refreshEmployeeAccountRoster(){
+  try{
+    const snap=await getDocs(query(collection(db,"users"),limit(500)));
+    syncEmployeeAccountRoster(snap.docs.map(d=>({uid:d.id,...d.data()})));
+  }catch(e){console.warn("Employee roster refresh:",e);}
+}
+function addDynamicEmployeeName(name){
+  const clean=String(name||"").trim().replace(/\s+/g," ");
+  if(clean) dynamicEmployeeRoster.add(clean);
+}
+function removeDynamicEmployeeName(name){
+  const clean=String(name||"").trim().replace(/\s+/g," ");
+  if(clean && !EMPLOYEE_ROSTER.includes(clean) && !Object.prototype.hasOwnProperty.call(RECOVERED_EMPLOYEE_PHONES,clean)){
+    dynamicEmployeeRoster.delete(clean);
+  }
+}
+
+
+
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, m => ({
+  "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+}[m]));
+
+function todayLocal(){
+  const d=new Date(), z=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
+}
+function slugFor(username){
+  return String(username).trim().toLowerCase().replace(/[^a-z0-9._-]/g,"");
+}
+function emailFor(username){
+  return `${slugFor(username)}@juicytip.app`;
+}
+// Firebase requires passwords >= 6 characters. Employees still type only their PIN.
+function employeeAuthPassword(pin){
+  return `JT${String(pin).trim()}!!`;
+}
+function loginMsg(m){ $("loginMessage").textContent = m || ""; }
+
+let fzLoginRole="employee";
+let hostCashierRequested=false;
+window.setLoginMode = function(mode,roleHint=""){
+  fzLoginRole=mode==="staff"?(roleHint||"manager"):mode;
+  document.body.dataset.loginRole=fzLoginRole;
+  $("employeeLogin")?.classList.toggle("hidden", mode !== "employee");
+  $("staffLogin")?.classList.toggle("hidden", mode !== "staff");
+  $("hourlyV1Login")?.classList.toggle("hidden", mode !== "hourlyv1");
+  $("hostCashierLogin")?.classList.toggle("hidden", mode !== "hostcashier");
+  ["employeeModeBtn","managerModeBtn","ownerModeBtn","hourlyV1ModeBtn","hostCashierModeBtn","boardModeBtn"].forEach(id=>$(id)?.classList.remove("on"));
+  if(mode==="employee") $("employeeModeBtn")?.classList.add("on");
+  if(mode==="hourlyv1") $("hourlyV1ModeBtn")?.classList.add("on");
+  if(mode==="hostcashier") $("hostCashierModeBtn")?.classList.add("on");
+  if(mode==="staff"){
+    const role=roleHint||"manager";
+    $(`${role}ModeBtn`)?.classList.add("on");
+    if($("staffLoginTitle"))$("staffLoginTitle").textContent=role==="owner"?"Owner Login":"Manager Login";
+    if($("staffLoginHint"))$("staffLoginHint").textContent=role==="owner"?"Full owner access after authentication.":"Manager tools and employee approvals.";
+  }
+  loginMsg("");
+};
+
+
+function bindEnterLogin(inputId,action){
+  const el=$(inputId);
+  if(!el || el.dataset.enterLoginBound==="1")return;
+  el.dataset.enterLoginBound="1";
+  el.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();action();}});
+}
+setTimeout(()=>{
+  bindEnterLogin("employeePin",()=>window.loginEmployee?.());
+  bindEnterLogin("staffPassword",()=>window.loginStaff?.());
+  bindEnterLogin("hourlyV1Password",()=>window.loginHourlyV1Workspace?.());
+  bindEnterLogin("hostCashierPassword",()=>window.loginHostCashierWorkspace?.());
+},0);
+
+function populateRoster(){
+  const names=getEmployeeRoster();
+  ["employeeUsername","signupName","hEmployee","sTipCheckEmployee"].forEach(id=>{
+    const el=$(id); if(!el)return;
+    const current=el.value;
+    el.innerHTML=names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
+    if(names.includes(current))el.value=current;
+  });
+}
+window.toggleSignup=function(show){
+  $("signupPanel").classList.toggle("hidden",!show);
+  loginMsg("");
+};
+
+window.employeeSignup=async function(){
+  const name=$("signupName").value;
+  const phone=$("signupPhone").value.trim();
+  const pin=$("signupPin").value.trim();
+  const pin2=$("signupPin2").value.trim();
+
+  if(!getEmployeeRoster().includes(name)){ alert("Select your name from the employee list."); return; }
+  const phoneDigits=phone.replace(/\D/g,"");
+  if(!/^\d{7,15}$/.test(phoneDigits)){ alert("Enter a valid mobile phone number."); return; }
+  if(!/^\d{4}$/.test(pin)){ alert("PIN must be exactly 4 digits."); return; }
+  if(pin!==pin2){ alert("PINs do not match."); return; }
+
+  let secondaryApp=null;
+  try{
+    secondaryApp=initializeApp(FIREBASE_CONFIG,"employee-signup-"+Date.now());
+    const secondaryAuth=getAuth(secondaryApp);
+    const secondaryDb=getFirestore(secondaryApp);
+    const email=emailFor(name);
+    const authPassword=employeeAuthPassword(pin);
+
+    let cred;
+    try{
+      cred=await createUserWithEmailAndPassword(secondaryAuth,email,authPassword);
+    }catch(createErr){
+      if(createErr.code==="auth/email-already-in-use"){
+        cred=await signInWithEmailAndPassword(secondaryAuth,email,authPassword);
+      }else{
+        throw createErr;
+      }
+    }
+
+    const uid=cred.user.uid;
+    const profile={
+      username:slugFor(name),
+      displayName:name,
+      phone:phoneDigits,
+      role:"employee",
+      active:false,
+      approvalStatus:"pending",
+      createdAt:serverTimestamp()
+    };
+
+    await setDoc(doc(secondaryDb,"users",uid),profile);
+    await setDoc(doc(secondaryDb,"signupRequests",uid),{
+      uid,
+      displayName:name,
+      username:slugFor(name),
+      phone:phoneDigits,
+      status:"pending",
+      requestedAt:serverTimestamp()
+    });
+
+    await signOut(secondaryAuth);
+    toggleSignup(false);
+    $("signupPhone").value="";
+    $("signupPin").value="";
+    $("signupPin2").value="";
+    alert("Sign up sent. Please wait for Manager approval.");
+  }catch(e){
+    console.error("Employee signup:",e);
+    let msg=`Sign up failed: ${e.code || e.message}`;
+    if(e.code==="auth/wrong-password" || e.code==="auth/invalid-credential"){
+      msg="This employee account already exists with a different PIN. Ask Manager/Owner to remove or reset the old account.";
+    }
+    alert(msg);
+  }finally{
+    if(secondaryApp) try{await deleteApp(secondaryApp)}catch(e){}
+  }
+};
+
+
+
+function moneyReadyRoleShouldSuppressGlobalDialog(){
+  return boardMode || currentProfile?.role==="manager" || currentProfile?.role==="owner" || currentProfile?.role==="cashier";
+}
+
+window.playBundledMoneyReadyChime=async function playBundledMoneyReadyChime(){ return false;
+  const audio=$("moneyReadyAudio");
+  if(!audio) return false;
+  try{
+    audio.pause();
+    audio.currentTime=0;
+    audio.volume=1;
+    await audio.play();
+    const s=$("globalMoneyReadyAudioStatus");
+    if(s) s.textContent="";
+    return true;
+  }catch(e){
+    const s=$("globalMoneyReadyAudioStatus");
+    if(s) s.textContent="Sound was blocked by the browser; the visual alert is still active.";
+    return false;
+  }
+}
+
+window.trySpeakGlobalMoneyReady=function trySpeakGlobalMoneyReady(name){ return;
+  if(!("speechSynthesis" in window)) return;
+  try{
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance(`${String(name||"Employee").trim()}, your tip money is ready. Please see the Manager on Duty.`);
+    const voices=window.speechSynthesis.getVoices()||[];
+    const english=voices.filter(v=>/^en[-_]/i.test(v.lang||""));
+    const preferred=["Samantha","Ava","Victoria","Karen","Zira","Jenny","Aria","Emma","Michelle","Joanna"];
+    let voice=null;
+    for(const p of preferred){
+      voice=english.find(v=>String(v.name||"").toLowerCase().includes(p.toLowerCase()));
+      if(voice) break;
+    }
+    if(!voice) voice=english[0]||voices[0]||null;
+    if(voice) u.voice=voice;
+    u.lang=voice?.lang||"en-US";
+    u.rate=.92; u.pitch=1.05; u.volume=1;
+    window.speechSynthesis.speak(u);
+  }catch(e){ console.warn("Global Money Ready speech:",e); }
+}
+
+function showNextGlobalMoneyReadyDialog(){
+  if(globalDialogShowing || !globalDialogQueue.length) return;
+  if(moneyReadyRoleShouldSuppressGlobalDialog()){
+    globalDialogQueue=[];
+    return;
+  }
+
+  globalDialogShowing=true;
+  const item=globalDialogQueue[0];
+  $("globalMoneyReadyName").textContent=item.employee||"Employee";
+  const modal=$("globalMoneyReadyDialog");
+  modal.classList.remove("hidden");
+  modal.style.setProperty("display","flex","important");
+
+  // Guaranteed visual dialog. Bundled WAV is primary audio, browser TTS is secondary.
+  playBundledMoneyReadyChime();
+  setTimeout(()=>trySpeakGlobalMoneyReady(item.employee),420);
+}
+
+function queueGlobalMoneyReadyDialog(item){
+  if(moneyReadyRoleShouldSuppressGlobalDialog()) return;
+  globalDialogQueue.push(item);
+  showNextGlobalMoneyReadyDialog();
+}
+
+window.dismissGlobalMoneyReadyDialog=function(){
+  const modal=$("globalMoneyReadyDialog");
+  if(modal){
+    modal.classList.add("hidden");
+    modal.style.setProperty("display","none","important");
+  }
+  globalDialogQueue.shift();
+  globalDialogShowing=false;
+  setTimeout(showNextGlobalMoneyReadyDialog,120);
+};
+
+async function unlockGlobalMoneyReadyAudioFromGesture(){
+  if(globalAudioUnlocked) return;
+  const audio=$("moneyReadyAudio");
+  if(!audio) return;
+  try{
+    audio.muted=true;
+    audio.volume=0.01;
+    await audio.play();
+    audio.pause();
+    audio.currentTime=0;
+    audio.muted=false;
+    audio.volume=1;
+    globalAudioUnlocked=true;
+  }catch(e){}
+}
+document.addEventListener("pointerdown",unlockGlobalMoneyReadyAudioFromGesture,{once:false,passive:true});
+document.addEventListener("touchstart",unlockGlobalMoneyReadyAudioFromGesture,{once:false,passive:true});
+
+
+
+window.testGlobalMoneyReadyDialog=function(){
+  queueGlobalMoneyReadyDialog({employee:"Sarah Kibler",id:"test-"+Date.now(),announceNonce:Date.now()});
+};
+
+async function startGlobalMoneyReadyWatcher(){
+  if(globalMoneyReadyUnsub) return;
+
+  try{
+    // IMPORTANT: use a completely separate Firebase app/auth session.
+    // The old V12.3 watcher signed the PRIMARY auth in anonymously, which interfered
+    // with Employee/Manager sessions and prevented reliable cross-screen alerts.
+    alertFirebaseApp=alertFirebaseApp||initializeApp(FIREBASE_CONFIG,"money-ready-alerts");
+    alertAuth=alertAuth||getAuth(alertFirebaseApp);
+    alertDb=alertDb||getFirestore(alertFirebaseApp);
+
+    await setPersistence(alertAuth,inMemoryPersistence);
+    if(!alertAuth.currentUser){
+      await signInAnonymously(alertAuth);
+    }
+
+    const q=query(collection(alertDb,"moneyReadyBoard"),limit(100));
+    globalMoneyReadyUnsub=onSnapshot(q,snap=>{
+      const rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+      const liveIds=new Set(rows.map(r=>r.id));
+
+      if(!globalMoneyReadyInitialized){
+        rows.forEach(r=>globalMoneyReadyKnown.add(`${r.id}:${Number(r.announceNonce||r.createdAt?.seconds||0)}:${r.active}`));
+        globalMoneyReadyInitialized=true;
+        const el=$("globalAlertStatus");
+        if(el) el.textContent="Money Ready realtime dialog: CONNECTED";
+        return;
+      }
+
+      for(const r of rows){
+        const token=`${r.id}:${Number(r.announceNonce||r.createdAt?.seconds||0)}:${r.active}`;
+        const previousToken=globalMoneyReadyKnown.has(token);
+
+        // Alert on a new document OR a new announceNonce.
+        if(!previousToken && r.alert!==false){
+          globalMoneyReadyKnown.add(token);
+          queueGlobalMoneyReadyDialog(r);
+        }
+      }
+
+      // Keep a compact set of current ids/tokens.
+      if(globalMoneyReadyKnown.size>500){
+        globalMoneyReadyKnown=new Set(rows.map(r=>`${r.id}:${Number(r.announceNonce||r.createdAt?.seconds||0)}:${r.active}`));
+      }
+    },e=>{
+      console.error("Global Money Ready watcher:",e);
+      const el=$("globalAlertStatus");
+      if(el){
+        el.textContent=`Money Ready realtime dialog: NOT CONNECTED (${e.code||e.message})`;
+        el.style.color="#a61b1b";
+      }
+    });
+  }catch(e){
+    console.error("Start global Money Ready watcher:",e);
+    const el=$("globalAlertStatus");
+    if(el){
+      el.textContent=`Money Ready realtime dialog: FAILED (${e.code||e.message})`;
+      el.style.color="#a61b1b";
+    }
+  }
+}
+
+window.openServerRoomBoard=async function(){
+  boardMode=true;
+  $("loginView").classList.add("hidden");
+  $("appView").classList.add("hidden");
+  $("top").classList.add("hidden");
+  $("serverRoomBoard").classList.remove("hidden");
+  $("boardError").textContent="";
+  if(localStorage.getItem("serverRoomBoardEnabled")==="1"){
+    await enableServerRoomBoard(true);
+  }
+};
+window.closeServerRoomBoard=async function(){
+  boardMode=false;
+  if(boardUnsub){try{boardUnsub()}catch(e){} boardUnsub=null;}
+  $("serverRoomBoard").classList.add("hidden");
+  $("loginView").classList.remove("hidden");
+};
+window.enableServerRoomBoard=async function(auto=false){
+  try{
+    await authSecurityReady;
+    boardMode=true;
+    $("boardError").textContent="";
+    if(!auth.currentUser){
+      await signInAnonymously(auth);
+    }
+    boardAudioCtx = boardAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    if(!auto && boardAudioCtx.state==="suspended") await boardAudioCtx.resume();
+    localStorage.setItem("serverRoomBoardEnabled","1");
+    $("boardSetup").classList.add("hidden");
+    $("boardStatus").classList.remove("hidden");
+    $("boardLiveInfo").textContent=`Connected as anonymous board • ${new Date().toLocaleTimeString()}`;
+    listenMoneyReadyBoard();
+  }catch(e){
+    console.error("Enable board failed:",e);
+    localStorage.removeItem("serverRoomBoardEnabled");
+    $("boardSetup").classList.remove("hidden");
+    $("boardStatus").classList.add("hidden");
+    const msg=(e.code||e.message||String(e));
+    $("boardError").textContent=`Board failed: ${msg}. In Firebase Authentication, Anonymous sign-in must be ENABLED.`;
+    if(!auto) alert(`Server Room Board failed: ${msg}`);
+  }
+};
+
+window.testServerRoomChime=async function(){
+  try{
+    boardAudioCtx = boardAudioCtx || new (window.AudioContext||window.webkitAudioContext)();
+    if(boardAudioCtx.state==="suspended") await boardAudioCtx.resume();
+    boardChime();
+  }catch(e){ alert("Sound test failed: "+(e.message||e)); }
+};
+
+function boardChime(){ return;
+  if(!boardAudioCtx)return;
+  const now=boardAudioCtx.currentTime;
+  [659.25,783.99,987.77].forEach((freq,i)=>{
+    const o=boardAudioCtx.createOscillator(), g=boardAudioCtx.createGain();
+    o.frequency.value=freq; o.type="sine";
+    g.gain.setValueAtTime(0.0001,now+i*.22);
+    g.gain.exponentialRampToValueAtTime(.18,now+i*.22+.03);
+    g.gain.exponentialRampToValueAtTime(.0001,now+i*.22+.45);
+    o.connect(g);g.connect(boardAudioCtx.destination);
+    o.start(now+i*.22);o.stop(now+i*.22+.5);
+  });
+}
+let globalAnnouncementQueue=[];
+let globalAnnouncementShowing=false;
+
+if("speechSynthesis" in window){
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged=()=>window.speechSynthesis.getVoices();
+}
+
+function chooseMoneyReadyVoice(){
+  if(!("speechSynthesis" in window)) return null;
+  const voices=window.speechSynthesis.getVoices()||[];
+  const english=voices.filter(v=>/^en[-_]/i.test(v.lang||""));
+
+  // Prefer common natural-sounding English female voices when present.
+  const preferredNames=[
+    "Samantha","Ava","Victoria","Karen","Moira","Tessa","Susan",
+    "Zira","Jenny","Aria","Emma","Michelle","Salli","Joanna","Kendra"
+  ];
+
+  for(const name of preferredNames){
+    const v=english.find(x=>String(x.name||"").toLowerCase().includes(name.toLowerCase()));
+    if(v) return v;
+  }
+  return english[0]||voices[0]||null;
+}
+
+function speakMoneyReadyAnnouncement(name){ return;
+  if(!("speechSynthesis" in window)) return;
+
+  try{
+    window.speechSynthesis.cancel();
+
+    const employeeName=String(name||"Employee").trim();
+    const text=`${employeeName}, please see the Manager on Duty. Your tip money is ready.`;
+
+    const utter=new SpeechSynthesisUtterance(text);
+    const voice=chooseMoneyReadyVoice();
+    if(voice) utter.voice=voice;
+    utter.lang=voice?.lang||"en-US";
+    utter.rate=0.90;
+    utter.pitch=1.08;
+    utter.volume=1.0;
+
+    window.speechSynthesis.speak(utter);
+  }catch(e){
+    console.warn("Money Ready voice announcement:",e);
+  }
+}
+
+function showMoneyReadyOverlay(name){
+  globalAnnouncementQueue.push(name||"Employee");
+  showNextMoneyReadyAnnouncement();
+}
+function showNextMoneyReadyAnnouncement(){
+  if(globalAnnouncementShowing||!globalAnnouncementQueue.length)return;
+  globalAnnouncementShowing=true;
+  $("moneyReadyName").textContent=globalAnnouncementQueue[0];
+  if($("moneyReadyQueueInfo")){
+    $("moneyReadyQueueInfo").textContent=globalAnnouncementQueue.length>1
+      ? `${globalAnnouncementQueue.length-1} more announcement(s) waiting`
+      : "";
+  }
+  $("moneyReadyOverlay").classList.remove("hidden");
+  boardChime();
+  setTimeout(()=>speakMoneyReadyAnnouncement(globalAnnouncementQueue[0]),650);
+}
+window.dismissMoneyReadyOverlay=function(){
+  $("moneyReadyOverlay").classList.add("hidden");
+  globalAnnouncementQueue.shift();
+  globalAnnouncementShowing=false;
+  setTimeout(showNextMoneyReadyAnnouncement,200);
+};
+function listenMoneyReadyBoard(){
+  if(boardUnsub){try{boardUnsub()}catch(e){}}
+  let firstSnapshot=true;
+  const q=query(collection(db,"moneyReadyBoard"),where("active","==",true),limit(100));
+  boardUnsub=onSnapshot(q,snap=>{
+    const rows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(b.createdAt?.seconds||0)-(a.createdAt?.seconds||0));
+    $("boardLiveInfo").textContent=`LIVE • ${rows.length} money-ready report(s) • ${new Date().toLocaleTimeString()}`;
+    $("moneyReadyList").innerHTML=rows.length?rows.map(r=>`
+      <div style="background:#0f243d;border:1px solid #28445f;border-radius:18px;padding:18px">
+        <div style="font-size:12px;opacity:.7;letter-spacing:.12em">MONEY READY</div>
+        <div style="font-size:30px;font-weight:1000;margin:8px 0">${esc(r.employee||"")}</div>
+        <div style="font-size:18px;font-weight:700">Please see the Manager on Duty</div>
+      </div>`).join(""):'<div style="opacity:.65">No employees waiting for pickup.</div>';
+
+    if(firstSnapshot){
+      // Existing active reports should be visible immediately, but not blast a chime for every historical record.
+      rows.forEach(r=>boardKnownReady.add(r.id));
+      firstSnapshot=false;
+      return;
+    }
+    for(const r of rows){
+      if(!boardKnownReady.has(r.id)){
+        boardKnownReady.add(r.id);
+        showMoneyReadyOverlay(r.employee);
+        break;
+      }
+    }
+  },e=>{
+    console.error("Money Ready board:",e);
+    $("boardError").textContent=`Realtime board error: ${e.code||e.message}. Check Firestore rules and Anonymous Authentication.`;
+    $("boardLiveInfo").textContent="NOT CONNECTED";
+  });
+}
+
+window.loginEmployee = async function(){
+  fzLoginRole="employee";
+  
+  ensureRealtimeAlertAudio();
+  await authSecurityReady;
+  const username = $("employeeUsername").value.trim();
+  const pin = $("employeePin").value.trim();
+  if(!username || !pin){ loginMsg("Enter username and PIN."); return; }
+  try{
+    loginMsg("Signing in...");
+    await signInWithEmailAndPassword(auth, emailFor(username), employeeAuthPassword(pin));
+  }catch(e){
+    console.error("Employee login:", e);
+    loginMsg(`Login failed: ${e.code || "invalid-login"}`);
+  }
+};
+
+
+
+let hourlyV1Requested=false;
+let hourlyV1Mode=false;
+let hv1EditingEmployee="";
+let hv1LoadingEmployee=false;
+let hourlyAdjustmentChoice=null;
+const HV1_STORAGE_PREFIX="fz_hv1_batch_";
+const HV1_BACKING_IDS=["hDate","hEmployee","hPosition","hShift","hBusserAM","hIn","hOut","hAmIn","hAmOut","hPmIn","hPmOut","hGrandTotal","hTotalAM","hPaidTip","hCardFee","hCashTip","hMeal","hAmBar","hPmBar","hBartenderShiftType","hBartenderBarReceived","hBtPrevAMInput","hBtPrev24Input"];
+
+function hv1DateValue(){return $('hv1Date')?.value||todayLocal()}
+function hv1Key(){return HV1_STORAGE_PREFIX+hv1DateValue()}
+function hv1CloudDocId(date=hv1DateValue()){return String(date||todayLocal())}
+function hv1Load(){try{return JSON.parse(localStorage.getItem(hv1Key())||'{"team":[],"drafts":{}}')}catch(e){return {team:[],drafts:{}}}}
+function hv1SetCloudStatus(text,state=""){
+  const el=$('hv1CloudStatus'); if(!el)return;
+  el.textContent=text; el.dataset.state=state;
+}
+let hv1CloudWriteQueue=Promise.resolve();
+async function hv1CloudSave(s,workDate=hv1DateValue()){
+  if(!currentUser || !["manager","owner"].includes(currentProfile?.role||""))return false;
+  const date=workDate;
+  s=JSON.parse(JSON.stringify(s));
+  try{
+    hv1SetCloudStatus("Draft backup: saving…","saving");
+    const payload={
+      date,
+      team:Array.isArray(s.team)?s.team:[],
+      drafts:s.drafts||{},
+      bar:s.bar||{},
+      barManual:s.barManual||{},
+      trash:s.trash||null,
+      removedEmployees:s.removedEmployees||{},
+      updatedAt:serverTimestamp(),
+      updatedByUid:currentUser.uid,
+      updatedBy:currentProfile.displayName||currentProfile.username||""
+    };
+    const write=hv1CloudWriteQueue.catch(()=>{}).then(()=>setDoc(doc(db,"hourlyV1Batches",hv1CloudDocId(date)),payload));
+    hv1CloudWriteQueue=write;
+    await write;
+    hv1SetCloudStatus("Draft + BAR backup: SAVED TO CLOUD","ok");
+    return true;
+  }catch(e){
+    console.warn("Tip Calculation cloud save:",e);
+    hv1SetCloudStatus("Draft backup: LOCAL ONLY — Firestore rule needed","warn");
+    return false;
+  }
+}
+function hv1Save(s){
+  localStorage.setItem(hv1Key(),JSON.stringify(s));
+  hv1CloudSave(JSON.parse(JSON.stringify(s))).catch(()=>{});
+}
+async function hv1CloudRestore(){
+  if(!currentUser || !["manager","owner"].includes(currentProfile?.role||""))return hv1Load();
+  const date=hv1DateValue();
+  try{
+    hv1SetCloudStatus("Draft backup: loading…","saving");
+    const snap=await getDoc(doc(db,"hourlyV1Batches",hv1CloudDocId(date)));
+    if(!snap.exists()){hv1SetCloudStatus("Draft backup: no cloud draft yet","ok");return hv1Load();}
+    if(date!==hv1DateValue())return hv1Load();
+    const cloud=snap.data()||{},local=hv1Load();
+    const merged={
+      team:Array.isArray(cloud.team)?cloud.team:[],
+      drafts:{...(cloud.drafts||{})},
+      bar:JSON.parse(JSON.stringify(cloud.bar||local.bar||{})),
+      barManual:{...(local.barManual||{}),...(cloud.barManual||{})},
+      trash:cloud.trash||local.trash||null,
+      removedEmployees:{...(local.removedEmployees||{}),...(cloud.removedEmployees||{})}
+    };
+    for(const [name,d] of Object.entries(local.drafts||{})){
+      const cd=merged.drafts[name];
+      if(!cd || Number(d.savedAt||0)>Number(cd.savedAt||0)) merged.drafts[name]=d;
+    }
+    merged.team=[...new Set([...(merged.team||[]),...(local.team||[])])];
+    for(const [name,removed] of Object.entries(merged.removedEmployees||{})){
+      if(removed?.removedAt && Number(removed.restoredAt||0)<Number(removed.removedAt)){
+        merged.team=merged.team.filter(n=>n!==name);
+        delete merged.drafts[name];
+      }
+    }
+
+    // Merge local BAR entries without throwing away cloud values.
+    for(const key of ['AM','2PM_4PM','PM']){
+      merged.bar[key]=merged.bar[key]||{bartender:'',entries:{}};
+      merged.bar[key].entries=merged.bar[key].entries||{};
+      const localBar=local.bar?.[key]||{};
+      if(!merged.bar[key].bartender && localBar.bartender) merged.bar[key].bartender=localBar.bartender;
+      for(const [name,val] of Object.entries(localBar.entries||{})){
+        if(merged.bar[key].entries[name]===undefined || merged.bar[key].entries[name]===''){
+          merged.bar[key].entries[name]=val;
+        }
+      }
+    }
+
+    localStorage.setItem(hv1Key(),JSON.stringify(merged));
+    hv1SetCloudStatus("Draft + BAR backup: RESTORED / SYNCED","ok");
+    return merged;
+  }catch(e){
+    console.warn("Tip Calculation cloud restore:",e);
+    hv1SetCloudStatus("Draft backup: using local copy","warn");
+    return hv1Load();
+  }
+}
+function hv1BlankDraft(name){
+  const profile=employeeWorkProfile(name);
+  return {employee:name,date:hv1DateValue(),values:profile?{hEmployee:name,hPosition:profile.position}:{},entered:profile?{hPosition:true}:{},skippedPages:[],savedAt:0,finalized:false};
+}
+function hv1Draft(name){const s=hv1Load();return s.drafts?.[name]||hv1BlankDraft(name)}
+// A work account is its full employee name, never its first name, phone,
+// personName, or the manager UID used to enter the report.
+function hourlyReportBelongsTo(r,name,date){
+  return !!r && !!name && !!date
+    && normalizeEmployeeNameKey(r.employee)===normalizeEmployeeNameKey(name)
+    && String(r.date||'')===String(date);
+}
+function hv1DetachReportLink(d){
+  d.hourlyReportId='';d.sourceSubmissionId='';d.finalized=false;
+  delete d.editHydratedFromFinalV13811;
+  delete d.finalizedAt;
+  d.reportLinkRepairedV13828=true;
+}
+function hv1SetValue(d,key,value,entered=true){d.values=d.values||{};d.entered=d.entered||{};d.values[key]=value;if(entered)d.entered[key]=true}
+function hv1VisibleValue(id){const el=$(id);return el?String(el.value??''):''}
+function hv1CapturePage(markSkipped=false){
+  if(hourlyFinalSaveInProgress || hv1LoadingEmployee || !hv1EditingEmployee)return;
+  applyWorkProfilePosition(hv1EditingEmployee);
+  const s=hv1Load();s.drafts=s.drafts||{};const d=s.drafts[hv1EditingEmployee]||hv1BlankDraft(hv1EditingEmployee);
+  const salesBefore={hGrandTotal:d.values?.hGrandTotal,hTotalAM:d.values?.hTotalAM};
+  d.date=$('hv1Date')?.value||todayLocal(); d.page=hourlyWizardStep; d.savedAt=Date.now();
+  d.hourlyWizardState=JSON.parse(JSON.stringify(hourlyWizardState));
+  if(hourlyAdjustmentChoice && hourlyReportBelongsTo(hourlyAdjustmentChoice,hv1EditingEmployee,d.date)
+    && hourlyAdjustmentChoice.reportId===String(currentHourlyReportId||'')){
+    d.hourlyAdjustmentChoice={...hourlyAdjustmentChoice};
+  }
+  d.howBartenderState=JSON.parse(JSON.stringify(howBartenderState));
+  if(markSkipped){d.skippedPages=d.skippedPages||[];if(!d.skippedPages.includes(hourlyWizardStep))d.skippedPages.push(hourlyWizardStep)}
+  else d.skippedPages=(d.skippedPages||[]).filter(x=>x!==hourlyWizardStep);
+
+  if(hourlyWizardStep===1){hv1SetValue(d,'hDate',d.date);hv1SetValue(d,'hEmployee',hv1EditingEmployee);hv1SetValue(d,'hPosition',hourlyWizardState.position);hv1SetValue(d,'hShift',hourlyWizardState.shift);}
+  if(hourlyWizardStep===2){
+    if(hourlyWizardState.shift==='DOUBLE'){
+      [['hAmIn','howAmIn'],['hAmOut','howAmOut'],['hPmIn','howPmIn'],['hPmOut','howPmOut']].forEach(([k,id])=>{const v=hv1VisibleValue(id);if(v!==''){hv1SetValue(d,k,v);howSetSilent(k,v);}});
+    }else{[['hIn','howIn'],['hOut','howOut']].forEach(([k,id])=>{const v=hv1VisibleValue(id);if(v!==''){hv1SetValue(d,k,v);howSetSilent(k,v);}});}
+  }
+  if(hourlyWizardStep===3){hv1SetValue(d,'hBusserAM',hourlyWizardState.busserAM);}
+  if(hourlyWizardStep===4){[['hGrandTotal','howGrand'],['hTotalAM','howTotalAM']].forEach(([k,id])=>{const el=$(id);if(el&&String(el.value).trim()!==''){const v=String(el.value).trim();hv1SetValue(d,k,v);howSetSilent(k,v);}});}
+  if(hourlyWizardStep===5){[['hPaidTip','howPaid'],['hCardFee','howCardFee'],['hCashTip','howCash'],['hMeal','howMeal']].forEach(([k,id])=>{const el=$(id);if(el&&String(el.value).trim()!==''){const v=String(el.value).trim();hv1SetValue(d,k,v);howSetSilent(k,v);}});}
+  if(hourlyWizardStep===6){
+    if(hourlyWizardState.position==='Bartender'){captureHowBartenderDom();d.howBartenderState=JSON.parse(JSON.stringify(howBartenderState));d.entered.bartender=true;}
+    else{
+      const amv=$('howAmBar')?.checked?'yes':'no',pmv=$('howPmBar')?.checked?'yes':'no';
+      hv1SetValue(d,'hAmBar',amv);hv1SetValue(d,'hPmBar',pmv);
+      howSetSilent('hAmBar',amv);howSetSilent('hPmBar',pmv);
+    }
+  }
+  if(hourlyWizardStep===7){
+    [['hGrandTotal','howGrand'],['hTotalAM','howTotalAM'],['hPaidTip','howPaid'],['hCardFee','howCardFee'],['hCashTip','howCash'],['hMeal','howMeal']].forEach(([k,id])=>{
+      const el=$(id); if(el){const v=String(el.value??'').trim();hv1SetValue(d,k,v===''?'0':v);howSetSilent(k,v===''?'0':v);}
+    });
+    if(hourlyWizardState.position!=='Bartender'){
+      if($('howAmBar')){const v=$('howAmBar').checked?'yes':'no';hv1SetValue(d,'hAmBar',v);howSetSilent('hAmBar',v);}
+      if($('howPmBar')){const v=$('howPmBar').checked?'yes':'no';hv1SetValue(d,'hPmBar',v);howSetSilent('hPmBar',v);}
+    }
+  }
+  s.drafts[hv1EditingEmployee]=d;
+  const editedSales=[4,7].includes(hourlyWizardStep)
+    ? Object.keys(salesBefore).filter(k=>String(salesBefore[k]??'')!==String(d.values?.[k]??'')) : [];
+  hv1SyncServerDraftToBar(s,hv1EditingEmployee,editedSales);
+  hv1ApplyBarAutomation(s);
+  hv1Save(s);
+  howSyncLongBusserForm();
+}
+
+async function hv1HydrateDraftFromFinalReport(name){
+  const date=hv1DateValue(),storageKey=HV1_STORAGE_PREFIX+date;
+  const state=hv1Load();
+  const d=state.drafts?.[name]||hv1BlankDraft(name);
+  if(!d?.hourlyReportId)return d;
+
+  try{
+    const snap=await getDoc(doc(db,"hourlyReports",d.hourlyReportId));
+    const r=snap.exists()?snap.data():null;
+    // Recheck old hydrated drafts too: two cards may carry the same stale ID.
+    if(!hourlyReportBelongsTo(r,name,date)){
+      const staleId=d.hourlyReportId;
+      latestHourlyReports=latestHourlyReports.filter(row=>row.id!==staleId);
+      if(r)latestHourlyReports.push({...r,id:staleId});
+      hv1DetachReportLink(d);
+      const latest=JSON.parse(localStorage.getItem(storageKey)||'{}');
+      latest.drafts ||= {};latest.drafts[name]=d;
+      localStorage.setItem(storageKey,JSON.stringify(latest));
+      return d;
+    }
+    // Preserve later autosaved edits, including intentional zero values.
+    if(d.editHydratedFromFinalV13811)return d;
+    const hours={...r,...(r.hours||{})};
+    d.values=d.values||{};
+    d.entered=d.entered||{};
+
+    const put=(k,v)=>{
+      if(v===undefined||v===null)return;
+      d.values[k]=String(v);
+      d.entered[k]=true;
+    };
+
+    // On first edit of an already-finalized report, the finalized Firestore
+    // record is the source of truth. This repairs old V1 drafts that reopened
+    // with $0.00 / blank Paid Tip, Grand Total, Card Fee, Meal, etc.
+    put("hDate",r.date||d.date||hv1DateValue());
+    put("hEmployee",r.employee||name);
+    put("hPosition",r.position||"Server");
+    put("hShift",r.shift||"AM");
+    put("hGrandTotal",r.grandTotal??0);
+    if(["DOUBLE","LONG"].includes(String(r.shift||"").toUpperCase())) put("hTotalAM",r.totalAM??0);
+    put("hPaidTip",r.paidTip??0);
+    put("hCardFee",r.payCardTipFee??r.cardFee??0);
+    put("hCashTip",r.cashTip??0);
+    put("hMeal",r.meal??0);
+
+    const shift=String(r.shift||"").toUpperCase();
+    if(shift==="DOUBLE"){
+      put("hAmIn",hours.hourInAM||hours.amIn||"");
+      put("hAmOut",hours.hourOutAM||hours.amOut||"");
+      put("hPmIn",hours.hourInPM||hours.pmIn||"");
+      put("hPmOut",hours.hourOutPM||hours.pmOut||"");
+    }else{
+      put("hIn",hours.hourIn||hours.hourInAM||hours.in||"");
+      put("hOut",hours.hourOut||hours.hourOutAM||hours.out||"");
+    }
+
+    d.hourlyWizardState={
+      position:r.position||d.hourlyWizardState?.position||"Server",
+      shift:r.shift||d.hourlyWizardState?.shift||"AM",
+      busserAM:d.values.hBusserAM||d.hourlyWizardState?.busserAM||"WITHOUT"
+    };
+    d.editHydratedFromFinalV13811=true;
+    d.savedAt=Date.now();
+    const latest=JSON.parse(localStorage.getItem(storageKey)||'{}');
+    latest.drafts ||= {};latest.drafts[name]=d;
+    localStorage.setItem(storageKey,JSON.stringify(latest));
+    await hv1CloudSave(JSON.parse(JSON.stringify(latest)),date);
+    return d;
+  }catch(e){
+    console.warn("Hydrate finalized V1 draft:",e);
+    return d;
+  }
+}
+
+function hv1ApplyDraft(name){
+  const longState=hv1Load();
+  const repaired=hv1ReconcileFinalReports(longState);
+  const salesSynced=hv1SyncBarSalesToDraft(longState,name);
+  if(hv1SyncLongBusserDraft(longState,name)||repaired||salesSynced)localStorage.setItem(hv1Key(),JSON.stringify(longState));
+  const d=hv1Draft(name); currentHourlyReportId=d.hourlyReportId||null;currentHourlySubmissionId=d.sourceSubmissionId||null;
+  hourlyAdjustmentChoice=d.hourlyAdjustmentChoice||null;
+  // Clear backing fields first. Blank means NOT ENTERED; explicit 0 stays 0.
+  ['hIn','hOut','hAmIn','hAmOut','hPmIn','hPmOut','hGrandTotal','hTotalAM','hPaidTip','hCardFee','hCashTip','hMeal','hBtPrevAMInput','hBtPrev24Input'].forEach(id=>{if($(id))$(id).value=''});
+  if($('hDate'))$('hDate').value=d.date||$('hv1Date').value;if($('hEmployee'))$('hEmployee').value=name;
+  Object.entries(d.values||{}).forEach(([id,v])=>{if($(id))$(id).value=v;howSetSilent(id,v)});
+  if(d.barAuto){
+    const amChoice=d.entered?.hAmBar ? String(d.values?.hAmBar||'no') : (Number(d.barAuto.amGT||0)>0?'yes':'no');
+    const pmChoice=d.entered?.hPmBar ? String(d.values?.hPmBar||'no') : ((d.barAuto.valid24||d.barAuto.validPM)?'yes':'no');
+    howSetSilent('hAmBar',amChoice);
+    howSetSilent('hPmBar',pmChoice);
+  }
+  hourlyWizardState=d.hourlyWizardState||{position:d.values?.hPosition||'Server',shift:d.values?.hShift||'AM',busserAM:d.values?.hBusserAM||'WITHOUT'};
+  if(d.howBartenderState)howBartenderState=d.howBartenderState;else resetHowBartenderState();
+  howSetSilent('hEmployee',name);howSetSilent('hDate',d.date||$('hv1Date').value);howSetSilent('hPosition',hourlyWizardState.position||'Server');howSetSilent('hShift',hourlyWizardState.shift||'AM');howSetSilent('hBusserAM',hourlyWizardState.busserAM||'WITHOUT');
+  applyWorkProfilePosition(name);
+  hourlyWizardStep=Math.max(1,Math.min(7,Number(d.page||1)));renderHourlyWizard();setTimeout(hv1PatchWizard,0);
+}
+
+let hv1AutosaveTimer=null;
+
+function hv1VisibleDraftValue(d,key){
+  const v=d?.values?.[key];
+  return v===undefined||v===null ? "" : String(v);
+}
+
+function hv1PatchWizard(){
+  if(!hourlyV1Mode||!hv1EditingEmployee||!document.body.classList.contains("hourly-v1-editing"))return;
+  const wizard=$("hourlyOriginalWizard");
+  if(!wizard)return;
+  const d=hv1Draft(hv1EditingEmployee);
+
+  // Restore visible fields directly from the employee draft.
+  // This is intentionally separate from the legacy backing inputs so an edit
+  // can never reopen with blank Paid Tip/Card Fee/Cash Tip/Meal values.
+  const map={
+    howDate:"hDate", howIn:"hIn", howOut:"hOut",
+    howAmIn:"hAmIn", howAmOut:"hAmOut", howPmIn:"hPmIn", howPmOut:"hPmOut",
+    howGrand:"hGrandTotal", howTotalAM:"hTotalAM",
+    howPaid:"hPaidTip", howCardFee:"hCardFee", howCash:"hCashTip", howMeal:"hMeal"
+  };
+  Object.entries(map).forEach(([visibleId,key])=>{
+    const el=$(visibleId);
+    if(!el)return;
+    const saved=hv1VisibleDraftValue(d,key);
+    if(saved!=="" && String(el.value??"")!==saved) el.value=saved;
+  });
+
+  if(hourlyWizardStep===4)updateHowSalesPreview();
+
+  // Always-visible V1 quick navigation.
+  let nav=$("hv1QuickNav");
+  if(!nav){
+    nav=document.createElement("div");
+    nav.id="hv1QuickNav";
+    nav.className="hv1-quick-nav";
+    nav.innerHTML=`
+      <button class="btn light" type="button" onclick="hv1SavePage()">SAVE &amp; BACK TO TEAM BOARD</button>
+      <button class="btn light" type="button" onclick="hv1JumpPage(4)">SALES</button>
+      <button class="btn light" type="button" onclick="hv1JumpPage(5)">TIPS</button>
+      <button class="btn dark" type="button" onclick="hv1GoBarFromEmployee()">BAR</button>
+      <button class="btn gold" type="button" onclick="hv1SaveStay()">SAVE</button>`;
+    wizard.prepend(nav);
+  }
+
+  // Autosave every editable field. No need to press Back/Next first.
+  wizard.querySelectorAll("input,select,textarea").forEach(el=>{
+    if(el.dataset.hv1AutosaveBound==="1")return;
+    el.dataset.hv1AutosaveBound="1";
+    const save=()=>{
+      clearTimeout(hv1AutosaveTimer);
+      hv1AutosaveTimer=setTimeout(()=>{
+        try{
+          captureHourlyWizard();
+          hv1CapturePage(false);
+          const note=$("hv1AutosaveNote");
+          if(note)note.textContent="Saved";
+        }catch(e){console.warn("V1 autosave:",e)}
+      },120);
+    };
+    el.addEventListener("input",save);
+    el.addEventListener("change",save);
+  });
+
+  if(!$("hv1AutosaveNote")){
+    const note=document.createElement("div");
+    note.id="hv1AutosaveNote";
+    note.className="hv1-autosave-note";
+    note.textContent="Auto-save ON";
+    nav?.appendChild(note);
+  }
+}
+
+
+window.hv1JumpPage=function(page){
+  try{
+    captureHourlyWizard();
+    hv1CapturePage(false);
+  }catch(e){console.warn("Save before page jump:",e)}
+  hourlyWizardStep=Math.max(1,Math.min(7,Number(page)||1));
+  const s=hv1Load(),d=s.drafts?.[hv1EditingEmployee];
+  if(d){d.page=hourlyWizardStep;d.savedAt=Date.now();s.drafts[hv1EditingEmployee]=d;hv1Save(s);}
+  renderHourlyWizard();
+  window.scrollTo(0,0);
+};
+
+window.hv1SaveStay=function(){
+  try{
+    captureHourlyWizard();
+    hv1CapturePage(false);
+    const note=$("hv1AutosaveNote");
+    if(note)note.textContent="Saved to draft";
+  }catch(e){
+    console.error("V1 Save:",e);
+    alert("Save failed: "+(e.message||e));
+  }
+};
+
+window.hv1GoBarFromEmployee=function(){
+  try{
+    captureHourlyWizard();
+    hv1CapturePage(false);
+  }catch(e){console.warn("Save before BAR:",e)}
+  document.body.classList.remove("hourly-v1-editing");
+  $("hourly")?.classList.add("hidden");
+  $("hourlyV1Workspace")?.classList.remove("hidden");
+  $("hv1Setup")?.classList.add("hidden");
+  $("hv1BoardBox")?.classList.add("hidden");
+  window.hv1OpenBarCenter();
+  window.scrollTo(0,0);
+};
+
+function hv1FinalReportFor(name,date){
+  const identity=String(name||'').trim().toLowerCase();
+  return latestHourlyReports.filter(r=>String(r.employee||'').trim().toLowerCase()===identity
+    && String(r.date||'')===String(date||'')
+    && !['draft','pending','rejected','deleted','void'].includes(String(r.status||'').toLowerCase()))
+    .sort((a,b)=>(b.updatedAt?.seconds||b.createdAt?.seconds||0)-(a.updatedAt?.seconds||a.createdAt?.seconds||0))[0]||null;
+}
+function hv1ReconcileFinalReports(s,date=hv1DateValue()){
+  let changed=false;
+  s.drafts ||= {};
+  for(const name of s.team||[]){
+    const d=s.drafts[name]||hv1BlankDraft(name);
+    const linked=latestHourlyReports.find(row=>row.id===d.hourlyReportId);
+    if(linked && !hourlyReportBelongsTo(linked,name,date)){
+      hv1DetachReportLink(d);s.drafts[name]=d;changed=true;
+    }
+    const r=hv1FinalReportFor(name,date);
+    if(!r)continue;
+    if(!d.finalized || !d.hourlyReportId){
+      d.finalized=true;d.hourlyReportId=r.id;d.date=date;
+      d.sourceSubmissionId=r.sourceSubmissionId||'';
+      d.finalStatusRecovered=true;s.drafts[name]=d;changed=true;
+    }
+  }
+  return changed;
+}
+function hv1Status(d,name=d?.employee,date=d?.date||hv1DateValue()){
+  if(hv1FinalReportFor(name,date) || d?.finalized)return 'COMPLETED';
+  if(d?.savedAt)return 'IN PROGRESS';
+  return 'NOT STARTED';
+}
+
+function hv1RenderRoster(preserveSelection=false){
+  const host=$('hv1Roster');if(!host)return;
+  const boxes=[...host.querySelectorAll('input[type=checkbox]')];
+  const selected=new Set(preserveSelection && host.dataset.rosterDate===hv1DateValue() && boxes.length
+    ? boxes.filter(x=>x.checked).map(x=>x.value):hv1Load().team||[]);
+  host.innerHTML=getEmployeeRoster().map(n=>`<label class="hv1-check"><input type="checkbox" value="${esc(n)}" ${selected.has(n)?'checked':''}><span>${esc(n)}</span></label>`).join('');
+  host.dataset.rosterDate=hv1DateValue();
+}
+function hv1RenderCards(){const host=$('hv1Cards'),s=hv1Load();if(hv1ReconcileFinalReports(s))localStorage.setItem(hv1Key(),JSON.stringify(s));if(!host)return;host.innerHTML=(s.team||[]).map(n=>{const d=s.drafts?.[n]||hv1BlankDraft(n),st=hv1Status(d,n,hv1DateValue()),cls=st==='COMPLETED'?'final':st==='IN PROGRESS'?'progress':'';const entered=Object.keys(d.entered||{}).length;const editNote=st==='COMPLETED'?'<br><b>Tap to EDIT finalized report</b>':'';return `<div class="hv1-card-wrap"><button class="hv1-card ${cls}" type="button" data-hv1-open-employee="${encodeURIComponent(n)}"><span class="hv1-status">${st}</span><h4>${esc(n)}</h4><div class="hv1-meta">${d.values?.hShift?`Shift: ${esc(d.values.hShift)}`:'Shift not selected'}<br>${entered} field/group(s) saved${(d.skippedPages||[]).length?` • ${(d.skippedPages||[]).length} page(s) skipped`:''}${editNote}</div></button><button class="hv1-card-restore" type="button" title="Restore ${esc(n)} from finalized report" data-hv1-restore-employee="${encodeURIComponent(n)}">↻</button><button class="hv1-card-delete" type="button" title="Delete ${esc(n)} from this team — password required" data-hv1-delete-employee="${encodeURIComponent(n)}">×</button></div>`}).join('')}
+async function hv1Enter(){hourlyV1Mode=true;document.body.classList.add('hourly-v1-mode');document.body.classList.remove('hourly-workspace-mode','hourly-v1-editing');$('hourly')?.classList.add('hidden');document.querySelectorAll('.staffPanel').forEach(x=>x.classList.add('hidden'));$('hourlyV1Workspace')?.classList.remove('hidden');if($('hv1Date')&&!$('hv1Date').value)$('hv1Date').value=todayLocal();await hv1CloudRestore();await refreshEmployeeAccountRoster();await loadDeletedItems();hv1RenderRoster();const s=hv1Load();$('hv1Setup')?.classList.toggle('hidden',!!s.team?.length);$('hv1BoardBox')?.classList.toggle('hidden',!s.team?.length);if(s.team?.length)hv1RenderCards();hv1RenderRecovery()}
+window.hv1SelectAll=function(){document.querySelectorAll('#hv1Roster input[type=checkbox]').forEach(x=>x.checked=true)};
+window.hv1CreateBoard=async function(){
+  const team=[...document.querySelectorAll('#hv1Roster input:checked')].map(x=>x.value);
+  if(!team.length){alert('Select at least one employee.');return}
+  const s=hv1Load();
+  s.team=team; for(const name of team){if(s.removedEmployees?.[name])s.removedEmployees[name].restoredAt=Date.now();}
+  s.drafts=s.drafts||{};
+  team.forEach(n=>{if(!s.drafts[n])s.drafts[n]=hv1BlankDraft(n)});
+  // Save local immediately, then WAIT for cloud backup to finish.
+  localStorage.setItem(hv1Key(),JSON.stringify(s));
+  const cloudOk=await hv1CloudSave(JSON.parse(JSON.stringify(s)));
+  $('hv1Setup').classList.add('hidden');
+  $('hv1BoardBox').classList.remove('hidden');
+  hv1RenderCards();
+  if(!cloudOk)hv1SetCloudStatus('Team saved locally. Tap Sync Now before leaving this date.','warn');
+};
+
+window.hv1EditTeam=function(){$('hv1BoardBox').classList.add('hidden');$('hv1Setup').classList.remove('hidden');hv1RenderRoster()};
+
+// LONG: sales through 4 PM are the no-busser portion on Mon–Fri.
+// The BAR checkpoint remains 2–4; it must never be copied into BAR AM.
+function hv1SyncLongBusserDraft(s,name){
+  const d=s.drafts?.[name];
+  if(!d || hv1DraftShift(d)!=="LONG" || hv1DraftRole(d)==="bartender")return false;
+  d.values ||= {};d.entered ||= {};d.hourlyWizardState ||= {};
+  const date=d.values.hDate||d.date||hv1DateValue();
+  const choice=isWeekendDate(date)?"WITH":"WITHOUT";
+  d.values.hBusserAM=choice;d.entered.hBusserAM=true;
+  d.hourlyWizardState.busserAM=choice;
+  d.hourlyWizardState.shift="LONG";
+  d.hourlyWizardState.position=d.values.hPosition||"Server";
+  const entries=s.bar?.["2PM_4PM"]?.entries||{};
+  if(Object.prototype.hasOwnProperty.call(entries,name)){
+    const raw=String(entries[name]??"").trim();
+    d.values.hTotalAM=raw;d.entered.hTotalAM=raw!=="";
+    d.longBusserSalesSource="BAR_2_4";
+  }else if(d.longBusserSalesSource==="BAR_2_4"){
+    d.values.hTotalAM="";d.entered.hTotalAM=false;
+  }
+  // LONG starts at 2 PM. Its early sales belong to the 2–4 BAR checkpoint.
+  d.values.hAmBar="no";d.entered.hAmBar=true;
+  return true;
+}
+
+function howSyncLongBusserForm(){
+  if($("hShift")?.value!=="LONG" || String($("hPosition")?.value||"").toLowerCase()==="bartender")return;
+  const date=$("hDate")?.value||hv1DateValue(),name=$("hEmployee")?.value||hv1EditingEmployee;
+  const choice=isWeekendDate(date)?"WITH":"WITHOUT";
+  howSetSilent("hBusserAM",choice);
+  if(hourlyWizardState.shift==="LONG")hourlyWizardState.busserAM=choice;
+  let state;try{state=JSON.parse(localStorage.getItem(HV1_STORAGE_PREFIX+date)||"{}")}catch{state={}}
+  const entries=state.bar?.["2PM_4PM"]?.entries||{};
+  const linked=Object.prototype.hasOwnProperty.call(entries,name);
+  const stale=state.drafts?.[name]?.longBusserSalesSource==="BAR_2_4";
+  if(linked || stale){
+    const raw=linked?String(entries[name]??"").trim():"";
+    howSetSilent("hTotalAM",raw);
+    const field=$("howTotalAM");
+    if(field){field.value=raw;field.readOnly=linked;field.title=linked?"Synced from BAR 2–4. Edit the sales in BAR Center.":"";}
+  }
+  howSetSilent("hAmBar","no");
+}
+
+function hv1BarSalesFieldMap(shift,s={},name=''){
+  // AM follows the assigned 2–4 bartender, not whether a sales entry exists.
+  // LONG still uses 2–4 sales even without a dedicated 2–4 bartender.
+  if(shift==='AM')return {hGrandTotal:String(s.bar?.['2PM_4PM']?.bartender||'').trim()!==''?'2PM_4PM':'AM'};
+  if(shift==='PM')return {hGrandTotal:'PM'};
+  if(shift==='DOUBLE')return {hTotalAM:'AM',hGrandTotal:'PM'};
+  if(shift==='LONG')return {hTotalAM:'2PM_4PM',hGrandTotal:'PM'};
+  return {};
+}
+function hv1SyncBarSalesToDraft(s,name){
+  const d=s.drafts?.[name];
+  if(!d || hv1DraftRole(d)==='bartender')return false;
+  d.values ||= {};d.entered ||= {};d.barSalesLinks ||= {};
+  const fields=hv1BarSalesFieldMap(hv1DraftShift(d),s,name);
+  let changed=false;
+  for(const [field,link] of Object.entries(d.barSalesLinks)){
+    if(fields[field]!==link.checkpoint){
+      // A prior AM total is not a full-day total after switching to DOUBLE.
+      if(String(d.values[field]??'')===link.value){d.values[field]='';d.entered[field]=false;}
+      delete d.barSalesLinks[field];changed=true;
+    }
+  }
+  for(const [field,checkpoint] of Object.entries(fields)){
+    const entries=s.bar?.[checkpoint]?.entries||{};
+    if(!Object.prototype.hasOwnProperty.call(entries,name)){
+      if(d.barSalesLinks[field]){delete d.barSalesLinks[field];changed=true;}
+      continue;
+    }
+    // Preserve explicit zero and blank. Invalid text stays visible for the
+    // existing validation; it must not silently become a financial zero.
+    const value=String(entries[name]??'').trim();
+    const link=d.barSalesLinks[field];
+    if(String(d.values[field]??'')!==value || d.entered[field]!==!!value
+      || link?.checkpoint!==checkpoint || link?.value!==value){
+      d.values[field]=value;d.entered[field]=value!=='';
+      d.barSalesLinks[field]={checkpoint,value};changed=true;
+    }
+  }
+  if(changed)d.savedAt=Date.now();
+  return changed;
+}
+
+function hv1SyncServerDraftToBar(s,name,editedSales=[]){
+  hv1EnsureBarState(s);
+  const d=s.drafts?.[name];
+  if(!d || hv1DraftRole(d)==="bartender")return;
+
+  // Only a sales field actually edited by the manager may replace its linked
+  // BAR value. Saving hours, tips or another employee never overwrites it.
+  const fieldMap=hv1BarSalesFieldMap(hv1DraftShift(d),s,name);
+  for(const field of editedSales){
+    const link=d.barSalesLinks?.[field];
+    if(link && link.checkpoint===fieldMap[field]){
+      s.bar[link.checkpoint].entries[name]=String(d.values?.[field]??'').trim();
+      s.barManual ||= {};s.barManual[name] ||= {};s.barManual[name][link.checkpoint]=true;
+    }
+  }
+  hv1SyncBarSalesToDraft(s,name);
+
+  hv1SyncLongBusserDraft(s,name);
+  const manual=s.barManual?.[name]||{};
+  const shift=hv1DraftShift(d);
+  const grand=Math.max(0,Number(d.values?.hGrandTotal||0));
+  const totalAM=Math.max(0,Number(d.values?.hTotalAM||0));
+  const amOn=String(d.values?.hAmBar||"no")==="yes";
+  const pmOn=String(d.values?.hPmBar||"no")==="yes";
+
+  // AM-only: use 2–4 when its bartender is assigned, otherwise AM. Corrections go back to the
+  // selected source, so a full 2–4 total cannot overwrite the earlier AM value.
+  // PM-only: BAR PM Grand Total = employee Grand Total.
+  // DOUBLE: BAR AM = Total AM; BAR PM = cumulative/full Grand Total.
+  // DOUBLE keeps its separate, manually entered BAR 2–4 checkpoint.
+  if(shift==="AM"){
+    const checkpoint=hv1BarSalesFieldMap(shift,s,name).hGrandTotal;
+    if(amOn && grand>0){if(!manual[checkpoint])s.bar[checkpoint].entries[name]=String(grand)}
+    else {if(!manual[checkpoint])delete s.bar[checkpoint].entries[name]};
+    {if(!manual.PM)delete s.bar.PM.entries[name]};
+  }else if(shift==="PM"){
+    if(pmOn && grand>0){if(!manual.PM)s.bar.PM.entries[name]=String(grand)}
+    else {if(!manual.PM)delete s.bar.PM.entries[name]};
+    {if(!manual.AM)delete s.bar.AM.entries[name]};
+  }else if(shift==="DOUBLE"){
+    if(amOn && totalAM>0){if(!manual.AM)s.bar.AM.entries[name]=String(totalAM)}
+    else {if(!manual.AM)delete s.bar.AM.entries[name]};
+    if(pmOn && grand>0){if(!manual.PM)s.bar.PM.entries[name]=String(grand)}
+    else {if(!manual.PM)delete s.bar.PM.entries[name]};
+  }else if(shift==="LONG"){
+    // Remove only a prior automatically generated AM mirror. Manual BAR values stay intact.
+    if(!manual.AM)delete s.bar.AM.entries[name];
+    if(pmOn && grand>0){if(!manual.PM)s.bar.PM.entries[name]=String(grand)}
+    else if(!manual.PM)delete s.bar.PM.entries[name];
+  }
+}
+
+function hv1SyncBarEntryToServerDraft(s,key,name,value){
+  s.drafts ||= {};
+  const d=s.drafts[name]||hv1BlankDraft(name);
+  if(hv1DraftRole(d)==="bartender")return;
+  s.drafts[name]=d;
+  d.values=d.values||{};
+  d.entered=d.entered||{};
+  const n=Math.max(0,Number(value)||0);
+  const has=String(value??"").trim()!=="" && n>0;
+  const shift=hv1DraftShift(d);
+
+  if(key==="AM"){
+    const has24=shift==='AM' && Number(s.bar?.['2PM_4PM']?.entries?.[name]||0)>0;
+    d.values.hAmBar=(has||has24)?"yes":"no"; d.entered.hAmBar=true;
+    if(shift==="DOUBLE"){
+      d.values.hTotalAM=has?String(n):d.values.hTotalAM||"";
+      if(has)d.entered.hTotalAM=true;
+    }
+  }
+
+  if(key==="PM"){
+    const has24=Number(s.bar?.["2PM_4PM"]?.entries?.[name]||0)>0;
+    d.values.hPmBar=(has||has24)?"yes":"no"; d.entered.hPmBar=true;
+    if(["PM","DOUBLE","LONG"].includes(shift) && has){
+      d.values.hGrandTotal=String(n);
+      d.entered.hGrandTotal=true;
+    }
+  }
+
+  if(key==="2PM_4PM"){
+    if(shift==='AM'){
+      const hasAM=Number(s.bar?.AM?.entries?.[name]||0)>0;
+      d.values.hAmBar=(has||hasAM)?'yes':'no';d.entered.hAmBar=true;
+    }
+    const hasPM=Number(s.bar?.PM?.entries?.[name]||0)>0;
+    d.values.hPmBar=(has||hasPM)?"yes":"no"; d.entered.hPmBar=true;
+  }
+
+  hv1SyncBarSalesToDraft(s,name);
+  hv1SyncLongBusserDraft(s,name);
+  d.savedAt=Date.now();
+  s.drafts[name]=d;
+}
+
+function hv1EnsureBarState(s){
+  s.bar=s.bar||{};
+  for(const key of ['AM','2PM_4PM','PM']){
+    s.bar[key]=s.bar[key]||{bartender:'',entries:{}};
+    s.bar[key].entries=s.bar[key].entries||{};
+  }
+  return s.bar;
+}
+function hv1DraftRole(d){return String(employeeWorkProfile(d?.employee||d?.values?.hEmployee)?.position||d?.values?.hPosition||d?.hourlyWizardState?.position||'').toLowerCase()}
+function hv1DraftShift(d){return String(d?.values?.hShift||d?.hourlyWizardState?.shift||'').toUpperCase()}
+function hv1ServerNamesForCheckpoint(key,s){
+  const bartenders=new Set(Object.values(hv1EnsureBarState(s)).map(x=>x.bartender).filter(Boolean));
+  // P22 MANUAL BAR ENTRY:
+  // Every employee selected on Today's Team is available in BAR AM / 2-4 / PM.
+  // Shift does NOT have to be entered first. This restores the fast workflow:
+  // choose today's team once, then type each server's cumulative Grand Total
+  // directly in the appropriate BAR checkpoint.
+  return (s.team||[]).filter(name=>{
+    if(bartenders.has(name))return false;
+    const d=s.drafts?.[name]||{};
+    if(hv1DraftRole(d)==='bartender')return false;
+    return true;
+  });
+}
+
+function hv1BartenderOptions(selected,s){
+  const names=(s.team||[]).filter(name=>employeeWorkProfile(name)?.position!=="Server");
+  return `<option value="">Select bartender</option>`+names.map(n=>`<option value="${esc(n)}" ${n===selected?'selected':''}>${esc(n)}</option>`).join('');
+}
+function hv1BarNumber(value){
+  const n=Number(value);
+  return Number.isFinite(n) && n>0 ? n : 0;
+}
+
+function hv1ServerBarFees(name,s){
+  const bar=s.bar||{};
+  const amGT=hv1BarNumber(bar.AM?.entries?.[name]);
+  const gt24=hv1BarNumber(bar['2PM_4PM']?.entries?.[name]);
+  const pmGT=hv1BarNumber(bar.PM?.entries?.[name]);
+  const amFee=howRoundCent(amGT*0.006);
+  const valid24=gt24>0 && gt24>=amGT;
+  const fee24=valid24?Math.max(0,howRoundCent(gt24*0.006)-amFee):0;
+  const previousCumulative=valid24?gt24:amGT;
+  const validPM=pmGT>0 && pmGT>=previousCumulative;
+  const pmFee=validPM?Math.max(0,howRoundCent(pmGT*0.006)-amFee-fee24):0;
+  return {amGT,gt24,pmGT,amFee,fee24,pmFee,
+    totalFee:howRoundCent(amFee+fee24+pmFee),valid24,validPM};
+}
+
+function hv1ServerBarPeriodFee(key,name,s){
+  const f=hv1ServerBarFees(name,s);
+  return key==='AM'?f.amFee:key==='2PM_4PM'?f.fee24:f.pmFee;
+}
+
+function hv1BarCheckpointTotals(key,s){
+  let summary=0,gross=0,lessAM=0,less24=0,finalReceived=0;
+  const ignored=[];
+  for(const name of hv1ServerNamesForCheckpoint(key,s)){
+    const f=hv1ServerBarFees(name,s);
+    const current=key==='AM'?f.amGT:key==='2PM_4PM'?f.gt24:f.pmGT;
+    const valid=key==='AM'?current>0:key==='2PM_4PM'?f.valid24:f.validPM;
+    // A blank or decreasing checkpoint is pending, never a negative charge.
+    // Crucially, a different server's earlier fee is never subtracted here.
+    if(!valid){if(current>0)ignored.push(name);continue;}
+    summary+=current;
+    gross+=howRoundCent(current*0.006);
+    if(key!=='AM')lessAM+=f.amFee;
+    if(key==='PM')less24+=f.fee24;
+    finalReceived+=key==='AM'?f.amFee:key==='2PM_4PM'?f.fee24:f.pmFee;
+  }
+  return {checkpoint:key,summary:howRoundCent(summary),gross:howRoundCent(gross),lessAM:howRoundCent(lessAM),less24:howRoundCent(less24),finalReceived:howRoundCent(finalReceived),ignored};
+}
+
+function hv1BarFormKey(d){
+  // Numeric zero and an empty input are equivalent for the form comparison.
+  return JSON.stringify({
+    servers:(d.servers||[]).map(r=>[String(r.name||'').trim(),hv1BarNumber(r.grandTotal)]),
+    previousAM:hv1BarNumber(d.previousAM),previous24:hv1BarNumber(d.previous24)
+  });
+}
+
+function hv1ServerBarCalculationValues(name){
+  const s=hv1Load(),d=s.drafts?.[name];
+  if(!d?.barAuto)return null;
+  // Calculate the current form, even when Calculate is tapped before autosave.
+  // This is an in-memory copy; it does not write/delete database records.
+  if(String($('hEmployee')?.value||'')===name){
+    d.values=d.values||{};
+    const editedSales=['hGrandTotal','hTotalAM'].filter(k=>$(k) && String(d.values[k]??'')!==String($(k).value??''));
+    ['hGrandTotal','hTotalAM','hAmBar','hPmBar'].forEach(k=>{
+      if($(k))d.values[k]=String($(k).value??'');
+    });
+    hv1SyncServerDraftToBar(s,name,editedSales);
+  }
+  return hv1ServerBarFees(name,s);
+}
+
+
+function hv1BarGross(key,s){
+  return hv1BarCheckpointTotals(key,s).gross;
+}
+
+function hv1BarReceived(key,s){
+  return hv1BarCheckpointTotals(key,s).finalReceived;
+}
+
+function hv1BarCheckpointLabel(key){return key==='AM'?'BAR AM':key==='2PM_4PM'?'BAR 2–4':'BAR PM'}
+function hv1BarCardHtml(key,s){
+  const bar=hv1EnsureBarState(s)[key],names=hv1ServerNamesForCheckpoint(key,s);
+  const gross=hv1BarGross(key,s),received=hv1BarReceived(key,s);
+  const formula=key==='AM'
+    ? 'All Server Grand Total × 0.6%'
+    : key==='2PM_4PM'
+      ? 'All Server Grand Total × 0.6% − BAR AM received'
+      : (hv1BarReceived('2PM_4PM',s)>0
+          ? 'All Server Grand Total × 0.6% − BAR AM received − BAR 2–4 received'
+          : 'All Server Grand Total × 0.6% − BAR AM received (2–4 optional / not used)');
+  return `<h4>${hv1BarCheckpointLabel(key)}</h4>
+    <div class="formula">${formula}</div>
+    ${key==='2PM_4PM'?'<div class="notice">AM servers: with a 2–4 bartender selected, these sales become your Grand Total. Without a 2–4 bartender, your Grand Total follows BAR AM. LONG servers: these are sales through 4 PM, excluded from busser on Monday–Friday. Saturday/Sunday busser applies to the full day.</div>':''}
+    <div class="hv1-bar-bartender"><label>Bartender</label><select data-hv1-bar-bartender="${key}">${hv1BartenderOptions(bar.bartender,s)}</select></div>
+    <div class="hv1-bar-row head"><div>Server</div><div>Cumulative Sales</div><div>This Period Fee</div></div>
+    ${names.length?names.map(name=>{
+      const v=bar.entries?.[name]??'';
+      return `<div class="hv1-bar-row"><b>${esc(name)}</b><input type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" data-hv1-bar-gt="${key}" data-employee="${encodeURIComponent(name)}" value="${v===''?'':esc(v)}"><div class="hv1-bar-fee" data-hv1-fee="${key}" data-employee="${encodeURIComponent(name)}">${fmtMoney(hv1ServerBarPeriodFee(key,name,s))}</div></div>`;
+    }).join(''):'<div class="notice">No server with this shift is set yet.</div>'}
+    <div class="hv1-bar-metrics">
+      <div class="hv1-bar-metric"><span>Gross 0.6%</span><b data-hv1-gross="${key}">${fmtMoney(gross)}</b></div>
+      <div class="hv1-bar-metric"><span>Server Count</span><b>${names.length}</b></div>
+      <div class="hv1-bar-metric hv1-bar-received"><span>BAR TIP OUT RECEIVED</span><b data-hv1-received="${key}">${fmtMoney(received)}</b></div>
+    </div>`;
+}
+
+function hv1UpdateBarLive(key,name,value){
+  const state=hv1Load(); hv1EnsureBarState(state);
+  state.bar[key].entries[name]=String(value??"");
+  state.barManual ||= {}; state.barManual[name] ||= {}; state.barManual[name][key]=true;
+  hv1SyncBarEntryToServerDraft(state,key,name,value);
+  hv1ApplyBarAutomation(state);
+  localStorage.setItem(hv1Key(),JSON.stringify(state));
+  hv1CloudSave(JSON.parse(JSON.stringify(state))).catch(()=>{});
+
+  document.querySelectorAll('[data-hv1-fee]').forEach(el=>{
+    let emp="";try{emp=decodeURIComponent(el.dataset.employee||"")}catch(e){emp=el.dataset.employee||""}
+    if(emp)el.textContent=fmtMoney(hv1ServerBarPeriodFee(el.dataset.hv1Fee,emp,state));
+  });
+  for(const k of ["AM","2PM_4PM","PM"]){
+    const grossEl=document.querySelector(`[data-hv1-gross="${k}"]`);
+    const recEl=document.querySelector(`[data-hv1-received="${k}"]`);
+    if(grossEl)grossEl.textContent=fmtMoney(hv1BarGross(k,state));
+    if(recEl)recEl.textContent=fmtMoney(hv1BarReceived(k,state));
+  }
+  hv1RenderBarSummaryOnly(state);
+}
+
+function hv1RenderBarSummaryOnly(state=hv1Load()){
+  const host=$("hv1BarServerTotals"); if(!host)return;
+  const allServers=[...new Set(["AM","2PM_4PM","PM"].flatMap(k=>hv1ServerNamesForCheckpoint(k,state)))].sort((a,b)=>a.localeCompare(b));
+  host.innerHTML=`<h4>Server Bar Tip Out Summary</h4>
+    <div class="hv1-bar-total-row head"><div>Server</div><div>AM Fee</div><div>2–4 Fee</div><div>PM Fee</div><div>Total Bar Tip Out</div></div>
+    ${allServers.map(name=>{
+      const f=hv1ServerBarFees(name,state);
+      const am=f.amFee,p24=f.fee24,pm=f.pmFee;
+      return `<div class="hv1-bar-total-row"><b>${esc(name)}</b><span>${fmtMoney(am)}</span><span>${fmtMoney(p24)}</span><span>${fmtMoney(pm)}</span><b>${fmtMoney(am+p24+pm)}</b></div>`;
+    }).join("")||'<div class="notice">No server bar entries yet.</div>'}`;
+}
+
+function hv1RenderBarCenter(){
+  const s=hv1Load();hv1EnsureBarState(s);
+  if($('hv1BarAM'))$('hv1BarAM').innerHTML=hv1BarCardHtml('AM',s);
+  if($('hv1Bar24'))$('hv1Bar24').innerHTML=hv1BarCardHtml('2PM_4PM',s);
+  if($('hv1BarPM'))$('hv1BarPM').innerHTML=hv1BarCardHtml('PM',s);
+
+  hv1RenderBarSummaryOnly(s);
+
+  document.querySelectorAll('[data-hv1-bar-gt]').forEach(inp=>{
+    inp.addEventListener('focus',()=>{ if(String(inp.value||'').trim()==='0') setTimeout(()=>inp.select(),0); });
+    inp.addEventListener('input',()=>{
+      const key=inp.dataset.hv1BarGt;let name='';try{name=decodeURIComponent(inp.dataset.employee||'')}catch(e){name=inp.dataset.employee||''}
+      hv1UpdateBarLive(key,name,inp.value);
+    });
+  });
+  document.querySelectorAll('[data-hv1-bar-bartender]').forEach(sel=>sel.addEventListener('change',()=>{
+    const state=hv1Load();hv1EnsureBarState(state);
+    state.bar[sel.dataset.hv1BarBartender].bartender=sel.value||'';
+    hv1ApplyBarAutomation(state);
+    localStorage.setItem(hv1Key(),JSON.stringify(state));
+    hv1CloudSave(JSON.parse(JSON.stringify(state))).catch(()=>{});
+    hv1RenderBarCenter();
+  }));
+}
+function hv1ApplyBarAutomation(s){
+  const bar=hv1EnsureBarState(s);
+  s.drafts=s.drafts||{};
+
+  // Server side: total Bar Tip Out = sum of cumulative checkpoint differences.
+  for(const name of s.team||[]){
+    const d=s.drafts[name]||hv1BlankDraft(name);
+    if(hv1DraftRole(d)==='bartender')continue;
+    s.drafts[name]=d;
+    hv1SyncBarSalesToDraft(s,name);
+    hv1SyncLongBusserDraft(s,name);
+    if(hv1DraftShift(d)==='LONG' && !s.barManual?.[name]?.AM)delete bar.AM.entries[name];
+    const {amGT,gt24,pmGT,amFee,fee24,pmFee,totalFee,valid24,validPM}=hv1ServerBarFees(name,s);
+    d.barAuto={amGT,gt24,pmGT,amFee,fee24,pmFee,totalFee,valid24,validPM,updatedAt:Date.now()};
+    d.values=d.values||{};d.entered=d.entered||{};
+
+    // Auto-suggest the checkbox only until the manager has explicitly changed it.
+    // Once the manager unchecks it, BAR automation must NOT force it back on.
+    if(!d.entered.hAmBar) d.values.hAmBar=(amGT>0 || (hv1DraftShift(d)==='AM' && gt24>0))?'yes':'no';
+    if(!d.entered.hPmBar) d.values.hPmBar=(valid24||validPM)?'yes':'no';
+    s.drafts[name]=d;
+  }
+
+  const receivedAM=hv1BarReceived('AM',s);
+  const received24=hv1BarReceived('2PM_4PM',s);
+  const receivedPM=hv1BarReceived('PM',s);
+
+  // Bartender side: inject the existing Step-6 formula state, unchanged.
+  const checkpointInfo=[
+    ['AM',receivedAM,0,0],
+    ['2PM_4PM',received24,receivedAM,0],
+    ['PM',receivedPM,receivedAM,received24]
+  ];
+  for(const [key,received,prevAM,prev24] of checkpointInfo){
+    const bartender=bar[key].bartender;
+    if(!bartender)continue;
+    const d=s.drafts[bartender]||hv1BlankDraft(bartender);
+    d.values=d.values||{};d.entered=d.entered||{};
+    d.values.hPosition='Bartender';d.entered.hPosition=true;
+    d.hourlyWizardState=d.hourlyWizardState||{};
+    d.hourlyWizardState.position='Bartender';
+    const state=d.howBartenderState||{
+      checkpoint:key,
+      AM:newHowBartenderCheckpoint(),
+      '2PM_4PM':newHowBartenderCheckpoint(),
+      PM:newHowBartenderCheckpoint()
+    };
+    state.checkpoint=key;
+    for(const cp of ['AM','2PM_4PM','PM']) if(!state[cp])state[cp]=newHowBartenderCheckpoint();
+    const serverNames=hv1ServerNamesForCheckpoint(key,s);
+    state[key].servers=Array.from({length:9},(_,i)=>{
+      const name=serverNames[i]||'';
+      return {name,grandTotal:name?String(bar[key].entries?.[name]||''):''};
+    });
+    const period=hv1BarCheckpointTotals(key,s);
+    state[key].previousAM=key==='AM'?'':String(period.lessAM);
+    state[key].previous24=key==='PM'?String(period.less24):'';
+    // Retain the exact current-period result through Step 6, Calculate and Save.
+    // Manual form edits invalidate this snapshot and use the existing manual formula.
+    state[key].barCenterCalculation={
+      ...period,
+      inputKey:hv1BarFormKey(state[key]),
+      serverEntries:serverNames.map((name,i)=>({slot:i+1,name,
+        grandTotal:hv1BarNumber(bar[key].entries?.[name])}))
+    };
+    d.howBartenderState=state;
+    d.barAutoReceived={checkpoint:key,received,previousAM:prevAM,previous24:prev24,updatedAt:Date.now()};
+    d.savedAt=Date.now();
+    s.drafts[bartender]=d;
+  }
+}
+
+window.hv1OpenBarCenter=function(){
+  const s=hv1Load();hv1EnsureBarState(s);hv1ApplyBarAutomation(s);hv1Save(s);
+  $('hv1BoardBox')?.classList.add('hidden');$('hv1Setup')?.classList.add('hidden');$('hv1BarBox')?.classList.remove('hidden');
+  hv1RenderBarCenter();
+};
+window.hv1BackFromBar=async function(){return window.hv1ReturnToTeamBoard();};
+function hv1LegacyBackFromBar(){
+  const s=hv1Load();hv1ApplyBarAutomation(s);hv1Save(s);
+  $('hv1BarBox')?.classList.add('hidden');$('hv1BoardBox')?.classList.remove('hidden');hv1RenderCards();hv1RenderRecovery();
+};
+window.hv1SaveBarCenter=async function(){
+  const s=hv1Load();
+  hv1ApplyBarAutomation(s);
+  localStorage.setItem(hv1Key(),JSON.stringify(s));
+  hv1RenderBarCenter();
+
+  const cloudOk=await hv1CloudSave(JSON.parse(JSON.stringify(s)));
+  if(cloudOk){
+    alert('BAR calculations SAVED TO CLOUD and pushed to server/bartender cards.');
+  }else{
+    alert('BAR calculations are saved on this device, but cloud backup failed. Do not log out until Sync Now succeeds.');
+  }
+};
+
+
+let hv1PasswordResolve=null;
+
+function hv1RenderRecovery(){
+  const box=$('hv1RecoveryBox'),text=$('hv1RecoveryText');
+  if(!box)return;
+  const s=hv1Load(),trash=s.trash;
+  const isOwner=currentProfile?.role==='owner';
+  if(!trash){
+    box.classList.add('hidden');
+    return;
+  }
+  const when=trash.clearedAt?new Date(Number(trash.clearedAt)).toLocaleString():'';
+  const scope=trash.scope==='bar'?'BAR data':'TEAM BOARD data';
+  if(text)text.textContent=`${scope} cleared by ${trash.clearedBy||'staff'}${when?` • ${when}`:''}. ${isOwner?'You can Undo or Delete Permanent.':'Only Owner can restore or permanently delete.'}`;
+  box.classList.remove('hidden');
+  box.querySelectorAll('.ownerOnly').forEach(el=>el.classList.toggle('hidden',!isOwner));
+}
+
+function hv1PasswordPrompt(title,text){
+  return new Promise(resolve=>{
+    hv1PasswordResolve=resolve;
+    if($('hv1PasswordTitle'))$('hv1PasswordTitle').textContent=title||'Confirm Password';
+    if($('hv1PasswordText'))$('hv1PasswordText').textContent=text||'Enter your current password.';
+    if($('hv1ActionPassword'))$('hv1ActionPassword').value='';
+    if($('hv1ActionShowPassword'))$('hv1ActionShowPassword').checked=false;
+    if($('hv1ActionPassword'))$('hv1ActionPassword').type='password';
+    if($('hv1PasswordError'))$('hv1PasswordError').textContent='';
+    $('hv1PasswordModal')?.classList.remove('hidden');
+    setTimeout(()=>$('hv1ActionPassword')?.focus(),50);
+  });
+}
+window.hv1CancelPassword=function(){
+  $('hv1PasswordModal')?.classList.add('hidden');
+  const r=hv1PasswordResolve; hv1PasswordResolve=null;
+  if(r)r(false);
+};
+window.hv1SubmitPassword=async function(){
+  const pass=String($('hv1ActionPassword')?.value||'');
+  if(!pass){if($('hv1PasswordError'))$('hv1PasswordError').textContent='Enter your password.';return;}
+  try{
+    if(!currentUser?.email)throw new Error('Password re-authentication is unavailable for this account.');
+    const cred=EmailAuthProvider.credential(currentUser.email,pass);
+    await reauthenticateWithCredential(currentUser,cred);
+    $('hv1PasswordModal')?.classList.add('hidden');
+    const r=hv1PasswordResolve; hv1PasswordResolve=null;
+    if(r)r(true);
+  }catch(e){
+    console.error('Password confirmation:',e);
+    if($('hv1PasswordError'))$('hv1PasswordError').textContent='Password incorrect. Try again.';
+  }
+};
+
+async function hv1RequireStaffPassword(title,text){
+  if(!['manager','owner'].includes(currentProfile?.role||'')){alert('Manager / Owner only.');return false;}
+  return await hv1PasswordPrompt(title,text);
+}
+
+async function requireCurrentAccountPassword(title,text,allowedRoles=["manager","owner"]){
+  const role=String(currentProfile?.role||"");
+  if(!allowedRoles.includes(role)){alert("You are not authorized for this delete action.");return false;}
+  return await hv1PasswordPrompt(
+    title||"Confirm Delete",
+    text||`Enter the password for the ${role.toUpperCase()} account currently logged in.`
+  );
+}
+function deletedItemArchiveId(type,id){
+  return `${String(type||"item").replace(/[^a-z0-9_-]/gi,"_")}_${String(id||Date.now()).replace(/[^a-z0-9_-]/gi,"_")}`;
+}
+async function archiveDeletedItem({itemType,itemId,label,date="",employeeName="",employeeUid="",snapshot={},sourceCollection=""}){
+  if(!currentUser||!currentProfile)return "";
+  const archiveId=deletedItemArchiveId(itemType,itemId);
+  await setDoc(doc(db,"deletedItems",archiveId),{
+    itemType:String(itemType||"item"),
+    itemId:String(itemId||""),
+    label:String(label||itemType||"Deleted item"),
+    date:String(date||""),
+    employeeName:String(employeeName||""),
+    employeeUid:String(employeeUid||""),
+    sourceCollection:String(sourceCollection||""),
+    snapshot:JSON.parse(JSON.stringify(snapshot||{})),
+    deletedByUid:currentUser.uid,
+    deletedBy:currentProfile.displayName||currentProfile.username||"",
+    deletedByRole:currentProfile.role||"",
+    deletedAt:serverTimestamp()
+  });
+  return archiveId;
+}
+
+function hv1ClearBarAutomationFromDrafts(s){
+  for(const d of Object.values(s.drafts||{})){
+    if(!d)continue;
+    delete d.barAuto;
+    delete d.barAutoReceived;
+    delete d.barSalesLinks;
+    if(d.values){
+      delete d.values.hAmBar;
+      delete d.values.hPmBar;
+    }
+    if(d.entered){
+      delete d.entered.hAmBar;
+      delete d.entered.hPmBar;
+      delete d.entered.bartender;
+    }
+    if(d.howBartenderState){
+      delete d.howBartenderState;
+    }
+  }
+}
+
+window.hv1ClearAllTeam=async function(){
+  const s=hv1Load();
+  if(!(s.team||[]).length && !Object.keys(s.drafts||{}).length){alert('No Team Board data to clear.');return;}
+  const ok=await hv1RequireStaffPassword(
+    'Clear All Team Board',
+    'Enter your current password. This moves the current Team Board, employee drafts, and BAR data to recoverable Recently Cleared. Final Daily Report rows are NOT deleted yet.'
+  );
+  if(!ok)return;
+
+  const date=hv1DateValue();
+  s.trash={
+    scope:'team',
+    date,
+    clearedAt:Date.now(),
+    clearedBy:currentProfile.displayName||currentProfile.username||'',
+    clearedByUid:currentUser.uid,
+    snapshot:{
+      team:JSON.parse(JSON.stringify(s.team||[])),
+      drafts:JSON.parse(JSON.stringify(s.drafts||{})),
+      bar:JSON.parse(JSON.stringify(s.bar||{}))
+    }
+  };
+  s.team=[]; s.drafts={}; s.bar={};
+  localStorage.setItem(hv1Key(),JSON.stringify(s));
+  const cloudOk=await hv1CloudSave(JSON.parse(JSON.stringify(s)));
+  $('hv1BoardBox')?.classList.add('hidden');
+  $('hv1BarBox')?.classList.add('hidden');
+  $('hv1Setup')?.classList.remove('hidden');
+  hv1RenderRoster(); hv1RenderRecovery();
+  alert(cloudOk?'Team Board cleared. Owner can Undo Clear All.':'Team Board cleared locally. Cloud backup failed — use Sync Now before logout.');
+};
+
+window.hv1ClearAllBar=async function(){
+  const s=hv1Load(); hv1EnsureBarState(s);
+  const hasBar=Object.values(s.bar||{}).some(x=>x?.bartender || Object.values(x?.entries||{}).some(v=>String(v||'').trim()!==''));
+  if(!hasBar){alert('No BAR data to clear.');return;}
+  const ok=await hv1RequireStaffPassword(
+    'Clear All BAR',
+    'Enter your current password. This clears BAR AM / BAR 2–4 / BAR PM bartender selections and Grand Totals, but keeps the Team Board.'
+  );
+  if(!ok)return;
+
+  s.trash={
+    scope:'bar',
+    date:hv1DateValue(),
+    clearedAt:Date.now(),
+    clearedBy:currentProfile.displayName||currentProfile.username||'',
+    clearedByUid:currentUser.uid,
+    snapshot:{bar:JSON.parse(JSON.stringify(s.bar||{}))}
+  };
+  s.bar={};
+  hv1ClearBarAutomationFromDrafts(s);
+  localStorage.setItem(hv1Key(),JSON.stringify(s));
+  const cloudOk=await hv1CloudSave(JSON.parse(JSON.stringify(s)));
+  hv1RenderBarCenter(); hv1RenderRecovery();
+  alert(cloudOk?'BAR cleared. Owner can Undo Clear All.':'BAR cleared locally. Cloud backup failed — do not logout until Sync Now succeeds.');
+};
+
+window.hv1UndoClearAll=async function(){
+  if(currentProfile?.role!=='owner'){alert('Owner only.');return;}
+  const s=hv1Load(),trash=s.trash;
+  if(!trash){alert('Nothing to undo.');return;}
+  const ok=await hv1RequireStaffPassword(
+    'Undo Clear All',
+    `Restore the ${trash.scope==='bar'?'BAR data':'Team Board'} cleared by ${trash.clearedBy||'staff'}?`
+  );
+  if(!ok)return;
+
+  if(trash.scope==='team'){
+    s.team=JSON.parse(JSON.stringify(trash.snapshot?.team||[]));
+    s.drafts=JSON.parse(JSON.stringify(trash.snapshot?.drafts||{}));
+    s.bar=JSON.parse(JSON.stringify(trash.snapshot?.bar||{}));
+  }else if(trash.scope==='bar'){
+    s.bar=JSON.parse(JSON.stringify(trash.snapshot?.bar||{}));
+    hv1ApplyBarAutomation(s);
+  }
+  s.trash=null;
+  localStorage.setItem(hv1Key(),JSON.stringify(s));
+  await hv1CloudSave(JSON.parse(JSON.stringify(s)));
+  hv1RenderRoster();
+  $('hv1Setup')?.classList.toggle('hidden',!!(s.team||[]).length);
+  $('hv1BoardBox')?.classList.toggle('hidden',!(s.team||[]).length);
+  $('hv1BarBox')?.classList.add('hidden');
+  hv1RenderCards(); hv1RenderRecovery();
+  alert('Clear All undone. Data restored.');
+};
+
+window.hv1PermanentDelete=async function(){
+  if(currentProfile?.role!=='owner'){alert('Owner only.');return;}
+  const s=hv1Load(),trash=s.trash;
+  if(!trash){alert('Nothing in Recently Cleared.');return;}
+  const scope=trash.scope||'team';
+  const ok=await hv1RequireStaffPassword(
+    'DELETE PERMANENT',
+    scope==='team'
+      ? `This permanently deletes the cleared Team Board AND all finalized Daily Report / hourlyReports rows for ${trash.date||hv1DateValue()}. This cannot be undone.`
+      : 'This permanently deletes the cleared BAR backup. The Team Board and finalized reports remain.'
+  );
+  if(!ok)return;
+
+  if(scope==='team'){
+    const date=trash.date||hv1DateValue();
+    const snap=await getDocs(query(collection(db,'hourlyReports'),where('date','==',date)));
+    for(let i=0;i<snap.docs.length;i+=400){
+      const batch=writeBatch(db);
+      snap.docs.slice(i,i+400).forEach(d=>batch.delete(d.ref));
+      await batch.commit();
+    }
+    s.trash=null;
+    localStorage.removeItem(hv1Key());
+    try{await deleteDoc(doc(db,'hourlyV1Batches',hv1CloudDocId(date)))}catch(e){console.warn('Delete V1 batch doc:',e)}
+    $('hv1RecoveryBox')?.classList.add('hidden');
+    $('hv1BoardBox')?.classList.add('hidden');
+    $('hv1BarBox')?.classList.add('hidden');
+    $('hv1Setup')?.classList.remove('hidden');
+    hv1RenderRoster();
+    alert(`${snap.docs.length} finalized report(s) and the cleared Team Board were permanently deleted.`);
+  }else{
+    s.trash=null;
+    localStorage.setItem(hv1Key(),JSON.stringify(s));
+    await hv1CloudSave(JSON.parse(JSON.stringify(s)));
+    hv1RenderRecovery();
+    alert('Cleared BAR backup permanently deleted.');
+  }
+};
+
+window.hv1SyncNow=async function(){
+  const ok=await hv1CloudSave(hv1Load());
+  alert(ok?'Tip Calculation draft/team synced to Firebase.':'Cloud sync is blocked. Local draft is still saved on this device.');
+};
+window.hv1DeleteTeam=async function(){return window.hv1ClearAllTeam();};
+window.hv1DeleteEmployee=async function(name){
+  try{name=decodeURIComponent(name)}catch(e){}
+  const date=$('hv1Date')?.value||todayLocal();
+  const state=hv1Load();
+  if(!(state.team||[]).includes(name)){
+    alert(`${name} is not on this team.`);
+    return;
+  }
+
+  const draft=state.drafts?.[name]||{};
+  const hasProgress=!!draft.savedAt || Object.keys(draft.entered||{}).length>0;
+  const role=String(currentProfile?.role||"").toLowerCase();
+  const roleLabel=role==="owner"?"OWNER":"MANAGER";
+
+  const ok=await hv1RequireStaffPassword(
+    `Delete ${name}`,
+    `${roleLabel} password required. Enter the password for the account currently logged in as ${currentProfile?.displayName||currentProfile?.username||roleLabel}. This removes ${name} from the Team Board for ${date}${hasProgress?" and removes the current draft/progress":""}. Finalized Daily Report / hourlyReports records are NOT deleted.`
+  );
+  if(!ok)return;
+
+  try{
+    await archiveDeletedItem({
+      itemType:"team_employee",
+      itemId:`${date}_${name}`,
+      label:`Team Board • ${name} • ${date}`,
+      date,
+      employeeName:name,
+      snapshot:{draft:JSON.parse(JSON.stringify(draft)),date,name},
+      sourceCollection:"hourlyV1Batches"
+    });
+  }catch(e){alert("Delete cancelled: a recoverable backup could not be saved. "+(e.code||e.message));return;}
+
+  state.removedEmployees=state.removedEmployees||{};
+  state.removedEmployees[name]={
+    date,
+    removedAt:Date.now(),
+    removedBy:currentProfile?.displayName||currentProfile?.username||"",
+    removedByUid:currentUser?.uid||"",
+    draft:JSON.parse(JSON.stringify(draft))
+  };
+
+  state.team=(state.team||[]).filter(n=>n!==name);
+  if(state.drafts) delete state.drafts[name];
+  hv1Save(state);
+  await hv1CloudSave(JSON.parse(JSON.stringify(state)));
+
+  if(hv1EditingEmployee===name) hv1EditingEmployee='';
+  await loadDeletedItems();fzRenderRemovedCards();
+
+  if(!state.team.length){
+    $('hv1BoardBox')?.classList.add('hidden');
+    $('hv1Setup')?.classList.remove('hidden');
+    if($('hv1Cards')) $('hv1Cards').innerHTML='';
+    hv1RenderRoster();
+  }else{
+    hv1RenderCards();
+  }
+};
+
+
+function hv1DraftFromFinalizedReport(r,name,date){
+  const d=hv1BlankDraft(name);
+  d.date=date||r.date||hv1DateValue();
+  d.values={}; d.entered={};
+  const put=(k,v)=>{if(v===undefined||v===null)return;d.values[k]=String(v);d.entered[k]=true;};
+
+  put("hDate",d.date); put("hEmployee",name); put("hPosition",r.position||"Server"); put("hShift",r.shift||"AM");
+  put("hGrandTotal",r.grandTotal??0);
+  if(["DOUBLE","LONG"].includes(String(r.shift||"").toUpperCase()))put("hTotalAM",r.totalAM??0);
+  put("hPaidTip",r.paidTip??0); put("hCardFee",r.payCardTipFee??r.cardFee??0); put("hCashTip",r.cashTip??0); put("hMeal",r.meal??0);
+
+  const hours={...r,...(r.hours||{})};
+  const shift=String(r.shift||"").toUpperCase();
+  if(shift==="DOUBLE"){
+    put("hAmIn",hours.hourInAM||hours.amIn||""); put("hAmOut",hours.hourOutAM||hours.amOut||"");
+    put("hPmIn",hours.hourInPM||hours.pmIn||""); put("hPmOut",hours.hourOutPM||hours.pmOut||"");
+  }else{
+    put("hIn",hours.hourIn||hours.hourInAM||hours.in||"");
+    put("hOut",hours.hourOut||hours.hourOutAM||hours.out||"");
+  }
+
+  if(r.amBarSales!==undefined)put("hAmBar",r.amBarSales===true||String(r.amBarSales).toUpperCase()==="YES"?"yes":"no");
+  if(r.pmBarSales!==undefined)put("hPmBar",r.pmBarSales===true||String(r.pmBarSales).toUpperCase()==="YES"?"yes":"no");
+
+  d.hourlyWizardState={
+    position:r.position||"Server",
+    shift:r.shift||"AM",
+    busserAM:String(r.busserAM||r.busserAMStatus||"WITHOUT").toUpperCase()==="WITH"?"WITH":"WITHOUT"
+  };
+  put("hBusserAM",d.hourlyWizardState.busserAM);
+
+  d.hourlyReportId=r.id||"";
+  d.sourceSubmissionId=r.sourceSubmissionId||"";
+  d.page=7; d.savedAt=Date.now(); d.finalized=true; d.editHydratedFromFinalV13811=true; d.recoveredFromFinal=true;
+  return d;
+}
+
+async function hv1FindFinalizedReport(name,date){
+  let rows=(latestHourlyReports||[]).filter(r=>String(r.date||"")===date && String(r.employee||"")===name);
+  if(!rows.length){
+    try{
+      const snap=await getDocs(query(collection(db,"hourlyReports"),where("date","==",date),limit(300)));
+      rows=snap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>String(r.employee||"")===name);
+    }catch(e){console.warn("Find finalized report:",e);}
+  }
+  rows.sort((a,b)=>(b.updatedAt?.seconds||b.createdAt?.seconds||0)-(a.updatedAt?.seconds||a.createdAt?.seconds||0));
+  return rows[0]||null;
+}
+
+window.hv1RestoreEmployeeFinal=async function(name){
+  try{name=decodeURIComponent(name)}catch(e){}
+  const date=$('hv1Date')?.value||todayLocal();
+  const role=String(currentProfile?.role||"").toLowerCase();
+  const roleLabel=role==="owner"?"OWNER":"MANAGER";
+
+  const ok=await hv1RequireStaffPassword(
+    `Restore ${name}`,
+    `${roleLabel} password required. This will replace the current Team Board draft for ${name} on ${date} with the latest FINALIZED report saved for that employee/date.`
+  );
+  if(!ok)return;
+
+  let recoveredReport=await hv1FindFinalizedReport(name,date);
+
+  if(!recoveredReport){alert(`No finalized report found for ${name} on ${date}.`);return;}
+
+  const state=hv1Load();
+  state.team=state.team||[]; state.drafts=state.drafts||{};
+  if(!state.team.includes(name))state.team.push(name);
+  state.drafts[name]=hv1DraftFromFinalizedReport(recoveredReport,name,date);
+  hv1Save(state);
+  await hv1CloudSave(JSON.parse(JSON.stringify(state)));
+  hv1RenderRoster();
+  $('hv1Setup')?.classList.add('hidden');
+  $('hv1BoardBox')?.classList.remove('hidden');
+  hv1RenderCards();
+
+  alert(`${name} restored from ${date}. Grand Total: ${fmtMoney(recoveredReport.grandTotal||0)} | Paid Tip: ${fmtMoney(recoveredReport.paidTip||0)} | Cash Tip: ${fmtMoney(recoveredReport.cashTip||0)}`);
+};
+
+window.hv1DateChanged=async function(){hourlyV1Mode=true;$('hv1BarBox')?.classList.add('hidden');await hv1CloudRestore();hv1RenderRoster();const s=hv1Load();$('hv1Setup').classList.toggle('hidden',!!s.team?.length);$('hv1BoardBox').classList.toggle('hidden',!s.team?.length);if(s.team?.length)hv1RenderCards();hv1RenderRecovery()};
+
+// V13.8.24-P16 reliable team-card click handling (desktop/tablet/mobile).
+document.addEventListener("click",e=>{
+  const restore=e.target.closest?.("[data-hv1-restore-employee]");
+  if(restore){
+    e.preventDefault(); e.stopPropagation();
+    window.hv1RestoreEmployeeFinal(restore.dataset.hv1RestoreEmployee);
+    return;
+  }
+  const del=e.target.closest?.("[data-hv1-delete-employee]");
+  if(del){
+    e.preventDefault(); e.stopPropagation();
+    window.hv1DeleteEmployee(del.dataset.hv1DeleteEmployee);
+    return;
+  }
+  const card=e.target.closest?.("[data-hv1-open-employee]");
+  if(card){
+    e.preventDefault();
+    window.hv1OpenEmployee(card.dataset.hv1OpenEmployee);
+  }
+});
+
+let hv1OpenRequest=0;
+window.hv1OpenEmployee=async function(name){
+  if(hourlyFinalSaveInProgress){alert("Final report is saving. Please wait.");return;}
+  clearTimeout(hv1AutosaveTimer);
+  try{name=decodeURIComponent(name)}catch(e){}
+  const request=++hv1OpenRequest,date=hv1DateValue();
+  hv1LoadingEmployee=true;
+  hv1EditingEmployee=name;
+  currentHourlyReportId=null;currentHourlySubmissionId=null;
+  document.body.classList.add('hourly-v1-mode','hourly-v1-editing');
+  document.querySelectorAll('.staffPanel').forEach(x=>x.classList.add('hidden'));
+  $('hourlyV1Workspace')?.classList.add('hidden');
+  $('hourly')?.classList.remove('hidden');
+
+  try{
+    await hv1HydrateDraftFromFinalReport(name);
+    if(request!==hv1OpenRequest || name!==hv1EditingEmployee || date!==hv1DateValue())return;
+    hv1ApplyDraft(name);
+    requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'instant'}));
+  }finally{if(request===hv1OpenRequest)hv1LoadingEmployee=false;}
+};
+window.hv1BackToBoard=function(){return window.hv1SavePage();};
+function hv1LegacyBackToBoard(){
+  try{captureHourlyWizard()}catch(e){}
+  hv1CapturePage(false);
+  document.body.classList.remove('hourly-v1-editing');
+  $('hourly')?.classList.add('hidden');
+  $('hourlyV1Workspace')?.classList.remove('hidden');
+  hv1RenderCards();
+  requestAnimationFrame(()=>window.scrollTo({top:0,left:0,behavior:'instant'}));
+};
+window.hv1SkipPage=function(){hv1CapturePage(true);if(hourlyWizardStep<7)hourlyWizardStep++;renderHourlyWizard();setTimeout(hv1PatchWizard,0)};
+window.hv1SavePage=async function(){
+  if(hv1LoadingEmployee){alert("Employee report is loading. Please wait.");return;}
+  if(hourlyFinalSaveInProgress){alert("Final report is saving. Please wait.");return;}
+  clearTimeout(hv1AutosaveTimer);
+  try{captureHourlyWizard()}catch(e){}
+  hv1CapturePage(false);
+  const saved=await hv1CloudSave(JSON.parse(JSON.stringify(hv1Load())));
+  if(!saved){alert("Saved on this device. Cloud sync failed; your draft remains open.");return;}
+  hv1EditingEmployee='';
+  document.body.classList.remove('hourly-v1-editing');
+  document.body.classList.add('hourly-v1-mode');
+  $('hourly')?.classList.add('hidden');
+  $('hv1Setup')?.classList.add('hidden');
+  $('hv1BoardBox')?.classList.remove('hidden');
+  $('hourlyV1Workspace')?.classList.remove('hidden');
+  hv1RenderCards();
+  window.scrollTo(0,0);
+};
+
+let hv1SmallReportHome=null;
+function hv1MoveSmallReportIntoV1(){
+  const report=$('smallReport'),mount=$('hv1SmallReportMount');
+  if(!report||!mount)return;
+  if(!hv1SmallReportHome)hv1SmallReportHome={parent:report.parentNode,next:report.nextSibling};
+  if(report.parentNode!==mount)mount.appendChild(report);
+  report.classList.remove('hidden');
+}
+function hv1RestoreSmallReportHome(){
+  const report=$('smallReport');
+  if(!report||!hv1SmallReportHome?.parent)return;
+  if(report.parentNode!==hv1SmallReportHome.parent){
+    if(hv1SmallReportHome.next&&hv1SmallReportHome.next.parentNode===hv1SmallReportHome.parent)hv1SmallReportHome.parent.insertBefore(report,hv1SmallReportHome.next);
+    else hv1SmallReportHome.parent.appendChild(report);
+  }
+}
+window.hv1OpenSmallReport=function(){
+  hourlyV1Mode=true;
+  document.body.classList.add('hourly-v1-mode','hourly-v1-small-report');
+  document.body.classList.remove('hourly-v1-editing','hourly-workspace-mode');
+  $('hourly')?.classList.add('hidden');
+  $('hourlyV1Workspace')?.classList.remove('hidden');
+  $('hv1Setup')?.classList.add('hidden');
+  $('hv1BoardBox')?.classList.add('hidden');
+  $('hv1BarBox')?.classList.add('hidden');
+  $('hv1SmallReportBox')?.classList.remove('hidden');
+  hv1MoveSmallReportIntoV1();
+  renderSmallReport();
+  window.scrollTo(0,0);
+};
+window.hv1CloseSmallReport=function(){
+  document.body.classList.remove('hourly-v1-small-report');
+  $('smallReport')?.classList.add('hidden');
+  hv1RestoreSmallReportHome();
+  $('hv1SmallReportBox')?.classList.add('hidden');
+  const s=hv1Load();
+  $('hv1Setup')?.classList.toggle('hidden',!!(s.team||[]).length);
+  $('hv1BoardBox')?.classList.toggle('hidden',!(s.team||[]).length);
+  if((s.team||[]).length)hv1RenderCards();
+  hv1RenderRecovery();
+  window.scrollTo(0,0);
+};
+window.hv1OpenBarCenterFromReport=function(){
+  $('smallReport')?.classList.add('hidden');
+  hv1RestoreSmallReportHome();
+  $('hv1SmallReportBox')?.classList.add('hidden');
+  document.body.classList.remove('hourly-v1-small-report');
+  window.hv1OpenBarCenter();
+};
+
+function hv1MissingFields(){const d=hv1Draft(hv1EditingEmployee),e=d.entered||{},v=d.values||{},missing=[];if(!v.hPosition)missing.push('Position');if(!v.hShift)missing.push('Shift');const sh=v.hShift||hourlyWizardState.shift;if(sh==='DOUBLE'){['hAmIn','hAmOut','hPmIn','hPmOut'].forEach(k=>{if(!e[k])missing.push(k.replace('h',''))})}else{if(!e.hIn)missing.push('Clock In');if(!e.hOut)missing.push('Clock Out')}['hGrandTotal','hPaidTip','hCardFee','hCashTip','hMeal'].forEach(k=>{if(!e[k])missing.push(k.replace('h',''))});return missing}
+async function hv1MarkFinal(reportId="",sourceSubmissionId="",employee=hv1EditingEmployee,date=hv1DateValue()){
+  if(!employee || !reportId)return false;
+  clearTimeout(hv1AutosaveTimer);
+  const key=HV1_STORAGE_PREFIX+date;
+  let s;try{s=JSON.parse(localStorage.getItem(key)||'{"team":[],"drafts":{}}')}catch{s={team:[],drafts:{}}}
+  s.drafts ||= {};
+  const d=s.drafts[employee]||{...hv1BlankDraft(employee),date};
+  Object.assign(d,{finalized:true,hourlyReportId:reportId,sourceSubmissionId:sourceSubmissionId||'',finalizedAt:Date.now(),savedAt:Date.now()});
+  s.drafts[employee]=d;
+  localStorage.setItem(key,JSON.stringify(s));
+  const cloudOk=await hv1CloudSave(JSON.parse(JSON.stringify(s)),date);
+  if(date===hv1DateValue() && employee===hv1EditingEmployee){
+    hv1EditingEmployee='';
+    document.body.classList.remove('hourly-v1-editing','hourly-v1-small-report');
+    document.body.classList.add('hourly-v1-mode');
+    $('smallReport')?.classList.add('hidden');$('hourly')?.classList.add('hidden');
+    $('hv1BarBox')?.classList.add('hidden');$('hv1SmallReportBox')?.classList.add('hidden');
+    $('hv1BoardBox')?.classList.remove('hidden');$('hourlyV1Workspace')?.classList.remove('hidden');
+    hv1RenderCards();window.scrollTo(0,0);
+  }
+  return cloudOk;
+}
+
+const HV1_REMEMBER_KEY='fz_hv1_remember',HV1_USERNAME_KEY='fz_hv1_username';
+function loadHourlyV1Remember(){try{const r=localStorage.getItem(HV1_REMEMBER_KEY)==='1';if($('hourlyV1RememberMe'))$('hourlyV1RememberMe').checked=r;if(r&&$('hourlyV1Username'))$('hourlyV1Username').value=localStorage.getItem(HV1_USERNAME_KEY)||''}catch(e){}}
+window.loginHourlyV1Workspace=async function(){fzLoginRole="hourlyv1";ensureRealtimeAlertAudio();await authSecurityReady;const username=String($('hourlyV1Username')?.value||'').trim(),password=String($('hourlyV1Password')?.value||'');if(!username||!password){loginMsg('Enter Manager / Owner username and password.');return}const remember=!!$('hourlyV1RememberMe')?.checked;try{await setPersistence(auth,remember?browserLocalPersistence:browserSessionPersistence)}catch(e){}try{if(remember){localStorage.setItem(HV1_REMEMBER_KEY,'1');localStorage.setItem(HV1_USERNAME_KEY,username)}else{localStorage.removeItem(HV1_REMEMBER_KEY);localStorage.removeItem(HV1_USERNAME_KEY)}}catch(e){}hourlyV1Requested=true;hourlyWorkspaceRequested=false;try{loginMsg('Signing in...');await signInWithEmailAndPassword(auth,emailFor(username),password)}catch(e){hourlyV1Requested=false;loginMsg(`Login failed: ${e.code||'invalid-login'}`)}};
+setTimeout(loadHourlyV1Remember,0);
+
+let hourlyWorkspaceRequested=false;
+let hourlyWorkspaceMode=false;
+
+function applyHourlyWorkspaceMode(on){
+  hourlyWorkspaceMode=!!on;
+  document.body.classList.toggle("hourly-workspace-mode",hourlyWorkspaceMode);
+  $("hourlyWorkspaceNav")?.classList.toggle("hidden",!hourlyWorkspaceMode);
+}
+
+window.openHourlyWorkspacePanel=function(name){
+  // V13.8.24-P16A: Hourly V01 is no longer an isolated sub-app.
+  // It opens the complete Manager/Owner dashboard and defaults to Tip Calculation.
+  hourlyWorkspaceRequested=false;
+  applyHourlyWorkspaceMode(false);
+  document.querySelectorAll("[data-stab]").forEach(b=>b.classList.remove("hidden"));
+  document.querySelectorAll(".ownerOnly").forEach(el=>el.classList.toggle("hidden",currentProfile?.role!=="owner"));
+  openStaffTab(name==="smallReport"?"hourly":(name||"hourly"));
+};
+
+window.leaveHourlyWorkspace=function(){
+  hourlyWorkspaceRequested=false;
+  applyHourlyWorkspaceMode(false);
+  document.querySelectorAll("[data-stab]").forEach(b=>b.classList.remove("hidden"));
+  document.querySelectorAll(".ownerOnly").forEach(el=>el.classList.toggle("hidden",currentProfile?.role!=="owner"));
+  openStaffTab("hourly");
+};
+
+
+const HOURLY_REMEMBER_KEY="fz_hourly_remember";
+const HOURLY_USERNAME_KEY="fz_hourly_username";
+
+function loadHourlyRememberPreference(){
+  try{
+    const remember=localStorage.getItem(HOURLY_REMEMBER_KEY)==="1";
+    if($("hourlyRememberMe")) $("hourlyRememberMe").checked=remember;
+    if(remember && $("hourlyUsername")){
+      $("hourlyUsername").value=localStorage.getItem(HOURLY_USERNAME_KEY)||"";
+    }
+  }catch(e){}
+}
+
+async function applyHourlyRememberPreference(){
+  const remember=!!$("hourlyRememberMe")?.checked;
+  try{
+    await setPersistence(auth,remember?browserLocalPersistence:browserSessionPersistence);
+  }catch(e){console.warn("Hourly auth persistence:",e);}
+  try{
+    if(remember){
+      localStorage.setItem(HOURLY_REMEMBER_KEY,"1");
+      localStorage.setItem(HOURLY_USERNAME_KEY,String($("hourlyUsername")?.value||"").trim());
+    }else{
+      localStorage.removeItem(HOURLY_REMEMBER_KEY);
+      localStorage.removeItem(HOURLY_USERNAME_KEY);
+    }
+  }catch(e){}
+}
+
+window.loginHourlyWorkspace=function(){ setLoginMode("staff"); loginMsg("Hourly V01 was removed. Use Manager / Owner / Cashier or Tip Calculation."); };
+
+
+const STAFF_REMEMBER_KEY="fz_staff_remember";
+const STAFF_USERNAME_KEY="fz_staff_username";
+
+function loadStaffRememberPreference(){
+  try{
+    const remember=localStorage.getItem(STAFF_REMEMBER_KEY)==="1";
+    if($("staffRememberMe")) $("staffRememberMe").checked=remember;
+    if(remember && $("staffUsername")){
+      $("staffUsername").value=localStorage.getItem(STAFF_USERNAME_KEY)||"";
+    }
+  }catch(e){}
+}
+
+async function applyStaffRememberPreference(){
+  const remember=!!$("staffRememberMe")?.checked;
+  try{
+    await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
+  }catch(e){
+    console.warn("Auth persistence:",e);
+  }
+
+  try{
+    if(remember){
+      localStorage.setItem(STAFF_REMEMBER_KEY,"1");
+      localStorage.setItem(STAFF_USERNAME_KEY,String($("staffUsername")?.value||"").trim());
+    }else{
+      localStorage.removeItem(STAFF_REMEMBER_KEY);
+      localStorage.removeItem(STAFF_USERNAME_KEY);
+    }
+  }catch(e){}
+}
+
+
+window.openHostCashierLogin=function(){
+  hostCashierRequested=false;
+  setLoginMode("hostcashier");
+  try{
+    const remember=localStorage.getItem("fzHostCashierRemember") === "1";
+    if($("hostCashierRememberMe")) $("hostCashierRememberMe").checked=remember;
+    if(remember && $("hostCashierUsername")) $("hostCashierUsername").value=localStorage.getItem("fzHostCashierUsername")||"";
+  }catch(e){}
+};
+
+window.loginHostCashierWorkspace=async function(){
+  
+  ensureRealtimeAlertAudio();
+  await authSecurityReady;
+  const username=String($("hostCashierUsername")?.value||"").trim();
+  const password=String($("hostCashierPassword")?.value||"");
+  if(!username||!password){loginMsg("Enter Manager / Owner username and password.");return;}
+  const remember=!!$("hostCashierRememberMe")?.checked;
+  try{await setPersistence(auth,remember?browserLocalPersistence:browserSessionPersistence)}catch(e){}
+  try{
+    if(remember){localStorage.setItem("fzHostCashierRemember","1");localStorage.setItem("fzHostCashierUsername",username)}
+    else{localStorage.removeItem("fzHostCashierRemember");localStorage.removeItem("fzHostCashierUsername")}
+  }catch(e){}
+  fzLoginRole="hostcashier";
+  hostCashierRequested=true;
+  try{
+    loginMsg("Signing in...");
+    await signInWithEmailAndPassword(auth,emailFor(username),password);
+  }catch(e){
+    hostCashierRequested=false;
+    loginMsg(`Login failed: ${e.code||"invalid-login"}`);
+  }
+};
+
+window.loginStaff = async function(){
+  
+  ensureRealtimeAlertAudio();
+  await authSecurityReady;
+  await applyStaffRememberPreference();
+  const username = $("staffUsername").value.trim();
+  const password = $("staffPassword").value;
+  if(!username || !password){ loginMsg("Enter username and password."); return; }
+  try{
+    loginMsg("Signing in...");
+    await signInWithEmailAndPassword(auth, emailFor(username), password);
+  }catch(e){
+    console.error("Staff login:", e);
+    loginMsg(`Login failed: ${e.code || "invalid-login"}`);
+  }
+};
+
+function clearSharedDeviceLoginFields(){
+  try{
+    if($("fzUnifiedSecret"))$("fzUnifiedSecret").value="";
+    if($("fzUnifiedStaffName") && !$("fzUnifiedRemember")?.checked)$("fzUnifiedStaffName").value="";
+    window.hostCashierCloseWorkspace?.();
+    if($("employeePin")) $("employeePin").value="";
+    if($("staffPassword")) $("staffPassword").value="";
+    if($("hostCashierPassword")) $("hostCashierPassword").value="";
+    if($("hourlyPassword")) $("hourlyPassword").value="";
+    if($("hourlyUsername") && !$("hourlyRememberMe")?.checked) $("hourlyUsername").value="";
+    if($("signupPin")) $("signupPin").value="";
+    if($("signupPin2")) $("signupPin2").value="";
+    if($("signupPhone")) $("signupPhone").value="";
+    if($("employeeUsername")) $("employeeUsername").selectedIndex=0;
+    if($("staffUsername") && !$("staffRememberMe")?.checked) $("staffUsername").value="";
+    if($("hostCashierUsername") && !$("hostCashierRememberMe")?.checked) $("hostCashierUsername").value="";
+    if($("signupName")) $("signupName").selectedIndex=0;
+    if($("signupPanel")) $("signupPanel").classList.add("hidden");
+    loginMsg("");
+  }catch(e){ console.warn("Clear shared-device login fields:",e); }
+}
+
+window.logout = async function(){
+  hv1RestoreSmallReportHome();
+  hourlyWorkspaceRequested=false;hourlyV1Requested=false;hostCashierRequested=false;hourlyV1Mode=false;hv1EditingEmployee="";document.body.classList.remove("hourly-v1-mode","hourly-v1-editing","hourly-v1-small-report");
+  applyHourlyWorkspaceMode(false);
+  try{
+    clearSharedDeviceLoginFields();
+    sessionStorage.clear();
+    // Never keep an employee draft on a shared device after explicit logout.
+    localStorage.removeItem(employeeDraftKey());
+    clearListeners();
+    await signOut(auth);
+  }finally{
+    currentUser=null;
+    currentProfile=null;
+    clearSharedDeviceLoginFields();
+    if(!boardMode) hideApp();
+  }
+};
+
+async function loadProfile(uid){
+  const snap = await getDoc(doc(db,"users",uid));
+  return snap.exists() ? snap.data() : null;
+}
+function clearListeners(){
+  staffFirstSnapshot=true;
+  knownPending=new Set();
+  employeeKnownStatuses=new Map();
+
+  unsubs.forEach(fn=>{ try{fn()}catch(e){} });
+  unsubs=[];
+  if(tipCheckPollTimer){ clearInterval(tipCheckPollTimer); tipCheckPollTimer=null; }
+}
+function hideApp(){
+  $("loginView").classList.remove("hidden");
+  $("appView").classList.add("hidden");
+  $("top").classList.add("hidden");
+}
+
+let loginWelcomeAudioCtx=null;
+let loginWelcomePlaying=false;
+
+
+function primeLoginWelcomeAudio(){ return;
+  // Must run inside the actual Login click / Enter gesture.
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(AC){
+      loginWelcomeAudioCtx=loginWelcomeAudioCtx||new AC();
+      if(loginWelcomeAudioCtx.state==="suspended")loginWelcomeAudioCtx.resume().catch(()=>{});
+      const osc=loginWelcomeAudioCtx.createOscillator();
+      const g=loginWelcomeAudioCtx.createGain();
+      g.gain.value=0.00001;
+      osc.connect(g);g.connect(loginWelcomeAudioCtx.destination);
+      osc.start();
+      osc.stop(loginWelcomeAudioCtx.currentTime+0.02);
+    }
+  }catch(e){console.warn("Prime login audio:",e);}
+  try{
+    if("speechSynthesis" in window){
+      const u=new SpeechSynthesisUtterance(" ");
+      u.volume=0.01;u.rate=10;
+      window.speechSynthesis.speak(u);
+      setTimeout(()=>window.speechSynthesis.cancel(),40);
+    }
+  }catch(e){console.warn("Prime login speech:",e);}
+}
+
+function playLoginWelcomeMusic(){ return;
+  try{
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC)return;
+    loginWelcomeAudioCtx=loginWelcomeAudioCtx||new AC();
+    const ctx=loginWelcomeAudioCtx;
+    if(ctx.state==="suspended")ctx.resume().catch(()=>{});
+
+    const master=ctx.createGain();
+    master.gain.setValueAtTime(0.0001,ctx.currentTime);
+    master.gain.exponentialRampToValueAtTime(0.20,ctx.currentTime+0.06);
+    master.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+3.7);
+    master.connect(ctx.destination);
+
+    // Soft futuristic major arpeggio: C5 E5 G5 B5 E6.
+    const notes=[
+      {f:523.25,t:0.00,d:0.75},
+      {f:659.25,t:0.34,d:0.78},
+      {f:783.99,t:0.68,d:0.82},
+      {f:987.77,t:1.03,d:0.90},
+      {f:1318.51,t:1.42,d:1.20}
+    ];
+
+    notes.forEach((n,i)=>{
+      const osc=ctx.createOscillator();
+      const gain=ctx.createGain();
+      const filter=ctx.createBiquadFilter();
+      osc.type=i<3?"sine":"triangle";
+      osc.frequency.setValueAtTime(n.f,ctx.currentTime+n.t);
+      filter.type="lowpass";
+      filter.frequency.setValueAtTime(2600,ctx.currentTime+n.t);
+      gain.gain.setValueAtTime(0.0001,ctx.currentTime+n.t);
+      gain.gain.exponentialRampToValueAtTime(i===4?0.11:0.075,ctx.currentTime+n.t+0.035);
+      gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+n.t+n.d);
+      osc.connect(filter);filter.connect(gain);gain.connect(master);
+      osc.start(ctx.currentTime+n.t);
+      osc.stop(ctx.currentTime+n.t+n.d+0.05);
+    });
+
+    // Gentle shimmer pad under the voice.
+    [261.63,329.63,392.00].forEach((f,i)=>{
+      const osc=ctx.createOscillator(),g=ctx.createGain();
+      osc.type="sine";
+      osc.frequency.value=f;
+      g.gain.setValueAtTime(0.0001,ctx.currentTime+0.15);
+      g.gain.exponentialRampToValueAtTime(0.025,ctx.currentTime+0.55+i*0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+3.5);
+      osc.connect(g);g.connect(master);
+      osc.start(ctx.currentTime+0.15);
+      osc.stop(ctx.currentTime+3.55);
+    });
+  }catch(e){
+    console.warn("Login welcome music:",e);
+  }
+}
+
+function speakLoginWelcome(){ return;
+  if(!("speechSynthesis" in window))return;
+  try{
+    window.speechSynthesis.cancel();
+    const u=new SpeechSynthesisUtterance("Welcome to Fred Zhang Just Tip Calculator");
+    const voices=window.speechSynthesis.getVoices()||[];
+    const english=voices.filter(v=>/^en[-_]/i.test(v.lang||""));
+    const preferred=["Samantha","Ava","Jenny","Aria","Emma","Victoria","Zira","Joanna","Karen"];
+    let voice=null;
+    for(const p of preferred){
+      voice=english.find(v=>String(v.name||"").toLowerCase().includes(p.toLowerCase()));
+      if(voice)break;
+    }
+    if(!voice)voice=english[0]||voices[0]||null;
+    if(voice)u.voice=voice;
+    u.lang=voice?.lang||"en-US";
+    u.rate=0.90;
+    u.pitch=1.04;
+    u.volume=1;
+    window.speechSynthesis.speak(u);
+  }catch(e){
+    console.warn("Login welcome voice:",e);
+  }
+}
+
+window.playSuccessfulLoginWelcome=function(options={}){ return;
+  if(loginWelcomePlaying)return;
+  loginWelcomePlaying=true;
+  try{if(loginWelcomeAudioCtx?.state==="suspended")loginWelcomeAudioCtx.resume().catch(()=>{});}catch(e){}
+  playLoginWelcomeMusic();
+  setTimeout(speakLoginWelcome,180);
+  setTimeout(()=>{loginWelcomePlaying=false;},4300);
+};
+
+function showApp(){
+  $("loginView").classList.add("hidden");
+  $("appView").classList.remove("hidden");
+  $("top").classList.remove("hidden");
+  $("whoText").textContent=currentProfile.displayName || currentProfile.username;
+  $("rolePill").textContent=String(currentProfile.role).toUpperCase();
+
+  const role=String(currentProfile.role||"");
+  const emp=role==="employee";
+  const cashier=role==="cashier";
+  const owner=role==="owner";
+  const manager=role==="manager";
+
+  $("employeeApp").classList.toggle("hidden",!emp);
+  $("staffApp").classList.toggle("hidden",emp);
+  // Old Tip Report sticky actions are disabled in Employee Check Tip-only mode.
+  $("employeeBottom")?.classList.add("hidden");
+
+  // Hard role isolation: employee must never see cashier/manager review controls.
+  if(emp){
+    $("staffApp").classList.add("hidden");
+    document.querySelectorAll(".staffPanel").forEach(el=>el.classList.add("hidden"));
+  }
+
+  document.querySelectorAll(".ownerOnly").forEach(el=>el.classList.toggle("hidden",!owner));
+  document.querySelectorAll(".managerOwnerOnly").forEach(el=>el.classList.toggle("hidden",!(manager||owner)));
+  document.querySelectorAll(".cashierOnly").forEach(el=>el.classList.toggle("hidden",!cashier));
+  document.querySelectorAll(".tipReviewBlock").forEach(el=>el.classList.toggle("hidden",!(cashier||manager||owner)));
+
+  if(emp){
+    if($("eTipCheckEmployee")) $("eTipCheckEmployee").value=currentProfile.displayName||currentProfile.username||"";
+    restoreEmployeeDraft();
+    applyEmployeeWorkProfile();
+    listenEmployee();
+    listenEmployeeHistoricalReports();
+    setEmployeeTab("reports");
+  }else if(cashier){
+    listenTipCheckSheets();
+    document.querySelectorAll("[data-stab]").forEach(b=>b.classList.toggle("hidden",!["tipCheck","setup"].includes(b.dataset.stab)));
+    document.querySelector('[data-stab="tipCheck"]')?.click();
+  }else{
+    document.querySelectorAll("[data-stab]").forEach(b=>b.classList.remove("hidden"));
+    document.querySelectorAll(".ownerOnly").forEach(el=>el.classList.toggle("hidden",!owner));
+    listenStaff();
+    document.querySelector('[data-stab="approvals"]')?.click();
+  }
+}
+onAuthStateChanged(auth, async user=>{
+  await authSecurityReady;
+  // If this callback came from a stale persisted session that was just cleared, ignore it.
+  if(user && !auth.currentUser) return;
+  clearListeners();
+  if(!user){
+    currentUser=null; currentProfile=null;
+    clearSharedDeviceLoginFields();
+    if(!boardMode) hideApp();
+    return;
+  }
+  if(user.isAnonymous){
+    currentUser=user; currentProfile={role:"board",active:true,displayName:"Server Room Board"};
+    if(boardMode) listenMoneyReadyBoard();
+    return;
+  }
+  try{
+    const profile=await loadProfile(user.uid);
+    if(!profile){
+      loginMsg("Account exists but no JUICY TIP profile was found.");
+      await signOut(auth); return;
+    }
+    if(profile.role==="employee" && profile.approvalStatus==="pending"){
+      loginMsg("Registration is waiting for Manager approval.");
+      await signOut(auth); return;
+    }
+    if(profile.active===false){
+      loginMsg("This account is disabled.");
+      await signOut(auth); return;
+    }
+    const selected=fzLoginRole;
+    const role=String(profile.role||"");
+    if((["manager","owner","employee","cashier"].includes(selected) && role!==selected) || (selected==="hostcashier" && !["manager","owner"].includes(role))){
+      await signOut(auth);
+      loginMsg(selected==="hostcashier"?"Host / Cashier Tip access is Manager / Owner only.":`This account is ${role.toUpperCase()}. Select its matching login role.`);
+      return;
+    }
+    currentUser=user;
+    currentProfile=profile;
+    loginMsg("");
+
+    if((hourlyWorkspaceRequested||hourlyV1Requested) && !["manager","owner"].includes(String(profile.role||""))){
+      hourlyWorkspaceRequested=false;hourlyV1Requested=false;
+      loginMsg("Hourly Adjustment access is Manager / Owner only.");
+      await signOut(auth);
+      return;
+    }
+
+    showApp();
+    // V13.8.24-P16: every successful authenticated login gets a short music sting + voice welcome.
+    setTimeout(()=>window.playSuccessfulLoginWelcome?.(),80);
+
+    if(hostCashierRequested){
+      hourlyWorkspaceRequested=false;
+      hourlyV1Requested=false;
+      hostCashierRequested=false;
+      applyHourlyWorkspaceMode(false);
+      document.querySelectorAll(".staffPanel").forEach(x=>x.classList.add("hidden"));
+      $("staffArea")?.classList.remove("hidden");
+      $("hostCashierTip")?.classList.remove("hidden");
+      setTimeout(()=>window.hostCashierOpenWorkspace?.(),100);
+    }else if(hourlyV1Requested){
+      hourlyWorkspaceRequested=false;
+      applyHourlyWorkspaceMode(false);
+      setTimeout(hv1Enter,100);
+    }else if(hourlyWorkspaceRequested){
+      // Hourly V01 is the FULL Manager/Owner dashboard again.
+      // Keep Approval, Manager Review, Users, History, Deleted/Undo, Setup, etc.
+      applyHourlyWorkspaceMode(false);
+      hourlyWorkspaceRequested=false;
+      document.querySelectorAll("[data-stab]").forEach(b=>b.classList.remove("hidden"));
+      document.querySelectorAll(".ownerOnly").forEach(el=>el.classList.toggle("hidden",currentProfile?.role!=="owner"));
+      setTimeout(()=>openStaffTab("hourly"),80);
+    }else{
+      applyHourlyWorkspaceMode(false);
+    }
+  }catch(e){
+    console.error("Profile load:",e);
+    loginMsg(`Profile load failed: ${e.code || e.message}`);
+    await signOut(auth);
+  }
+});
+
+setTimeout(()=>startGlobalMoneyReadyWatcher(),50);
+
+
+function isWeekendDate(dateStr){
+  if(!dateStr)return false;
+  const d=new Date(dateStr+"T12:00:00");
+  const day=d.getDay();
+  return day===0 || day===6;
+}
+function employeeAutoBusser(grand,totalAM,shift,dateStr){
+  grand=Math.max(0,Number(grand)||0);
+  totalAM=Math.max(0,Math.min(Number(totalAM)||0,grand));
+  const weekend=isWeekendDate(dateStr);
+  let amount=0, rate=0;
+  if(weekend){
+    amount=grand*0.015;
+    rate=grand>0?0.015:0;
+  }else if(shift==="PM"){
+    amount=grand*0.015;
+    rate=grand>0?0.015:0;
+  }else if(shift==="AM"){
+    amount=0; rate=0;
+  }else if(["DOUBLE","LONG"].includes(shift)){
+    amount=Math.max(0,grand-totalAM)*0.015;
+    rate=grand>0?amount/grand:0;
+  }
+  return {amount,rate,weekend};
+}
+function updateEmployeeBusserPreview(){
+  const box=$("employeeBusserPreview"), out=$("eBusserRate"), amt=$("eBusserAmount");
+  if(!box||!out||!amt) return;
+  const multi=["DOUBLE","LONG"].includes(eShift);
+  box.classList.toggle("hidden",!multi);
+  if(!multi){ out.textContent="0.00%"; amt.textContent="$0.00"; return; }
+  const x=employeeAutoBusser($("eGrandTotal").value,$("eTotalAM").value,eShift,$("eDate").value);
+  out.textContent=(x.rate*100).toFixed(2)+"%";
+  amt.textContent="$"+x.amount.toFixed(2);
+}
+$("eGrandTotal").addEventListener("input",updateEmployeeBusserPreview);
+$("eTotalAM").addEventListener("input",updateEmployeeBusserPreview);
+$("eDate").addEventListener("change",updateEmployeeBusserPreview);
+
+
+window.setEmployeeTab=function(name){
+  const target=name==="shift"?"shift":"reports";
+  $("employeeShiftContent")?.classList.toggle("hidden",target!=="shift");
+  $("employeeReportsContent")?.classList.toggle("hidden",target!=="reports");
+  $("employeeTipCheckContent")?.classList.add("hidden");
+  $("employeeBottom")?.classList.add("hidden");
+  document.querySelectorAll("[data-etab]").forEach(b=>b.classList.toggle("on",b.dataset.etab===target));
+};
+document.querySelectorAll("[data-etab]").forEach(btn=>btn.addEventListener("click",()=>setEmployeeTab(btn.dataset.etab)));
+
+
+const TIP_TABLE_GROUPS=Object.freeze([
+  ["A",["A1","A2","A3","A4"]],
+  ["B",["B1","B2","B3"]],
+  ["Bar",Array.from({length:12},(_,i)=>`Bar${i+1}`)],
+  ["C",["C1","C2","C3","C4"]],
+  ["D",["D1","D2","D3"]],
+  ["E",["E1","E2","E3","E4","E5"]],
+  ["H",["H1","H2","H3","H4"]],
+  ["L",["L1","L2","L3","L4","L5","L6"]],
+  ["M",["M1","M2"]],
+  ["R",["R1","R2","R3","R4","R5","R6","R7"]]
+]);
+function tipTableOptions(selected=""){
+  return `<option value="">Select Table</option>`+TIP_TABLE_GROUPS.map(([label,vals])=>
+    `<optgroup label="${label}">${vals.map(v=>`<option value="${v}" ${v===selected?"selected":""}>${v}</option>`).join("")}</optgroup>`
+  ).join("");
+}
+
+window.setEmployeeTab=function(name){
+  const target=name==="shift"?"shift":"reports";
+  $("employeeShiftContent")?.classList.toggle("hidden",target!=="shift");
+  $("employeeReportsContent")?.classList.toggle("hidden",target!=="reports");
+  $("employeeTipCheckContent")?.classList.add("hidden");
+  $("employeeBottom")?.classList.add("hidden");
+  document.querySelectorAll("[data-etab]").forEach(b=>b.classList.toggle("on",b.dataset.etab===target));
+};
+document.querySelectorAll("[data-etab]").forEach(btn=>btn.addEventListener("click",()=>setEmployeeTab(btn.dataset.etab)));
+
+function renderTipEntryRows(tbodyId,prefix,rows=[]){
+  const tbody=$(tbodyId); if(!tbody)return;
+  tbody.innerHTML=Array.from({length:50},(_,i)=>{
+    const r=rows[i]||{};
+    return `<tr><td>${i+1}</td>
+      <td><input id="${prefix}Check${i}" value="${esc(r.checkNumber||"")}" placeholder="Check #"></td>
+      <td><select id="${prefix}Table${i}">${tipTableOptions(r.table||"")}</select></td>
+      <td><input id="${prefix}Tip${i}" type="number" min="0" step=".01" inputmode="decimal" value="${Number(r.tip||0)||""}" placeholder="0.00"></td>
+    </tr>`;
+  }).join("");
+}
+function readTipEntryRows(prefix){
+  const rows=[];
+  for(let i=0;i<50;i++){
+    const checkNumber=String($(`${prefix}Check${i}`)?.value||"").trim();
+    const table=String($(`${prefix}Table${i}`)?.value||"").trim();
+    const tip=Number($(`${prefix}Tip${i}`)?.value||0);
+    if(checkNumber||table||tip>0) rows.push({line:i+1,checkNumber,table,tip:Number.isFinite(tip)?tip:0,result:""});
+  }
+  return rows;
+}
+function clearTipEntryRows(prefix){
+  for(let i=0;i<50;i++){
+    if($(`${prefix}Check${i}`)) $(`${prefix}Check${i}`).value="";
+    if($(`${prefix}Table${i}`)) $(`${prefix}Table${i}`).value="";
+    if($(`${prefix}Tip${i}`)) $(`${prefix}Tip${i}`).value="";
+  }
+}
+renderTipEntryRows("eTipCheckRows","eTC");
+renderTipEntryRows("sTipCheckRows","sTC");
+if($("eTipCheckDate")) $("eTipCheckDate").value=todayLocal();
+if($("sTipCheckDate")) $("sTipCheckDate").value=todayLocal();
+
+window.clearEmployeeTipCheck=function(){ clearTipEntryRows("eTC"); if($("eTipCheckDate")) $("eTipCheckDate").value=todayLocal(); };
+window.clearStaffTipCheckForm=function(){
+  tipCheckEditId="";
+  if($("staffTipCheckEditId")) $("staffTipCheckEditId").value="";
+  if($("sTipCheckMode")) $("sTipCheckMode").value="NEW SHEET";
+  if($("staffTipCheckSubmitBtn")) $("staffTipCheckSubmitBtn").textContent="Submit to Cashier";
+  clearTipEntryRows("sTC");
+  if($("sTipCheckDate")) $("sTipCheckDate").value=todayLocal();
+};
+
+// Employee shift UI
+document.querySelectorAll("[data-eshift]").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    eShift=btn.dataset.eshift;
+    document.querySelectorAll("[data-eshift]").forEach(x=>x.classList.remove("on"));
+    btn.classList.add("on");
+    refreshClockMode();
+  });
+});
+$("eBreakMode").addEventListener("change",refreshClockMode);
+
+function refreshClockMode(){
+  const multi=["DOUBLE","LONG"].includes(eShift);
+  $("singleClock").classList.toggle("hidden",multi);
+  $("longDoubleOptions").classList.toggle("hidden",!multi);
+  $("totalAmWrap").classList.toggle("hidden",!multi);
+  $("eBarAMWrap").classList.toggle("hidden",!(eShift==="AM"||multi));
+  $("eBarPMWrap").classList.toggle("hidden",!(eShift==="PM"||multi));
+  if(eShift==="AM") $("eBarPM").checked=false;
+  if(eShift==="PM") $("eBarAM").checked=false;
+  updateEmployeeBusserPreview();
+  if(!multi){
+    $("continuousClock").classList.add("hidden");
+    $("doubleClock").classList.add("hidden");
+    return;
+  }
+  const withBreak=$("eBreakMode").value==="with";
+  $("continuousClock").classList.toggle("hidden",withBreak);
+  $("doubleClock").classList.toggle("hidden",!withBreak);
+}
+
+document.querySelectorAll("[data-stab]").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    document.querySelectorAll("[data-stab]").forEach(x=>x.classList.remove("on"));
+    btn.classList.add("on");
+    document.querySelectorAll(".staffPanel").forEach(x=>x.classList.add("hidden"));
+    $(btn.dataset.stab).classList.remove("hidden");
+  });
+});
+
+
+const EMPLOYEE_DRAFT_KEY="fredTipEmployeeDraftV103";
+function employeeDraftKey(){return EMPLOYEE_DRAFT_KEY+":"+String(currentUser?.uid||slugFor(currentProfile?.username||currentProfile?.displayName)||"signed-out");}
+function saveEmployeeDraft(){
+  if(!currentProfile || currentProfile.role!=="employee") return;
+  const ids=["eDate","ePosition","eBreakMode","eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut","eGrandTotal","eTotalAM","eMeal","eCash"];
+  const d={employeeUid:currentUser?.uid||"",shift:eShift,barAM:!!$("eBarAM")?.checked,barPM:!!$("eBarPM")?.checked};
+  ids.forEach(id=>{if($(id))d[id]=$(id).value;});
+  try{localStorage.setItem(employeeDraftKey(),JSON.stringify(d));}catch(e){}
+}
+function restoreEmployeeDraft(){
+  try{
+    const d=JSON.parse(localStorage.getItem(employeeDraftKey())||"null");
+    if(!d || d.employeeUid!==currentUser?.uid)return;
+    Object.entries(d).forEach(([k,v])=>{
+      if(k==="shift"||k==="barAM"||k==="barPM")return;
+      if($(k))$(k).value=v;
+    });
+    if(d.shift)eShift=d.shift;
+    if($("eBarAM"))$("eBarAM").checked=!!d.barAM;
+    if($("eBarPM"))$("eBarPM").checked=!!d.barPM;
+    document.querySelectorAll("[data-eshift]").forEach(b=>b.classList.toggle("on",b.dataset.eshift===eShift));
+    refreshClockMode();
+  }catch(e){}
+}
+document.addEventListener("input",e=>{if(e.target?.closest?.("#employeeApp"))saveEmployeeDraft();});
+document.addEventListener("change",e=>{if(e.target?.closest?.("#employeeApp"))saveEmployeeDraft();});
+
+function clockText(){
+  if(["DOUBLE","LONG"].includes(eShift)){
+    if($("eBreakMode").value==="with"){
+      return `${$("eAmIn").value||"--"}–${$("eAmOut").value||"--"} / ${$("ePmIn").value||"--"}–${$("ePmOut").value||"--"}`;
+    }
+    return `${$("eContIn").value||"--"}–${$("eContOut").value||"--"}`;
+  }
+  return `${$("eIn").value||"--"}–${$("eOut").value||"--"}`;
+}
+
+window.clearEmployeeForm=function(){
+  localStorage.removeItem(employeeDraftKey());
+  try{
+    ["eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut"].forEach(id=>{ const e=$(id); if(e)e.value=""; });
+    ["eMeal","eCash","eGrandTotal","eTotalAM"].forEach(id=>{ const e=$(id); if(e)e.value="0"; });
+    ["eBarAM","eBarPM"].forEach(id=>{ const e=$(id); if(e)e.checked=false; });
+    if($("eDate")) $("eDate").value=todayLocal();
+    if($("ePosition")) $("ePosition").value="Server";
+    applyEmployeeWorkProfile();
+    eShift="AM";
+    document.querySelectorAll("[data-eshift]").forEach(b=>b.classList.toggle("on",b.dataset.eshift==="AM"));
+    if($("eBreakMode")) $("eBreakMode").value="without";
+    refreshClockMode();
+    updateEmployeeBusserPreview();
+    const first=$("eIn"); if(first) first.focus();
+  }catch(e){
+    console.error("Clear employee form:",e);
+    alert("Could not clear the form. Please refresh once and try again.");
+  }
+};
+
+async function writeAudit(action,submissionId,employee,details={}){
+  if(!currentUser || !currentProfile) return;
+  const ref=doc(collection(db,"auditLogs"));
+  await setDoc(ref,{
+    action,
+    submissionId:submissionId||"",
+    employee:employee||"",
+    actorUid:currentUser.uid,
+    actor:currentProfile.displayName||currentProfile.username,
+    actorRole:currentProfile.role,
+    details,
+    createdAt:serverTimestamp()
+  });
+}
+
+window.submitEmployee=async function(){
+  applyEmployeeWorkProfile();
+  const profile=employeeWorkProfile(currentProfile?.displayName||currentProfile?.username);
+  const isMulti=["DOUBLE","LONG"].includes(eShift);
+  const r={
+    employeeUid:currentUser.uid,
+    employee:profile?.name||currentProfile.displayName||currentProfile.username,
+    personName:profile?.personName||currentProfile.displayName||currentProfile.username,
+    date:$("eDate").value,
+    position:$("ePosition").value,
+    shift:eShift,
+    breakMode:isMulti ? $("eBreakMode").value : "none",
+    clock:clockText(),
+    grandTotal:Number($("eGrandTotal").value)||0,
+    totalAM:isMulti ? (Number($("eTotalAM").value)||0) : 0,
+    barSalesAM:$("eBarAM").checked,
+    barSalesPM:$("eBarPM").checked,
+    meal:Number($("eMeal").value)||0,
+    cashTip:Number($("eCash").value)||0,
+    status:"pending",
+    reviewedBy:"",
+    reviewedAt:null,
+    createdAt:serverTimestamp(),
+    updatedAt:serverTimestamp()
+  };
+  if(!r.date){ alert("Select date."); return; }
+  try{
+    const ref=doc(collection(db,"submissions"));
+    await setDoc(ref,r);
+    await writeAudit("employee_submit",ref.id,r.employee,{after:r});
+    localStorage.removeItem(employeeDraftKey());
+    clearEmployeeForm();
+    alert("Employee submission sent. This shared tablet is now signed out.");
+    try{
+      localStorage.removeItem(employeeDraftKey());
+      sessionStorage.clear();
+      await signOut(auth);
+    }catch(e){ console.warn("Post-submit logout:",e); }
+  }catch(e){
+    console.error(e);
+    alert(`Submit failed: ${e.code || e.message}`);
+  }
+};
+
+
+function employeeFinalReportHTML(r){
+  const f=r.finalReport||{};
+  const money=v=>"$"+Number(v||0).toFixed(2);
+  const pct=v=>(Number(v||0)*100).toFixed(2)+"%";
+  return `
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">
+      <div>
+        <h2 style="margin:0">My Final Tip Report</h2>
+        <div class="small">${esc(r.date||"")} • ${esc(r.position||"")} • ${esc(r.shift||"")}</div>
+      </div>
+      <span class="status approved">MONEY READY</span>
+    </div>
+    <div class="notice good" style="margin-top:14px">
+      <b>Money is ready. Please see the Manager on Duty.</b>
+    </div>
+    <div class="grid3" style="margin-top:14px">
+      <div class="kpi"><span>Grand Total</span><b>${money(f.grandTotal ?? r.grandTotal)}</b></div>
+      ${["DOUBLE","LONG"].includes(r.shift)?`<div class="kpi"><span>Total AM</span><b>${money(f.totalAM ?? r.totalAM)}</b></div>`:""}
+      <div class="kpi"><span>Meal</span><b>${money(f.meal ?? r.meal)}</b></div>
+      <div class="kpi"><span>Cash Tip</span><b>${money(f.cashTip ?? r.cashTip)}</b></div>
+      <div class="kpi"><span>Busser Rate</span><b>${pct(f.busserRate)}</b></div>
+      <div class="kpi"><span>Busser AM</span><b>${money(f.busserTipOutAM??0)}</b></div>
+      <div class="kpi"><span>Busser PM</span><b>${money(f.busserTipOutPM??0)}</b></div>
+      <div class="kpi"><span>Busser Total</span><b>${money(f.busserTipOut)}</b></div>
+      <div class="kpi"><span>Bar Tip Out</span><b>${money(f.barTipOut)}</b></div>
+      <div class="kpi"><span>Hourly Adjustment</span><b>${money(f.adjustmentSalaryHourly)}</b></div>
+      <div class="kpi"><span>TOTAL PAID OUT</span><b>${money(f.totalPaidOut)}</b></div>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn light" type="button" onclick="startNewEmployeeReport('${r.id}')">New Tip Report</button>
+    </div>`;
+}
+
+window.startNewEmployeeReport=function(finalSubmissionId){
+  sessionStorage.setItem("employeeFinalSeen:"+finalSubmissionId,"1");
+  $("employeeReadyReport")?.classList.add("hidden");
+  $("employeeEntryCard")?.classList.remove("hidden");
+  $("employeeBottom")?.classList.remove("hidden");
+  clearEmployeeForm();
+};
+
+
+
+const FZ_PUBLIC_PORTAL_COLLECTION="publicEmployeePortals";
+const FZ_PORTAL_ACCESS_COLLECTION="employeeReportAccess";
+let fzPortalSyncHash="";
+
+function fzEmployeeKey(name){
+  return String(name||"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"employee";
+}
+function fzRandomPortalToken(){
+  const bytes=new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes,b=>b.toString(16).padStart(2,"0")).join("");
+}
+function fzPortalUrl(token){
+  const u=new URL(location.href);
+  u.search="";
+  u.hash="";
+  u.searchParams.set("report",token);
+  return u.toString();
+}
+async function fzEnsureEmployeePortal(name,allRows=latestHourlyReports){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return null;
+  name=String(name||"").trim();
+  if(!name)return null;
+  const key=fzEmployeeKey(name);
+  const accessRef=doc(db,FZ_PORTAL_ACCESS_COLLECTION,key);
+  let token="";
+  try{
+    const accessSnap=await getDoc(accessRef);
+    token=String(accessSnap.data()?.token||"");
+  }catch(e){ console.warn("Portal access read:",e); }
+  if(!token){
+    token=fzRandomPortalToken();
+    await setDoc(accessRef,{
+      employee:name,token,createdAt:serverTimestamp(),
+      createdByUid:currentUser?.uid||"",
+      createdBy:currentProfile?.displayName||currentProfile?.username||""
+    },{merge:true});
+  }
+  const rows=(allRows||[]).filter(r=>String(r.employee||"").trim()===name && !shouldExcludeHistoricalReport(r));
+  const safeRows=rows.filter(r=>!shouldExcludeHistoricalReport(r)).map(r=>({
+    ...r,
+    createdAt:r.createdAt?.seconds?{seconds:r.createdAt.seconds}:null,
+    updatedAt:r.updatedAt?.seconds?{seconds:r.updatedAt.seconds}:null
+  }));
+  await setDoc(doc(db,FZ_PUBLIC_PORTAL_COLLECTION,token),{
+    employee:name,
+    reports:safeRows,
+    updatedAt:serverTimestamp()
+  },{merge:false});
+  return token;
+}
+
+async function fzSyncPublicReportPortals(rows=latestHourlyReports){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const names=[...new Set((rows||[]).map(r=>String(r.employee||"").trim()).filter(Boolean))].sort();
+  const hash=names.map(n=>n+":"+(rows||[]).filter(r=>r.employee===n).length).join("|");
+  if(hash===fzPortalSyncHash)return;
+  fzPortalSyncHash=hash;
+  for(const name of names){
+    try{ await fzEnsureEmployeePortal(name,rows); }
+    catch(e){ console.warn("Portal sync skipped for",name,e); }
+  }
+}
+
+window.openGuestReportCode=function(){
+  const code=String($("guestReportCode")?.value||"").trim();
+  if(!code){alert("Paste the private report code from your Manager/Owner.");return;}
+  const u=new URL(location.href);u.searchParams.set("report",code);location.href=u.toString();
+};
+
+window.closeGuestReportPortal=function(){
+  const u=new URL(location.href);u.searchParams.delete("report");location.href=u.toString();
+};
+
+async function fzOpenGuestReportPortalFromUrl(){
+  const token=new URL(location.href).searchParams.get("report");
+  if(!token)return false;
+  $("loginView")?.classList.add("hidden");
+  $("appView")?.classList.add("hidden");
+  $("top")?.classList.add("hidden");
+  const view=$("guestReportView"),body=$("guestReportPortalBody");
+  view?.classList.remove("hidden");
+  if(body)body.innerHTML='<div class="card"><div class="small">Loading your private reports...</div></div>';
+  try{
+    const snap=await getDoc(doc(db,FZ_PUBLIC_PORTAL_COLLECTION,token));
+    if(!snap.exists())throw new Error("Private report link not found or expired.");
+    const data=snap.data()||{};
+    const rows=Array.isArray(data.reports)?data.reports:[];
+    if(body){
+      body.innerHTML=rows.length
+        ? rows.sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))).map(r=>employeeReportExactHtml(r,{guest:true})).join("")
+        : '<div class="card"><div class="notice">No finalized tip reports yet.</div></div>';
+    }
+  }catch(e){
+    console.error("Guest report portal:",e);
+    if(body)body.innerHTML=`<div class="card"><div class="notice danger"><b>Could not open this private report link.</b><br>${esc(e.code||e.message||"Access error")}</div></div>`;
+  }
+  return true;
+}
+
+function employeeReportExactHtml(r,{guest=false}={}){
+  r=reportForWorkPosition(r);
+  const hours={...r,...(r.hours||{})};
+  const shift=String(r.shift||"").toUpperCase();
+  const isDouble=shift==="DOUBLE"||(shift==="LONG"&&!!(r.hourInAM||hours.hourInAM));
+  const position=String(r.position||"Server");
+  const bartender=position.toLowerCase()==="bartender";
+  const paidOut=smallReportPaidOut(r);
+  const grandTotal=smallReportGrandTotal(r);
+  const signed=Array.isArray(r.pickupSignature?.strokes)&&r.pickupSignature.strokes.length;
+
+  const amIn=isDouble?(r.hourInAM??hours.hourInAM??"-"):(shift==="AM"?(r.hourIn??hours.hourIn??"-"):"-");
+  const amOut=isDouble?(r.hourOutAM??hours.hourOutAM??"-"):(shift==="AM"?(r.hourOut??hours.hourOut??"-"):"-");
+  const pmIn=isDouble?(r.hourInPM??hours.hourInPM??"-"):(["PM","LONG"].includes(shift)?(r.hourIn??hours.hourIn??"-"):"-");
+  const pmOut=isDouble?(r.hourOutPM??hours.hourOutPM??"-"):(["PM","LONG"].includes(shift)?(r.hourOut??hours.hourOut??"-"):"-");
+
+  const metric=(label,value,cls="")=>`<div class="fz-report-metric ${cls}"><span>${esc(label)}</span><b>${value}</b></div>`;
+  const money=v=>fmtMoney(Number(v||0));
+  const yn=v=>v?"YES":"NO";
+
+  const work=[
+    metric("Hour In AM",esc(amIn||"-")),
+    metric("Hour Out AM",esc(amOut||"-")),
+    metric("Hour In PM",esc(pmIn||"-")),
+    metric("Hour Out PM",esc(pmOut||"-")),
+    metric("Total Hours",Number(r.totalHoursWork||r.totalHours||0).toFixed(2)),
+    metric("Busser AM",esc(r.busserAM||"N/A")),
+    metric("Grand Total",money(r.grandTotal)),
+    metric("Total AM",money(r.totalAM)),
+    metric("Total PM",money(r.totalPM)),
+    metric("Total Tips",money(r.totalTips))
+  ].join("");
+
+  const tips=[
+    metric("Paid Tip",money(r.paidTip)),
+    metric("Card Fee",money(r.payCardTipFee??r.cardFee)),
+    metric("Busser AM",money(r.busserTipOutAM)),
+    metric("Busser PM",money(r.busserTipOutPM)),
+    metric("Busser Total",money(r.busserTipOut)),
+    metric(bartender?"Bar Tip Received":"Bar Tip Out",money(bartender?r.bartenderBarTipReceived:r.barTipOut)),
+    metric("AM Bar Sales",yn(r.amBarSales??r.barSalesAM)),
+    metric("PM Bar Sales",yn(r.pmBarSales??r.barSalesPM)),
+    metric("AM Bar Tip",money(r.amBarTip??r.amBarTipOut??r.barTipAM)),
+    metric("PM Bar Tip",money(r.pmBarTip??r.pmBarTipOut??r.barTipPM))
+  ].join("");
+
+  const bartenderCalc=bartender?`
+    <div class="fz-report-section">
+      <div class="fz-report-section-title">Bartender Calculation</div>
+      <div class="fz-report-metrics">
+        ${bartenderReceiptPeriods(r).length?[
+          metric("BAR AM Received",money(bartenderPeriodAmount(r,"AM"))),
+          metric("BAR 2-4 Received",money(bartenderPeriodAmount(r,"2PM_4PM"))),
+          metric("BAR PM Received",money(bartenderPeriodAmount(r,"PM"))),
+          metric("Periods",esc(bartenderReceiptPeriods(r).map(p=>bartenderPeriodLabel(p.checkpoint)).join(" + "))),
+          metric("Received Total",money(r.bartenderBarTipReceived)),
+          metric("Calculation","Sum of assigned periods")
+        ].join(""):`
+        ${metric("Shift",esc(String(r.bartenderShiftType||"-").replace("2PM_4PM","2 PM - 4 PM")))}
+        ${metric("Server Sales",money(r.bartenderServerGrandTotalSummary))}
+        ${metric("Gross @ 0.6%",money(r.bartenderGrossBarTipOut))}
+        ${metric("Less AM",money(r.bartenderLessAM))}
+        ${metric("Less 2-4",money(r.bartenderLess24))}
+        ${metric("Received",money(r.bartenderBarTipReceived))}
+        `}
+      </div>
+    </div>`:"";
+
+  const signature=signed
+    ? `<div class="fz-report-signature">${smallReportSignatureHtml(r)}</div><div class="small" style="margin-top:5px;font-weight:900;color:#0a7040">SIGNED</div>`
+    : `<div class="fz-report-signature"><span class="small">SIGNATURE PENDING</span></div>`;
+
+  return `<article class="fz-report-exact">
+    <div class="fz-report-exact-head">
+      <div class="eyebrow">FRED ZHANG TIP CALCULATOR · EMPLOYEE TIP REPORT</div>
+      <h3>${esc(r.employee||"Employee")}</h3>
+      <div class="meta">${esc(r.date||"-")} · ${esc(position)} | ${esc(shift||"-")}</div>
+      <span class="fz-report-status">${esc(String(r.status||"MONEY READY").replaceAll("_"," ").toUpperCase())}</span>
+    </div>
+    <div class="fz-report-exact-body">
+      <div class="fz-report-section">
+        <div class="fz-report-section-title">Work & Sales</div>
+        <div class="fz-report-metrics">${work}</div>
+      </div>
+      <div class="fz-report-section">
+        <div class="fz-report-section-title">Tips & Deductions</div>
+        <div class="fz-report-metrics">${tips}</div>
+      </div>
+      ${bartenderCalc}
+      <div class="fz-report-section">
+        <div class="fz-report-section-title">Payout Summary</div>
+        <div class="fz-report-metrics">
+          ${metric("Total Before Meal",money(r.totalBeforeMeal))}
+          ${metric("Meal",money(r.meal))}
+          ${metric("TOTAL PAID OUT",money(paidOut),"payout")}
+          ${metric("Cash Tip",money(r.cashTip))}
+          ${metric("GRAND TOTAL",money(grandTotal),"grand")}
+          ${metric("Adjustment",r.adjustmentDecision==="NONE"?"NO ADJUSTMENT":esc(String(r.adjustmentDecision||"NO ADJUSTMENT")))}
+          ${metric("Adjustment Available",money(r.adjustmentCandidate??calculatedHourlyAdjustment(r)))}
+          ${metric("Adjustment Applied",money(r.adjustmentSalaryHourly||0))}
+        </div>
+        <div class="fz-report-formula">Minimum Hourly Check = Total Before Meal + Cash Tip vs. hourly minimum<br>Adjustment = max(0, Hourly Minimum - Total Before Meal - Cash Tip)<br>Total Paid Out = Total Before Meal - Meal${r.adjustmentPayoutVersion?' + Accepted Adjustment':''}<br>Grand Total = Total Before Meal + Cash Tip</div>
+      </div>
+      <div class="fz-report-section">
+        <div class="fz-report-section-title">Employee Signature</div>
+        ${signature}
+      </div>
+      ${guest?"":`<div class="fz-report-download"><button class="btn light" type="button" onclick="downloadMyHistoricalReport('${r.id}')">Download My PDF</button></div>`}
+    </div>
+  </article>`;
+}
+
+function employeeHistoricalReportHtml(r){
+  return employeeReportExactHtml(r,{guest:false});
+}
+
+function renderEmployeeHistoricalReports(rows=[]){
+  const host=$("employeeHistoricalReports");
+  if(!host)return;
+  const sorted=[...rows].sort((a,b)=>{
+    const da=String(a.date||""), dbb=String(b.date||"");
+    if(da!==dbb)return dbb.localeCompare(da);
+    return Number(b.createdAt?.seconds||b.updatedAt?.seconds||0)-Number(a.createdAt?.seconds||a.updatedAt?.seconds||0);
+  });
+  host.innerHTML=sorted.length
+    ? sorted.map(employeeHistoricalReportHtml).join("")
+    : '<div class="notice">No finalized tip reports yet.</div>';
+}
+
+window.downloadMyHistoricalReport=function(reportId){
+  if(currentProfile?.role!=="employee")return;
+  const rows=window.__employeeHistoricalHourlyReports||[];
+  const r=rows.find(x=>x.id===reportId);
+  if(!r){alert("Report not found.");return;}
+  const safeName=String(r.employee||"Employee").replace(/[^a-z0-9_-]+/gi,"_");
+  downloadBlob(simplePdfBlob([{...r,totalPaidOut:smallReportPaidOut(r)}]),
+    `Fred_Zhang_Tip_Report_${safeName}_${r.date||todayLocal()}.pdf`);
+};
+
+function listenEmployeeHistoricalReports(){
+  if(currentProfile?.role!=="employee"||!currentUser)return;
+  const name=String(currentProfile.displayName||currentProfile.username||"").trim();
+  if(!name)return;
+
+  const merged=new Map();
+  const push=rows=>{
+    rows.filter(r=>!shouldExcludeHistoricalReport(r)).forEach(r=>merged.set(r.id,r));
+    const all=[...merged.values()];
+    window.__employeeHistoricalHourlyReports=all;
+    renderEmployeeHistoricalReports(all);
+  };
+  const fail=e=>{
+    console.error("Employee historical reports:",e);
+    const host=$("employeeHistoricalReports");
+    if(host && !window.__employeeHistoricalHourlyReports?.length){
+      host.innerHTML=`<div class="notice danger"><b>Could not load My Reports.</b><br>${esc(e.code||e.message||"Firestore permission error")}<br><span class="small">Publish the V13.8.24-P16 hourlyReports employee-read rule.</span></div>`;
+    }
+  };
+
+  const byUid=query(collection(db,"hourlyReports"),where("employeeUid","==",currentUser.uid),limit(100));
+  unsubs.push(onSnapshot(byUid,snap=>push(snap.docs.map(d=>({id:d.id,...d.data()}))),fail));
+
+  const byName=query(collection(db,"hourlyReports"),where("employee","==",name),limit(100));
+  unsubs.push(onSnapshot(byName,snap=>push(snap.docs.map(d=>({id:d.id,...d.data()}))),fail));
+}
+
+function listenEmployee(){
+  // Avoid composite-index requirement; sort client-side.
+  const q=query(collection(db,"submissions"),where("employeeUid","==",currentUser.uid),limit(50));
+  unsubs.push(onSnapshot(q,snap=>{
+    const rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+    rows.sort((a,b)=>{
+      const aa=a.createdAt?.seconds||0, bb=b.createdAt?.seconds||0;
+      return bb-aa;
+    });
+
+    // Realtime employee-side alerts for Manager/Owner actions.
+    for(const r of rows){
+      const previous=employeeKnownStatuses.get(r.id);
+      const current=String(r.status||"");
+      if(previous && previous!==current){
+        if(current==="money_ready"){
+          realtimePhoneAlert(
+            "Money Ready",
+            "Your tip money is ready. Please see the Manager on Duty.",
+            "money"
+          );
+        }else if(current==="hourly_pending" || current==="approved"){
+          realtimePhoneAlert(
+            "Tip Report Approved",
+            "Manager approved your tip report and it is being processed.",
+            "normal"
+          );
+        }else if(current==="rejected"){
+          realtimePhoneAlert(
+            "Tip Report Needs Attention",
+            "Manager rejected your report. Please check with Manager.",
+            "warning"
+          );
+        }
+      }
+      employeeKnownStatuses.set(r.id,current);
+    }
+    // Remove deleted IDs from local status memory.
+    const liveIds=new Set(rows.map(r=>r.id));
+    for(const id of [...employeeKnownStatuses.keys()]){
+      if(!liveIds.has(id)) employeeKnownStatuses.delete(id);
+    }
+
+    const latestFinal=rows.find(r=>r.status==="money_ready");
+    const finalBox=$("employeeReadyReport");
+    const entry=$("employeeEntryCard");
+    const bottom=$("employeeBottom");
+
+    if(latestFinal && !sessionStorage.getItem("employeeFinalSeen:"+latestFinal.id)){
+      if(finalBox){
+        finalBox.innerHTML=employeeFinalReportHTML(latestFinal);
+        finalBox.classList.remove("hidden");
+      }
+      entry?.classList.add("hidden");
+      bottom?.classList.add("hidden");
+    }else{
+      finalBox?.classList.add("hidden");
+      entry?.classList.remove("hidden");
+      bottom?.classList.remove("hidden");
+    }
+
+    // Employee current list contains only items still in process.
+    const active=rows.filter(r=>r.status!=="money_ready").slice(0,10);
+    $("mySubmissions").innerHTML=active.length?active.map(r=>`
+      <div style="padding:12px 0;border-bottom:1px solid #edf0f4;display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap">
+        <div style="min-width:0;flex:1">
+          <b>${esc(r.date)} • ${esc(r.shift)}</b>
+          <div class="small">${esc(r.clock)} • Grand ${fmtMoney(r.grandTotal)}
+          ${["DOUBLE","LONG"].includes(r.shift)?` • AM ${fmtMoney(r.totalAM)}`:""}
+          • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}
+          • <span class="status ${esc(r.status)}">${esc(r.status)}</span></div>
+        </div>
+        <button class="btn red" type="button" onclick="deleteMySubmission('${r.id}')">Delete</button>
+      </div>`).join(""):'<div class="small">No report currently in process.</div>';
+
+    if(latestFinal && !sessionStorage.getItem("moneyReady:"+latestFinal.id)){
+      sessionStorage.setItem("moneyReady:"+latestFinal.id,"1");
+    }
+  },e=>console.error("Employee listener:",e)));
+}
+
+
+window.deleteMySubmission=async function(id){
+  if(currentProfile?.role!=="employee"){
+    alert("Employee account required.");
+    return;
+  }
+
+  try{
+    const ref=doc(db,"submissions",id);
+    const snap=await getDoc(ref);
+
+    if(!snap.exists()){
+      alert("This report no longer exists.");
+      return;
+    }
+
+    const before=snap.data();
+
+    if(before.employeeUid!==currentUser.uid){
+      alert("You can only delete your own report.");
+      return;
+    }
+
+    if(before.status==="money_ready"){
+      alert("A finalized Money Ready report cannot be deleted by Employee. Please contact Manager/Owner.");
+      return;
+    }
+
+    const label=`${before.date||""} • ${before.shift||""}`;
+    if(!confirm(`Delete your report?\n\n${label}\n\nThis removes only this report. It does NOT delete your employee account.`)) return;
+
+    await deleteDoc(ref);
+
+    try{
+      await writeAudit("employee_delete_own_submission",id,before.employee||currentProfile.displayName||"",{before});
+    }catch(e){
+      console.warn("Audit log skipped after employee delete:",e);
+    }
+
+    alert("Your report was deleted.");
+  }catch(e){
+    alert(`Delete failed: ${e.code||e.message}`);
+  }
+};
+
+
+function ensureRealtimeAlertAudio(){ return;
+  try{
+    realtimeAlertCtx=realtimeAlertCtx||new (window.AudioContext||window.webkitAudioContext)();
+    if(realtimeAlertCtx.state==="suspended") realtimeAlertCtx.resume();
+    realtimeAlertsEnabled=true;
+    return true;
+  }catch(e){
+    console.warn("Realtime alert audio:",e);
+    return false;
+  }
+}
+
+function realtimeAlertSound(kind="normal"){ return;
+  if(!realtimeAlertCtx || realtimeAlertCtx.state!=="running") return;
+  const now=realtimeAlertCtx.currentTime;
+  const notes=kind==="money"
+    ? [784,988,1175,1319]
+    : kind==="warning"
+      ? [523,392,523]
+      : [659,784,988];
+
+  notes.forEach((freq,i)=>{
+    const o=realtimeAlertCtx.createOscillator();
+    const g=realtimeAlertCtx.createGain();
+    o.type="sine";
+    o.frequency.value=freq;
+    const t=now+i*.16;
+    g.gain.setValueAtTime(.0001,t);
+    g.gain.exponentialRampToValueAtTime(.22,t+.025);
+    g.gain.exponentialRampToValueAtTime(.0001,t+.38);
+    o.connect(g);
+    g.connect(realtimeAlertCtx.destination);
+    o.start(t);
+    o.stop(t+.42);
+  });
+}
+
+function realtimePhoneAlert(title,body,kind="normal"){
+  // Vibration works on supported Android Chrome/PWA devices.
+  try{
+    if(navigator.vibrate){
+      navigator.vibrate(kind==="money"
+        ? [250,120,250,120,500]
+        : kind==="warning"
+          ? [400,150,400]
+          : [220,100,220]);
+    }
+  }catch(e){}
+
+  realtimeAlertSound(kind);
+
+  if(typeof Notification!=="undefined" && Notification.permission==="granted"){
+    try{
+      new Notification(title,{
+        body,
+        icon:"icon-192.png",
+        badge:"icon-192.png",
+        tag:title+":"+body,
+        renotify:true,
+        silent:true,
+        vibrate:kind==="money"?[250,120,250,120,500]:[220,100,220]
+      });
+    }catch(e){ console.warn("Notification:",e); }
+  }
+}
+
+
+function pushDeviceId(){
+  let id=localStorage.getItem("fzPushDeviceId");
+  if(!id){
+    id=(crypto?.randomUUID?.()||("dev-"+Date.now()+"-"+Math.random().toString(36).slice(2)));
+    localStorage.setItem("fzPushDeviceId",id);
+  }
+  return id;
+}
+
+function pushDeviceLabel(){
+  const ua=navigator.userAgent||"";
+  if(/iPhone/i.test(ua)) return "iPhone";
+  if(/iPad/i.test(ua)) return "iPad";
+  if(/Android/i.test(ua)) return "Android";
+  if(/Windows/i.test(ua)) return "Windows";
+  if(/Macintosh|Mac OS X/i.test(ua)) return "Mac";
+  return "Web Browser";
+}
+
+async function enableBackgroundPush(){
+  if(!currentUser || currentUser.isAnonymous || !currentProfile){
+    throw new Error("Please login as Employee, Manager, or Owner first.");
+  }
+
+  if(PUSH_VAPID_PUBLIC_KEY.includes("PASTE_WEB_PUSH")){
+    throw new Error("Web Push VAPID public key has not been configured yet.");
+  }
+
+  if(!("Notification" in window) || !("serviceWorker" in navigator)){
+    throw new Error("This browser does not support Web Push notifications.");
+  }
+
+  const supported=await isMessagingSupported();
+  if(!supported) throw new Error("Firebase Messaging is not supported on this browser/device.");
+
+  let permission=Notification.permission;
+  if(permission!=="granted"){
+    permission=await Notification.requestPermission();
+  }
+  if(permission!=="granted"){
+    throw new Error("Notification permission was not granted.");
+  }
+
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13835.js?v=13835",{updateViaCache:"none"});
+  await navigator.serviceWorker.ready;
+
+  messagingInstance=messagingInstance||getMessaging(firebaseApp);
+  const token=await getToken(messagingInstance,{
+    vapidKey:PUSH_VAPID_PUBLIC_KEY,
+    serviceWorkerRegistration:swReg
+  });
+  if(!token) throw new Error("Firebase did not return a push token.");
+
+  await registerPushDevice({
+    token,
+    deviceId:pushDeviceId(),
+    deviceLabel:pushDeviceLabel(),
+    userAgent:(navigator.userAgent||"").slice(0,300)
+  });
+
+  localStorage.setItem("fzBackgroundPushEnabled","1");
+  return true;
+}
+
+window.requestNotify=async function(){
+  ensureRealtimeAlertAudio();
+  try{
+    await enableBackgroundPush();
+
+    try{ navigator.vibrate?.([180,80,180]); }catch(e){}
+    realtimeAlertSound("normal");
+
+    alert(
+      "Background notifications are enabled on this device.\n\n"+
+      "Push alerts can arrive when the app is in the background or the phone is locked."
+    );
+  }catch(e){
+    console.error("Background push:",e);
+    alert("Background notification setup failed: "+(e.message||e));
+  }
+};
+function notifyManager(r){
+  realtimePhoneAlert(
+    "New Tip Report Submitted",
+    `${r.employee} — ${r.shift}. Please review.`,
+    "normal"
+  );
+}
+
+
+
+function tipCheckStatusLabel(status){ return status==="cashier_completed"?"CASHIER COMPLETED":"WAITING CASHIER"; }
+function tipResultLabel(v){
+  return v==="done"?"Done":v==="no_signature"?"No Signature":v==="ticket_not_found"?"Ticket Not Found":"Not Checked";
+}
+function tipIssueCount(sheet){
+  return (sheet.rows||[]).filter(r=>r.result && r.result!=="done").length;
+}
+function resultBadge(result){
+  const label=tipResultLabel(result);
+  const cls=result==="done"?"approved":result?"rejected":"pending";
+  return `<span class="status ${cls}">${label}</span>`;
+}
+
+window.submitEmployeeTipCheck=async function(){
+  if(currentProfile?.role!=="employee"){alert("Employee login required.");return;}
+  const rows=readTipEntryRows("eTC"), date=$("eTipCheckDate")?.value||todayLocal();
+  if(!rows.length){alert("Enter at least one Check Number / Table / Tip line.");return;}
+  try{
+    await saveTipCheckSheetApi({date,rows});
+    clearEmployeeTipCheck();
+    await loadTipCheckSheets();
+    alert("Check Tip sheet submitted to Cashier.");
+  }catch(e){alert(`Check Tip submit failed: ${e.message||e.code}`);}
+};
+
+
+window.submitEmployeeTipCheckRows=async function(date,rows){
+  if(currentProfile?.role!=="employee"){
+    alert("Employee login required.");
+    return false;
+  }
+  const cleanRows=Array.isArray(rows)?rows.map((r,i)=>({
+    line:i+1,
+    checkNumber:String(r?.checkNumber||"").trim(),
+    table:String(r?.table||"").trim(),
+    tip:Number(r?.tip||0)
+  })).filter(r=>r.checkNumber||r.table||r.tip>0):[];
+
+  if(!cleanRows.length){
+    alert("Add at least one ticket.");
+    return false;
+  }
+
+  try{
+    if(auth.currentUser) await auth.currentUser.getIdToken(true);
+    await saveTipCheckSheetApi({date:date||todayLocal(),rows:cleanRows});
+    await loadTipCheckSheets();
+    return true;
+  }catch(e){
+    console.error("Direct Check Tip submit:",e);
+    alert(`Submit to Cashier failed: ${e.message||e.code}`);
+    return false;
+  }
+};
+
+window.submitStaffTipCheck=async function(){
+  if(!["manager","owner"].includes(currentProfile?.role||"")){alert("Manager/Owner only.");return;}
+  const employeeName=$("sTipCheckEmployee")?.value||"", date=$("sTipCheckDate")?.value||todayLocal(), rows=readTipEntryRows("sTC");
+  if(!employeeName){alert("Select an employee.");return;}
+  if(!rows.length){alert("Enter at least one Check Number / Table / Tip line.");return;}
+  try{
+    await saveTipCheckSheetApi({sheetId:tipCheckEditId||"",date,employeeName,rows});
+    clearStaffTipCheckForm();
+    await loadTipCheckSheets();
+    alert(tipCheckEditId?"Check Tip sheet updated.":"Check Tip sheet submitted to Cashier.");
+  }catch(e){alert(`Check Tip save failed: ${e.message||e.code}`);}
+};
+
+
+function deletedCheckTipIds(){
+  return new Set((latestDeletedItems||[]).filter(x=>x.itemType==="check_tip").map(x=>String(x.itemId||"")));
+}
+function safeDeletedSnapshot(sheet){
+  try{return JSON.parse(JSON.stringify(sheet||{}));}catch(e){return {id:sheet?.id||"",date:sheet?.date||"",employeeName:sheet?.employeeName||"",rows:sheet?.rows||[]};}
+}
+async function loadDeletedItems(){
+  latestDeletedItems=[];
+  if(!currentUser||currentUser.isAnonymous||!currentProfile)return;
+  try{
+    let qd;
+    if(currentProfile.role==="employee"){
+      qd=query(collection(db,"deletedItems"),where("employeeUid","==",currentUser.uid),limit(300));
+    }else{
+      qd=query(collection(db,"deletedItems"),limit(500));
+    }
+    const snap=await getDocs(qd);
+    latestDeletedItems=snap.docs.map(d=>({archiveId:d.id,...d.data()}));
+    renderOwnerDeletedItems();
+  }catch(e){
+    console.error("Deleted items load:",e);
+    if(currentProfile?.role==="owner"&&$("deletedItemsList")){
+      $("deletedItemsList").innerHTML=`<div class="notice danger">Deleted / Undo could not load: ${esc(e.code||e.message)}. Publish the V13.8.24-P16 Firestore rules.</div>`;
+    }
+  }
+}
+async function archiveCheckTipSheet(sheet){
+  if(!sheet?.id||!currentUser||!currentProfile)return false;
+  const role=String(currentProfile.role||"");
+  if(!["employee","manager","owner"].includes(role))return false;
+  if(role==="employee"){
+    const mine=String(currentProfile.displayName||currentProfile.username||"").trim();
+    if(String(sheet.employeeName||"").trim()!==mine){alert("You can delete only your own Check Tip status.");return false;}
+  }
+  const archiveRef=doc(db,"deletedItems",`checktip_${sheet.id}`);
+  const old=await getDoc(archiveRef);
+  if(old.exists())return true;
+  await setDoc(archiveRef,{
+    itemType:"check_tip",
+    itemId:String(sheet.id),
+    employeeName:String(sheet.employeeName||""),
+    employeeUid:role==="employee"?currentUser.uid:String(sheet.employeeUid||sheet.submittedByUid||""),
+    date:String(sheet.date||""),
+    label:`Check Tip • ${sheet.employeeName||""} • ${sheet.date||""}`,
+    snapshot:safeDeletedSnapshot(sheet),
+    deletedByUid:currentUser.uid,
+    deletedBy:currentProfile.displayName||currentProfile.username||"",
+    deletedByRole:role,
+    deletedAt:serverTimestamp()
+  });
+  return true;
+}
+window.employeeDeleteTipCheckDate=async function(encodedDate){
+  if(currentProfile?.role!=="employee")return;
+  let date=encodedDate;try{date=decodeURIComponent(encodedDate)}catch(e){}
+  const mine=String(currentProfile.displayName||currentProfile.username||"").trim();
+  const targets=latestTipCheckSheets.filter(s=>String(s.date||"")===String(date||"")&&String(s.employeeName||"").trim()===mine);
+  if(!targets.length){alert("No Check Tip status found for this date.");return;}
+  if(!confirm(`Remove Check Tip status for ${date}?\n\nOwner can restore it later.`))return;
+  try{
+    for(const s of targets)await archiveCheckTipSheet(s);
+    await loadTipCheckSheets();
+  }catch(e){
+    console.error("Employee Check Tip delete:",e);
+    alert(`Delete failed: ${e.code||e.message}\n\nIf this says permission-denied, publish the V13.8.24-P16 Firestore rules.`);
+  }
+};
+function deletedTypeLabel(t){
+  return ({
+    check_tip:"Check Tip",
+    hourly_report:"Daily Report",
+    submission:"Submission",
+    team_employee:"Team Board Employee",
+    user_profile:"User Account"
+  })[t]||String(t||"Deleted Item");
+}
+async function fzRestoreArchive(x){
+  if(currentProfile?.role!=="owner")throw new Error("Owner access required.");
+  const value=x.snapshot||{};
+  if(x.itemType==="hourly_report" || x.itemType==="submission"){
+    const col=x.itemType==="hourly_report"?"hourlyReports":"submissions";
+    const ref=doc(db,col,x.itemId);
+    if((await getDoc(ref)).exists())throw new Error("A live record with this ID already exists. It was not overwritten.");
+    await setDoc(ref,value);
+  }else if(x.itemType==="user_profile"){
+    const clean={...value};delete clean.uid;
+    clean.active=value.active!==false;clean.deletedAt=null;clean.deletedBy="";
+    await setDoc(doc(db,"users",x.itemId),clean,{merge:true});
+  }else if(x.itemType==="team_employee"){
+    const date=x.date||value.date||todayLocal(), name=x.employeeName||value.name;
+    if(!name)throw new Error("Archive has no employee name.");
+    const key=HV1_STORAGE_PREFIX+date, ref=doc(db,"hourlyV1Batches",date);
+    const cloud=await getDoc(ref);
+    let state=cloud.exists()?cloud.data():JSON.parse(localStorage.getItem(key)||'{"team":[],"drafts":{}}');
+    state=JSON.parse(JSON.stringify(state));
+    state.team=state.team||[];state.drafts=state.drafts||{};
+    if(state.team.includes(name) && state.drafts[name] && Number(state.drafts[name].savedAt||0)>Number(value.draft?.savedAt||0)){
+      throw new Error("This employee has newer live work. It was not overwritten.");
+    }
+    if(!state.team.includes(name))state.team.push(name);
+    state.drafts[name]=value.draft||hv1BlankDraft(name);
+    state.removedEmployees=state.removedEmployees||{};
+    state.removedEmployees[name]={...(state.removedEmployees[name]||{}),restoredAt:Date.now()};
+    await setDoc(ref,{...state,date,updatedAt:serverTimestamp(),updatedByUid:currentUser.uid,updatedBy:currentProfile.displayName||currentProfile.username||""});
+    localStorage.setItem(key,JSON.stringify(state));
+    if(date===hv1DateValue()){
+      $('hv1Setup')?.classList.add('hidden');$('hv1BoardBox')?.classList.remove('hidden');hv1RenderCards();
+    }
+  }else if(x.itemType!=="check_tip")throw new Error("Unsupported archive type. Backup retained.");
+  await deleteDoc(doc(db,"deletedItems",x.archiveId));
+}
+function fzRenderRemovedCards(){
+  const host=$("fzRemovedCards");if(!host)return;
+  if(currentProfile?.role!=="owner"){host.classList.add("hidden");return;}
+  const items=(latestDeletedItems||[]).filter(x=>x.itemType==="team_employee" && x.date===hv1DateValue());
+  host.classList.toggle("hidden",!items.length);
+  host.innerHTML=items.length?`<div class="fz-section-kicker">RECENTLY REMOVED · ${items.length}</div><div class="hv1-cards">${items.map(x=>`<div class="fz-removed-card"><span class="hv1-status">DELETED · RECOVERABLE</span><h4>${esc(x.employeeName||x.snapshot?.name||"Employee")}</h4><div class="small">Removed by ${esc(x.deletedBy||"Staff")}</div><button class="btn gold" type="button" onclick="restoreDeletedItem('${esc(x.archiveId)}')">↶ UNDO DELETE</button></div>`).join("")}</div>`:"";
+}
+
+function renderOwnerDeletedItems(){
+  fzRenderRemovedCards();
+  if(currentProfile?.role!=="owner")return;
+  const list=$("deletedItemsList"),badge=$("deletedItemsBadge");
+  const rows=[...(latestDeletedItems||[])].sort((a,b)=>Number(b.deletedAt?.seconds||0)-Number(a.deletedAt?.seconds||0));
+  if(badge)badge.textContent=rows.length;
+  if(!list)return;
+  list.innerHTML=rows.length?rows.map(x=>{
+    const when=x.deletedAt?.seconds?new Date(x.deletedAt.seconds*1000).toLocaleString():"";
+    return `<div class="deleted-item-card">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
+        <div>
+          <b style="font-size:18px">${esc(x.label||x.employeeName||deletedTypeLabel(x.itemType))}</b>
+          <div class="deleted-meta">${esc(deletedTypeLabel(x.itemType))}${x.date?` • ${esc(x.date)}`:""}</div>
+          <div class="deleted-meta">Deleted by ${esc(x.deletedBy||"")} (${esc(x.deletedByRole||"")})${when?` • ${esc(when)}`:""}</div>
+        </div>
+        <div class="actions">
+          <button class="btn gold" type="button" onclick="restoreDeletedItem('${x.archiveId}')">RESTORE</button>
+          <button class="btn red" type="button" onclick="permanentDeleteArchivedItem('${x.archiveId}')">DELETE PERMANENT</button>
+        </div>
+      </div>
+    </div>`;
+  }).join(""):'<div class="notice good">Deleted / Undo is empty.</div>';
+}
+
+window.restoreDeletedItem=async function(archiveId){
+  if(currentProfile?.role!=="owner")return;
+  const item=latestDeletedItems.find(x=>x.archiveId===archiveId);if(!item)return;
+  if(!await requireCurrentAccountPassword("Undo Delete","OWNER PASSWORD REQUIRED. Restore this archived item?"))return;
+  try{await fzRestoreArchive(item);await loadDeletedItems();renderSmallReport();fzRenderRemovedCards();alert("Deleted item restored.");}
+  catch(e){alert("Restore failed. Backup retained: "+(e.code||e.message));}
+};
+
+window.permanentDeleteArchivedItem=async function(archiveId){
+  if(currentProfile?.role!=="owner")return;
+  const x=latestDeletedItems.find(r=>r.archiveId===archiveId);if(!x)return;
+  const ok=await requireCurrentAccountPassword("Delete Permanent","OWNER PASSWORD REQUIRED. This action cannot be undone.");
+  if(!ok)return;
+  try{
+    if(x.itemType==="check_tip"&&x.itemId)await deleteTipCheckSheetApi({sheetId:x.itemId});
+    await deleteDoc(doc(db,"deletedItems",archiveId));
+    await loadDeletedItems();
+    alert("Archived item permanently deleted.");
+  }catch(e){alert(`Permanent delete failed: ${e.code||e.message}`);}
+};
+
+window.undoDeletedCheckTip=async function(archiveId){
+  if(currentProfile?.role!=="owner")return;
+  const x=latestDeletedItems.find(r=>r.archiveId===archiveId);if(!x)return;
+  if(!confirm(`UNDO delete for ${x.employeeName||"this Check Tip record"}?`))return;
+  try{await deleteDoc(doc(db,"deletedItems",archiveId));await loadTipCheckSheets();alert("Deleted Check Tip restored.");}
+  catch(e){alert(`Undo failed: ${e.code||e.message}`);}
+};
+window.permanentDeleteCheckTip=async function(archiveId){
+  const passwordOk=await requireCurrentAccountPassword("Permanent Delete","OWNER PASSWORD REQUIRED.");
+  if(!passwordOk)return;
+  if(currentProfile?.role!=="owner")return;
+  const x=latestDeletedItems.find(r=>r.archiveId===archiveId);if(!x)return;
+  if(!confirm(`DELETE PERMANENTLY?\n\n${x.employeeName||""} • ${x.date||""}\n\nThis cannot be undone.`))return;
+  try{
+    await deleteTipCheckSheetApi({sheetId:x.itemId});
+    await deleteDoc(doc(db,"deletedItems",archiveId));
+    await loadTipCheckSheets();
+    alert("Check Tip permanently deleted.");
+  }catch(e){alert(`Permanent delete failed: ${e.message||e.code}`);}
+};
+window.undoAllDeletedCheckTips=async function(){
+  if(currentProfile?.role!=="owner")return;
+  const items=[...latestDeletedItems];if(!items.length){alert("Nothing to restore.");return;}
+  if(!await requireCurrentAccountPassword("Undo All","OWNER PASSWORD REQUIRED. Restore all archived items without overwriting newer live data?"))return;
+  let restored=0,failed=0;
+  for(const x of items){try{await fzRestoreArchive(x);restored++;}catch(e){failed++;console.warn("Archive retained",x.archiveId,e);}}
+  await loadDeletedItems();renderSmallReport();fzRenderRemovedCards();
+  alert(`${restored} restored. ${failed} left in Deleted / Undo for review.`);
+};
+
+window.permanentDeleteAllCheckTips=async function(){
+  if(currentProfile?.role!=="owner")return;
+  const items=[...latestDeletedItems];if(!items.length){alert("Nothing to purge.");return;}
+  if(!await requireCurrentAccountPassword("Delete Permanent All","OWNER PASSWORD REQUIRED. Permanently remove all archived items? Cannot be undone."))return;
+  let removed=0;
+  try{
+    for(const x of items){
+      if(x.itemType==="check_tip"&&x.itemId)await deleteTipCheckSheetApi({sheetId:x.itemId});
+      await deleteDoc(doc(db,"deletedItems",x.archiveId));removed++;
+    }
+    await loadDeletedItems();fzRenderRemovedCards();alert(`${removed} archived items permanently removed.`);
+  }catch(e){await loadDeletedItems();alert(`${removed} removed. Remaining backups retained: ${e.code||e.message}`);}
+};
+
+function renderEmployeeTipCheckStatus(){
+  const el=$("employeeTipCheckStatus"); if(!el || currentProfile?.role!=="employee")return;
+
+  const grouped=new Map();
+  latestTipCheckSheets.forEach(sheet=>{
+    const date=sheet.date||"";
+    if(!grouped.has(date)) grouped.set(date,[]);
+    grouped.get(date).push(sheet);
+  });
+
+  const groups=[...grouped.entries()]
+    .sort((a,b)=>String(b[0]).localeCompare(String(a[0])))
+    .slice(0,10);
+
+  el.innerHTML=groups.length?groups.map(([date,sheets])=>{
+    const activeSheets=sheets.filter(s=>Array.isArray(s.rows) && s.rows.length>0);
+    if(!activeSheets.length) return "";
+
+    const allRows=[];
+    activeSheets.forEach(s=>(s.rows||[]).forEach(r=>allRows.push(r)));
+
+    const totalTip=allRows.reduce((sum,r)=>sum+Number(r.tip||0),0);
+    const doneRows=allRows.filter(r=>r.result==="done");
+    const noSigRows=allRows.filter(r=>r.result==="no_signature");
+    const notFoundRows=allRows.filter(r=>r.result==="ticket_not_found");
+    const approvedTip=doneRows.reduce((sum,r)=>sum+Number(r.tip||0),0);
+    const allCompleted=activeSheets.every(s=>s.status==="cashier_completed");
+    const issueCount=noSigRows.length+notFoundRows.length;
+    const pendingCount=allRows.filter(r=>!r.result).length;
+
+    const rowResult=(r)=>{
+      if(r.result==="done") return '<span class="status approved">Done</span>';
+      if(r.result==="no_signature") return '<span class="status rejected">No Signature</span>';
+      if(r.result==="ticket_not_found") return '<span class="status rejected">Ticket Not Found</span>';
+      return '<span class="status pending">Pending Cashier</span>';
+    };
+
+    return `<div class="tip-check-sheet">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center">
+        <b style="font-size:20px">${esc(date)}</b>
+        <span class="status ${allCompleted?"approved":"pending"}">${allCompleted?"CASHIER COMPLETED":"WAITING CASHIER"}</span>
+      </div>
+
+      <div class="small" style="margin-top:5px">
+        ${allRows.length} ticket(s) • Submitted ${fmtMoney(totalTip)} • Approved ${fmtMoney(approvedTip)}
+      </div>
+
+      <div class="notice ${allCompleted?(issueCount?"warning":"good"):""}" style="margin-top:10px">
+        ${allCompleted
+          ? `<b>Cashier has completed your Check Tip review.</b><div style="margin-top:5px">Done: ${doneRows.length} • No Signature: ${noSigRows.length} • Ticket Not Found: ${notFoundRows.length}</div>`
+          : `<b>Cashier review is still in progress.</b><div style="margin-top:5px">You can view your submitted tickets below. Results are read-only. Pending: ${pendingCount}</div>`}
+      </div>
+
+      <div class="tablewrap" style="margin-top:10px"><table>
+        <thead><tr><th>#</th><th>Check Number</th><th>Table</th><th>Tip</th><th>Cashier Result</th></tr></thead>
+        <tbody>${allRows.map((x,i)=>`<tr class="${x.result&&x.result!=="done"?"tip-check-row-problem":""}">
+          <td>${i+1}</td>
+          <td>${esc(x.checkNumber||"")}</td>
+          <td>${esc(x.table||"")}</td>
+          <td>${fmtMoney(x.tip||0)}</td>
+          <td>${rowResult(x)}</td>
+        </tr>`).join("")}</tbody>
+      </table></div>
+      <button class="btn red employee-delete-checktip" type="button" onclick="employeeDeleteTipCheckDate('${encodeURIComponent(date)}')">Delete This Status</button>
+    </div>`;
+  }).join(""):'<div class="small">No Check Tip sheets yet.</div>';
+}
+
+function cashierSheetHtml(r){
+  const activeRows=Array.isArray(r.rows)?r.rows:[];
+  const completed=r.status==="cashier_completed";
+  const canEdit=["cashier","manager","owner"].includes(currentProfile?.role||"");
+  return `<div class="tip-check-sheet" data-cashier-sheet="${r.id}">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
+      <div><b style="font-size:18px">${esc(r.employeeName||"")}</b>
+        <div class="small">${esc(r.date||"")} • ${activeRows.length} line(s) • Total ${fmtMoney(r.totalTip||0)}${r.cashierBy?` • Last Cashier: ${esc(r.cashierBy)}`:""}</div>
+      </div>
+      <span class="status ${completed?"approved":"pending"}">${tipCheckStatusLabel(r.status)}</span>
+    </div>
+    <div class="tablewrap" style="margin-top:10px"><table>
+      <thead><tr><th>#</th><th>Check Number</th><th>Table</th><th>Tip</th><th>Cashier Result</th>${canEdit?"<th>Actions</th>":""}</tr></thead>
+      <tbody>${activeRows.map((x,i)=>`<tr class="${x.result&&x.result!=="done"?"tip-check-row-problem":""}">
+        <td>${x.line||i+1}</td><td>${esc(x.checkNumber||"")}</td><td>${esc(x.table||"")}</td><td>${fmtMoney(x.tip||0)}</td>
+        <td><select class="cashier-line-result" data-index="${i}">
+          <option value="">Select Result</option>
+          <option value="done" ${x.result==="done"?"selected":""}>Done</option>
+          <option value="no_signature" ${x.result==="no_signature"?"selected":""}>No Signature</option>
+          <option value="ticket_not_found" ${x.result==="ticket_not_found"?"selected":""}>Ticket Not Found</option>
+        </select></td>
+        ${canEdit?`<td><button class="btn light" type="button" onclick="saveTipCheckRow('${r.id}',${i})">Save Row</button>
+        <button class="btn red" type="button" onclick="deleteTipCheckRow('${r.id}',${i})">Delete Row</button></td>`:""}
+      </tr>`).join("")}</tbody>
+    </table></div>
+    <div class="notice" style="margin-top:10px">${completed
+      ? "This completed report remains in Cashier history for later review. You may correct a row and save it again."
+      : "Every row must have one result: Done, No Signature, or Ticket Not Found."}</div>
+    <div class="actions" style="margin-top:10px">
+      ${!completed?`<button class="btn green" type="button" onclick="submitCashierTipCheck('${r.id}')">Submit Completed Checklist</button>`:""}
+      ${completed?`<button class="btn light" type="button" onclick="reopenTipCheckSheet('${r.id}')">Reopen for Review</button>`:""}
+      ${["manager","owner"].includes(currentProfile?.role||"")?`<button class="btn red" type="button" onclick="deleteTipCheckSheet('${r.id}')">Delete Report</button>`:""}
+    </div>
+  </div>`;
+}
+function renderCashierTipCheckQueue(){
+  const el=$("cashierTipCheckQueue"); if(!el || !["cashier","manager","owner"].includes(currentProfile?.role||""))return;
+  const sheets=latestTipCheckSheets;
+  el.innerHTML=sheets.length?sheets.map(cashierSheetHtml).join(""):'<div class="notice good">No Check Tip sheets yet.</div>';
+}
+window.submitCashierTipCheck=async function(id){
+  if(!["cashier","manager","owner"].includes(currentProfile?.role||"")){alert("Cashier/Manager/Owner login required.");return;}
+  const sheet=latestTipCheckSheets.find(r=>r.id===id); if(!sheet)return;
+  const wrap=document.querySelector(`[data-cashier-sheet="${id}"]`);
+  const selects=[...(wrap?.querySelectorAll(".cashier-line-result")||[])];
+  if(!selects.length){alert("No active lines.");return;}
+  const results=selects.map(s=>s.value);
+  if(results.some(v=>!v)){alert("Please select Done, No Signature, or Ticket Not Found for every row.");return;}
+  try{
+    await completeTipCheckSheetApi({sheetId:id,results});
+    await loadTipCheckSheets();
+    alert("Checklist submitted. Employee will receive the completed results.");
+  }catch(e){alert(`Cashier submit failed: ${e.message||e.code}`);}
+};
+
+
+
+window.completeGroupedTipCheck=async function(sheetIds){
+  if(!["cashier","manager","owner"].includes(currentProfile?.role||"")){
+    alert("Cashier/Manager/Owner login required.");
+    return false;
+  }
+  const ids=[...new Set((sheetIds||[]).map(String).filter(Boolean))];
+  if(!ids.length){alert("No Check Tip report found.");return false;}
+
+  const target=ids.map(id=>latestTipCheckSheets.find(s=>String(s.id)===id)).filter(Boolean);
+  if(!target.length){alert("No Check Tip report found.");return false;}
+
+  for(const sheet of target){
+    const results=(sheet.rows||[]).map(r=>r.result||"");
+    if(!results.length){alert("No active ticket lines.");return false;}
+    if(results.some(v=>!v)){
+      alert("Every ticket must be Saved as Done, No Signature, or Ticket Not Found before completing the checklist.");
+      return false;
+    }
+  }
+
+  try{
+    for(const sheet of target){
+      if(sheet.status!=="cashier_completed"){
+        const results=(sheet.rows||[]).map(r=>r.result||"");
+        await completeTipCheckSheetApi({sheetId:sheet.id,results});
+      }
+    }
+    await loadTipCheckSheets();
+    return true;
+  }catch(e){
+    alert(`Cashier submit failed: ${e.message||e.code}`);
+    return false;
+  }
+};
+
+window.saveTipCheckRow=async function(sheetId,rowIndex,resultOverride=""){
+  if(!["cashier","manager","owner"].includes(currentProfile?.role||""))return false;
+  let result=String(resultOverride||"").trim();
+  if(!result){
+    const wrap=document.querySelector(`[data-cashier-sheet="${sheetId}"]`);
+    const sel=wrap?.querySelector(`.cashier-line-result[data-index="${rowIndex}"]`);
+    result=sel?.value||"";
+  }
+  if(!result){alert("Select Done, No Signature, or Ticket Not Found.");return false;}
+  try{
+    await updateTipCheckRowApi({sheetId,rowIndex:Number(rowIndex),result,deleteRow:false});
+    await loadTipCheckSheets();
+    return true;
+  }catch(e){
+    alert(`Row update failed: ${e.message||e.code}`);
+    return false;
+  }
+};
+window.deleteTipCheckRow=async function(sheetId,rowIndex){
+  if(!["cashier","manager","owner"].includes(currentProfile?.role||""))return;
+  if(!confirm("Delete this tip row?"))return;
+  try{
+    await updateTipCheckRowApi({sheetId,rowIndex,deleteRow:true});
+    await loadTipCheckSheets();
+  }catch(e){alert(`Delete row failed: ${e.message||e.code}`);}
+};
+window.reopenTipCheckSheet=async function(sheetId){
+  if(!["cashier","manager","owner"].includes(currentProfile?.role||""))return;
+  if(!confirm("Reopen this completed report for another review?"))return;
+  try{
+    await reopenTipCheckSheetApi({sheetId});
+    await loadTipCheckSheets();
+  }catch(e){alert(`Reopen failed: ${e.message||e.code}`);}
+};
+
+function renderOwnerTipCheckRecords(){
+  const el=$("ownerTipCheckRecords"); if(!el || currentProfile?.role!=="owner")return;
+  el.innerHTML=latestTipCheckSheets.length?latestTipCheckSheets.map(r=>{
+    const issues=tipIssueCount(r);
+    return `<div class="tip-check-sheet">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div>
+        <b style="font-size:18px">${esc(r.employeeName||"")}</b>
+        <div class="small">${esc(r.date||"")} • ${tipCheckStatusLabel(r.status)} • ${Number(r.rowCount||r.rows?.length||0)} lines • ${fmtMoney(r.totalTip||0)}${r.status==="cashier_completed"?` • ${issues} issue(s)`:""}</div>
+        <div class="small">Submitted by ${esc(r.submittedByName||"")} (${esc(r.submittedByRole||"")})${r.cashierBy?` • Cashier: ${esc(r.cashierBy)}`:""}</div>
+      </div><div class="actions">
+        <button class="btn light" type="button" onclick="editTipCheckSheet('${r.id}')">Edit</button>
+        <button class="btn red" type="button" onclick="deleteTipCheckSheet('${r.id}')">Delete</button>
+      </div></div>
+      ${r.status==="cashier_completed"?`<div class="tablewrap" style="margin-top:8px"><table>
+        <thead><tr><th>#</th><th>Check Number</th><th>Table</th><th>Tip</th><th>Cashier Result</th></tr></thead>
+        <tbody>${(r.rows||[]).map((x,i)=>`<tr class="${x.result&&x.result!=="done"?"tip-check-row-problem":""}">
+          <td>${i+1}</td><td>${esc(x.checkNumber||"")}</td><td>${esc(x.table||"")}</td><td>${fmtMoney(x.tip||0)}</td><td>${resultBadge(x.result)}</td>
+        </tr>`).join("")}</tbody></table></div>`:""}
+    </div>`;
+  }).join(""):'<div class="small">No Check Tip records.</div>';
+}
+
+window.editTipCheckSheet=function(id){
+  if(currentProfile?.role!=="owner")return;
+  const r=latestTipCheckSheets.find(x=>x.id===id); if(!r)return;
+  tipCheckEditId=id;
+  $("staffTipCheckEditId").value=id;
+  $("sTipCheckMode").value="EDIT EXISTING";
+  $("sTipCheckDate").value=r.date||todayLocal();
+  $("sTipCheckEmployee").value=r.employeeName||"";
+  renderTipEntryRows("sTipCheckRows","sTC",r.rows||[]);
+  $("staffTipCheckSubmitBtn").textContent="Save Changes";
+  document.querySelector('[data-stab="tipCheck"]')?.click();
+  $("tipCheckManagerBlock")?.scrollIntoView({behavior:"smooth",block:"start"});
+};
+
+window.ownerOpenTipCheckSheet=function(id){
+  if(currentProfile?.role!=="owner")return;
+  const block=$("tipCheckManagerBlock");
+  if(block){
+    block.style.display="";
+    block.classList.remove("hidden");
+  }
+  window.editTipCheckSheet(id);
+  setTimeout(()=>{
+    if(block){
+      block.style.display="";
+      block.classList.remove("hidden");
+      block.scrollIntoView({behavior:"smooth",block:"start"});
+    }
+  },50);
+};
+
+window.deleteTipCheckSheet=async function(id){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const sheet=latestTipCheckSheets.find(x=>String(x.id)===String(id));if(!sheet)return;
+  if(!confirm(`Delete this Check Tip sheet?\n\n${sheet.employeeName||""} • ${sheet.date||""}\n\nOwner can Undo this from Deleted / Undo.`))return;
+  try{await archiveCheckTipSheet(sheet);await loadTipCheckSheets();}catch(e){alert(`Delete failed: ${e.message||e.code}`);}
+};
+window.clearAllTipCheckSheets=async function(){
+  if(currentProfile?.role!=="owner")return;
+  if(!latestTipCheckSheets.length){alert("No Check Tip records.");return;}
+  if(!confirm(`CLEAR ALL CHECK TIP RECORDS?\n\nMove ${latestTipCheckSheets.length} record(s) to Deleted / Undo?`))return;
+  try{for(const s of latestTipCheckSheets)await archiveCheckTipSheet(s);await loadTipCheckSheets();alert("All Check Tip records moved to Deleted / Undo.");}catch(e){alert(`Clear All failed: ${e.message||e.code}`);}
+};
+
+function tipCheckExportRows(){
+  const out=[];
+  latestTipCheckSheets.forEach(s=>(s.rows||[]).forEach(r=>out.push({
+    date:s.date||"",employee:s.employeeName||"",status:tipCheckStatusLabel(s.status),
+    checkNumber:r.checkNumber||"",table:r.table||"",tip:Number(r.tip||0),
+    cashierResult:tipResultLabel(r.result),cashier:s.cashierBy||"",submittedBy:s.submittedByName||""
+  })));
+  return out;
+}
+function tipCheckXlsBlob(){
+  const rows=tipCheckExportRows(),escXml=s=>String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  const headers=["Date","Employee","Status","Check Number","Table","Tip","Cashier Result","Cashier","Submitted By"];
+  const xmlRows=[headers,...rows.map(r=>[r.date,r.employee,r.status,r.checkNumber,r.table,Number(r.tip||0).toFixed(2),r.cashierResult,r.cashier,r.submittedBy])]
+    .map(row=>`<Row>${row.map(v=>`<Cell ss:StyleID="Arial14"><Data ss:Type="String">${escXml(v)}</Data></Cell>`).join("")}</Row>`).join("");
+  return new Blob([`<?xml version="1.0"?><Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"><Styles><Style ss:ID="Arial14"><Font ss:FontName="Arial" ss:Size="14"/></Style></Styles><Worksheet ss:Name="Check Tip"><Table>${xmlRows}</Table></Worksheet></Workbook>`],{type:"application/vnd.ms-excel"});
+}
+window.downloadTipCheckXls=function(){
+  if(currentProfile?.role!=="owner")return;
+  if(!latestTipCheckSheets.length){alert("No Check Tip records.");return;}
+  downloadBlob(tipCheckXlsBlob(),`Fred_Zhang_Check_Tip_${todayLocal()}.xls`);
+};
+
+function tipCheckPdfPageContent(sheet,pageRows,pageIndex,pageCount,sheetIndex,sheetCount){
+  let c="";
+  c+=`BT /F2 18 Tf 28 758 Td (FRED ZHANG TIP CALCULATOR - CHECK TIP REPORT) Tj ET\n`;
+  c+=`BT /F1 14 Tf 28 733 Td (Date: ${pdfEscape(sheet.date||"")}   Employee: ${pdfEscape(sheet.employeeName||"")}) Tj ET\n`;
+  c+=`BT /F1 14 Tf 28 711 Td (Status: ${pdfEscape(tipCheckStatusLabel(sheet.status))}   Cashier: ${pdfEscape(sheet.cashierBy||"-")}) Tj ET\n`;
+  c+="0.8 w 28 695 m 584 695 l S\n";
+  c+="BT /F2 14 Tf 28 674 Td (#) Tj ET\nBT /F2 14 Tf 65 674 Td (Check Number) Tj ET\nBT /F2 14 Tf 230 674 Td (Table) Tj ET\nBT /F2 14 Tf 315 674 Td (Tip) Tj ET\nBT /F2 14 Tf 400 674 Td (Cashier Result) Tj ET\n";
+  let y=650;
+  for(const item of pageRows){
+    const {r,i}=item;
+    c+=`BT /F1 14 Tf 28 ${y} Td (${i+1}) Tj ET\n`;
+    c+=`BT /F1 14 Tf 65 ${y} Td (${pdfEscape(r.checkNumber||"")}) Tj ET\n`;
+    c+=`BT /F1 14 Tf 230 ${y} Td (${pdfEscape(r.table||"")}) Tj ET\n`;
+    c+=`BT /F1 14 Tf 315 ${y} Td (${pdfEscape(fmtMoney(r.tip||0))}) Tj ET\n`;
+    c+=`BT /F1 14 Tf 400 ${y} Td (${pdfEscape(tipResultLabel(r.result))}) Tj ET\n`;
+    y-=23;
+  }
+  c+=`BT /F1 11 Tf 28 28 Td (Sheet ${sheetIndex+1}/${sheetCount} - Page ${pageIndex+1}/${pageCount} | Generated ${pdfEscape(new Date().toLocaleString())}) Tj ET\n`;
+  return c;
+}
+function tipCheckPdfBlob(){
+  const pages=[];
+  latestTipCheckSheets.forEach((sheet,sheetIndex)=>{
+    const indexed=(sheet.rows||[]).map((r,i)=>({r,i}));
+    const chunks=[];
+    for(let i=0;i<indexed.length;i+=24)chunks.push(indexed.slice(i,i+24));
+    if(!chunks.length)chunks.push([]);
+    chunks.forEach((rows,pageIndex)=>pages.push({sheet,rows,pageIndex,pageCount:chunks.length,sheetIndex,sheetCount:latestTipCheckSheets.length}));
+  });
+  const n=pages.length,font1=3+n*2,font2=font1+1,objects=[],kids=[];
+  objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
+  for(let i=0;i<n;i++){
+    const pageObj=3+i*2,contentObj=pageObj+1;kids.push(`${pageObj} 0 R`);
+    const p=pages[i];
+    const content=tipCheckPdfPageContent(p.sheet,p.rows,p.pageIndex,p.pageCount,p.sheetIndex,p.sheetCount);
+    objects[pageObj]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> >> /Contents ${contentObj} 0 R >>`;
+    objects[contentObj]=`<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
+  }
+  objects[2]=`<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${n} >>`;
+  objects[font1]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  objects[font2]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+  let pdf="%PDF-1.4\n",offsets=[0];
+  for(let i=1;i<=font2;i++){offsets[i]=pdf.length;pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;}
+  const xref=pdf.length;pdf+=`xref\n0 ${font2+1}\n0000000000 65535 f \n`;
+  for(let i=1;i<=font2;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
+  pdf+=`trailer\n<< /Size ${font2+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Blob([pdf],{type:"application/pdf"});
+}
+window.downloadTipCheckPdf=function(){
+  if(currentProfile?.role!=="owner")return;
+  if(!latestTipCheckSheets.length){alert("No Check Tip records.");return;}
+  downloadBlob(tipCheckPdfBlob(),`Fred_Zhang_Check_Tip_${todayLocal()}.pdf`);
+};
+
+window.shareTipCheckPdf=async function(target){
+  if(currentProfile?.role!=="owner")return;
+  if(!latestTipCheckSheets.length){alert("No Check Tip records.");return;}
+  await shareReportFile(
+    tipCheckPdfBlob(),
+    `Fred_Zhang_Check_Tip_${todayLocal()}.pdf`,
+    target
+  );
+};
+window.shareTipCheckXls=async function(target){
+  if(currentProfile?.role!=="owner")return;
+  if(!latestTipCheckSheets.length){alert("No Check Tip records.");return;}
+  await shareReportFile(
+    tipCheckXlsBlob(),
+    `Fred_Zhang_Check_Tip_${todayLocal()}.xls`,
+    target
+  );
+};
+
+async function loadTipCheckSheets(){
+  if(!currentUser || currentUser.isAnonymous || !currentProfile)return;
+  try{
+    await loadDeletedItems();
+    const res=await listTipCheckSheetsApi({});
+    const allSheets=Array.isArray(res.data?.rows)?res.data.rows:[];
+    const deleted=deletedCheckTipIds();
+    latestTipCheckSheets=allSheets.filter(r=>!deleted.has(String(r.id||"")));
+    renderEmployeeTipCheckStatus();
+    renderCashierTipCheckQueue();
+    renderOwnerTipCheckRecords();
+    renderOwnerDeletedItems();
+  }catch(e){
+    console.error("Check Tip load:",e);
+  }
+}
+function listenTipCheckSheets(){ /* retired; history remains in database */ }
+
+function listenStaff(){
+  const q=query(collection(db,"submissions"),orderBy("createdAt","desc"),limit(500));
+  unsubs.push(onSnapshot(q,snap=>{
+    const rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+    latestRows=rows;
+    const pending=rows.filter(r=>r.status==="pending");
+    if(staffFirstSnapshot){
+      knownPending=new Set(pending.map(r=>r.id));
+      staffFirstSnapshot=false;
+    }else{
+      for(const r of pending){
+        if(!knownPending.has(r.id)) notifyManager(r);
+      }
+      knownPending=new Set(pending.map(r=>r.id));
+    }
+    renderStaff(rows);
+  },e=>{
+    console.error("Staff listener:",e);
+    $("backendStatus").textContent=`Firestore error: ${e.code || e.message}`;
+    $("backendStatus").className="notice danger";
+  }));
+
+  listenApprovals();
+  listenHourlyReports();
+  populateBartenderServerDropdowns();
+  if(currentProfile.role==="owner"){
+    listenUsers();
+    listenHistory();
+  }
+  $("backendStatus").textContent="FIREBASE / FIRESTORE ONLINE — shared realtime database active.";
+  $("backendStatus").className="notice good";
+}
+
+function renderStaff(a){
+  const p=a.filter(r=>r.status==="pending");
+  if($("pendingBadge"))$("pendingBadge").textContent=p.length;
+  $("pendingList").innerHTML=p.length?p.map(r=>`
+    <div class="card" style="box-shadow:none">
+      <b>${esc(r.employee)} — ${esc(r.shift)}</b>
+      <div class="small">${esc(r.date)} • ${esc(r.position)} • ${esc(r.clock)} • ${
+        r.breakMode==="with"?"With Break":r.breakMode==="without"?"Without Break":"N/A"
+      }</div>
+      <div class="small" style="margin:6px 0">Grand ${fmtMoney(r.grandTotal)}
+        ${["DOUBLE","LONG"].includes(r.shift)?` • Total AM ${fmtMoney(r.totalAM)}`:""}
+        • Meal $${Number(r.meal||0).toFixed(2)} • Cash Tip $${Number(r.cashTip||0).toFixed(2)}
+      </div>
+      <div class="actions">
+        <button class="btn green" onclick="review('${r.id}','approved')">Review / Approve</button>
+        <button class="btn light" onclick="editSubmission('${r.id}')">Edit</button>
+        <button class="btn red" onclick="review('${r.id}','rejected')">Reject</button>
+        <button class="btn red" onclick="deleteSubmission('${r.id}')">Delete</button>
+      </div>
+    </div>`).join(""):'<div class="notice good">No pending submissions.</div>';
+
+  const ap=a;
+  $("reportBody").innerHTML=ap.length?ap.map(r=>`
+    <tr>
+      <td>${esc(r.date)}</td><td>${esc(r.employee)}</td><td>${esc(r.position)}</td><td>${esc(r.shift)}</td>
+      <td>${r.breakMode==="with"?"With Break":r.breakMode==="without"?"Without Break":"N/A"}</td>
+      <td>${esc(r.clock)}</td>
+      <td>${fmtMoney(r.grandTotal)}</td>
+      <td>${["DOUBLE","LONG"].includes(r.shift)?"$"+Number(r.totalAM||0).toFixed(2):"—"}</td>
+      <td>${esc(employeeBarText(r))}</td>
+      <td>$${Number(r.meal||0).toFixed(2)}</td><td>$${Number(r.cashTip||0).toFixed(2)}</td>
+      <td><span class="status ${esc(r.status)}">${esc(r.status)}</span></td>
+      <td>${esc(r.reviewedBy||"")}</td>
+      <td><div class="actions">
+        <button class="btn light" style="padding:6px 8px" onclick="editSubmission('${r.id}')">${r.status==="pending"?"Review / Edit":"Edit"}</button>
+        <button class="btn red" style="padding:6px 8px" onclick="deleteSubmission('${r.id}')">Delete</button>
+      </div></td>
+    </tr>`).join(""):'<tr><td colspan="13">No reviewed records.</td></tr>';
+
+  renderHourlyQueue(a);
+}
+
+window.review=async function(id,status){
+  if(status==="approved"){
+    document.querySelector('[data-stab="report"]')?.click();
+    setTimeout(()=>editSubmission(id),100);
+    return;
+  }
+  try{
+    const ref=doc(db,"submissions",id);
+    const beforeSnap=await getDoc(ref);
+    const before=beforeSnap.exists()?beforeSnap.data():null;
+    await updateDoc(ref,{
+      status:"rejected",
+      reviewedBy:currentProfile.displayName||currentProfile.username,
+      reviewedAt:serverTimestamp(),
+      updatedAt:serverTimestamp()
+    });
+    await writeAudit("reject",id,before?.employee||"",{before,after:{status:"rejected"}});
+  }catch(e){ alert(`Update failed: ${e.code || e.message}`); }
+};
+
+
+
+
+function shouldExcludeHistoricalReport(r){
+  const name=String(r.employee||"").trim().toLowerCase();
+  const date=String(r.date||"");
+  const hours=Number(r.totalHoursWork||r.totalHours||0);
+
+  // User-approved historical cleanup:
+  // - Angela Grizzad 2026-09-04 should not sync/show.
+  // - Sarah Kibler duplicate on 2026-09-05 with 0 hours should not sync/show.
+  if(name==="angela grizzad" && date==="2026-09-04") return true;
+  if(name==="sarah kibler" && date==="2026-09-05" && hours<=0) return true;
+  return false;
+}
+
+function fzEmployeeIdentityKey(name){
+  return String(name||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"");
+}
+
+async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=false}={}){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return {matched:0,updated:0};
+  const name=String(displayName||"").trim();
+  if(!uid||!name)return {matched:0,updated:0};
+
+  const qh=query(collection(db,"hourlyReports"),where("employee","==",name),limit(200));
+  const snap=await getDocs(qh);
+  const eligibleDocs=snap.docs.filter(ds=>!shouldExcludeHistoricalReport(ds.data()||{}));
+  let updated=0;
+  for(const ds of eligibleDocs){
+    const r=ds.data()||{};
+    const patch={};
+    if(String(r.employeeUid||"")!==uid)patch.employeeUid=uid;
+    const key=fzEmployeeIdentityKey(name);
+    if(String(r.employeeKey||"")!==key)patch.employeeKey=key;
+    if(Object.keys(patch).length){
+      patch.accountLinkedAt=serverTimestamp();
+      patch.accountLinkedBy=currentProfile?.displayName||currentProfile?.username||"Manager";
+      await updateDoc(ds.ref,patch);
+      updated++;
+    }
+  }
+  if(!silent){
+    const msg=`${name}: ${eligibleDocs.length} historical report(s) found, ${updated} linked/updated.`;
+    const el=$("historicalSyncStatus"); if(el)el.textContent=msg;
+  }
+  return {matched:eligibleDocs.length,updated};
+}
+
+
+window.cleanHistoricalDuplicates=async function(){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const ok=confirm("Delete the approved historical duplicates: Angela Grizzad 2026-09-04 and Sarah Kibler 2026-09-05 zero-hour duplicate?");
+  if(!ok)return;
+  const targets=[
+    {employee:"Angela Grizzad",date:"2026-09-04",zeroOnly:false},
+    {employee:"Sarah Kibler",date:"2026-09-05",zeroOnly:true}
+  ];
+  let deleted=0;
+  for(const t of targets){
+    const qh=query(collection(db,"hourlyReports"),where("employee","==",t.employee),where("date","==",t.date),limit(20));
+    const snap=await getDocs(qh);
+    for(const ds of snap.docs){
+      const r=ds.data()||{};
+      if(t.zeroOnly && Number(r.totalHoursWork||r.totalHours||0)>0)continue;
+      await deleteDoc(ds.ref);
+      deleted++;
+    }
+  }
+  alert(`${deleted} historical report(s) deleted. Run Sync Historical Reports again.`);
+  await window.syncAllHistoricalReportsToAccounts?.();
+};
+
+window.syncAllHistoricalReportsToAccounts=async function(){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const el=$("historicalSyncStatus");
+  if(el)el.textContent="Syncing historical reports to employee accounts...";
+  try{
+    const us=await getDocs(collection(db,"users"));
+    const employees=us.docs.map(d=>({uid:d.id,...d.data()}))
+      .filter(u=>u.role==="employee" && u.active===true && u.approvalStatus==="approved");
+    let matched=0,updated=0,linkedUsers=0;
+    for(const u of employees){
+      const name=String(u.displayName||u.username||"").trim();
+      if(!name)continue;
+      const result=await syncHistoricalReportsToEmployeeAccount(u.uid,name,{silent:true});
+      matched+=result.matched; updated+=result.updated;
+      if(result.matched)linkedUsers++;
+    }
+    if(el)el.innerHTML=`<b>Historical sync complete.</b> ${linkedUsers} employee account(s) matched, ${matched} report(s) found, ${updated} report link(s) updated.`;
+  }catch(e){
+    console.error("Historical account sync:",e);
+    if(el)el.textContent=`Historical sync failed: ${e.code||e.message}`;
+  }
+};
+function listenApprovals(){
+  const q=query(collection(db,"signupRequests"),where("status","==","pending"),limit(100));
+  unsubs.push(onSnapshot(q,snap=>{
+    const rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+    $("approvalBadge").textContent=rows.length;
+    $("approvalList").innerHTML=rows.length?rows.map(r=>`
+      <div class="approval-card">
+        <b>${esc(r.displayName)}</b>
+        <div class="small">Phone: ${esc(r.phone||"")} • Username: ${esc(r.username||"")}</div>
+        <div class="actions" style="margin-top:10px">
+          <button class="btn green" onclick="approveEmployee('${r.uid}')">Approve</button>
+          <button class="btn red" onclick="rejectEmployee('${r.uid}')">Reject</button>
+        </div>
+      </div>`).join(""):'<div class="notice good">No pending employee sign ups.</div>';
+  },e=>console.error("Approvals listener:",e)));
+}
+
+window.approveEmployee=async function(uid){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  try{
+    const uref=doc(db,"users",uid), rref=doc(db,"signupRequests",uid);
+    const us=await getDoc(uref);
+    if(!us.exists()){ alert("Employee profile not found."); return; }
+    const before=us.data();
+    await updateDoc(uref,{
+      active:true,
+      approvalStatus:"approved",
+      approvedBy:currentProfile.displayName||currentProfile.username,
+      approvedAt:serverTimestamp()
+    });
+    await updateDoc(rref,{
+      status:"approved",
+      reviewedBy:currentProfile.displayName||currentProfile.username,
+      reviewedAt:serverTimestamp()
+    });
+
+    const historicalSync=await syncHistoricalReportsToEmployeeAccount(uid,before.displayName||before.username||"",{silent:true});
+
+    await writeAudit("employee_signup_approved",uid,before.displayName||"",{
+      before,
+      after:{active:true,approvalStatus:"approved"},
+      historicalReportsLinked:historicalSync.matched,
+      historicalReportsUpdated:historicalSync.updated
+    });
+
+    alert(`Employee approved. ${historicalSync.matched} historical report(s) are now available in My Reports.`);
+  }catch(e){ alert(`Approve failed: ${e.code || e.message}`); }
+};
+
+window.rejectEmployee=async function(uid){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  if(!confirm("Reject this employee sign up?")) return;
+  try{
+    const uref=doc(db,"users",uid), rref=doc(db,"signupRequests",uid);
+    const us=await getDoc(uref);
+    const before=us.exists()?us.data():null;
+    if(us.exists()) await updateDoc(uref,{active:false,approvalStatus:"rejected"});
+    await updateDoc(rref,{
+      status:"rejected",
+      reviewedBy:currentProfile.displayName||currentProfile.username,
+      reviewedAt:serverTimestamp()
+    });
+    await writeAudit("employee_signup_rejected",uid,before?.displayName||"",{before});
+  }catch(e){ alert(`Reject failed: ${e.code || e.message}`); }
+};
+
+function listenUsers(){
+  unsubs.push(onSnapshot(collection(db,"users"),snap=>{
+    const a=snap.docs.map(d=>({uid:d.id,...d.data()}))
+      .sort((a,b)=>(a.username||"").localeCompare(b.username||""));
+    latestUsers=a;
+    syncEmployeeAccountRoster(a);
+    userNameByUid=Object.fromEntries(a.map(u=>[u.uid,u.displayName||u.username||""]));
+
+    if(!historicalAccountAutoSyncStarted && ["manager","owner"].includes(currentProfile?.role||"")){
+      historicalAccountAutoSyncStarted=true;
+      setTimeout(()=>{Promise.resolve(window.syncAllHistoricalReportsToAccounts?.()).catch(()=>{});},350);
+    }
+
+    $("userList").innerHTML=a.length?a.map(u=>{
+      const active=u.active!==false;
+      const created=u.createdAt?.toDate?u.createdAt.toDate().toLocaleString():"—";
+      const status=active
+        ? '<span class="status approved">ACTIVE</span>'
+        : '<span class="status rejected">DISABLED</span>';
+      const approval=String(u.approvalStatus||"—").toUpperCase();
+
+      return `<div class="owner-user-card">
+        <div class="owner-user-head">
+          <div>
+            <b class="owner-user-name">${esc(u.displayName||u.username||"User")}</b>
+            <div class="small">${status}</div>
+            <div class="small">Credential source: ${esc(u.approvedBy||u.createdBy||(u.role==="employee"?"Employee signup":"Owner/Manager"))}</div>
+          </div>
+          <div class="actions">
+            <button type="button" class="btn light" onclick="openEditUser('${u.uid}')">View / Edit</button>
+            ${u.role!=="owner"?(active
+              ? `<button type="button" class="btn red" onclick="setUserActive('${u.uid}',false)">Disable</button>`
+              : `<button type="button" class="btn green" onclick="setUserActive('${u.uid}',true)">Enable</button>`):""}
+            ${u.role!=="owner"?`<button type="button" class="btn red" style="background:#7f1d1d;color:white" onclick="deleteAppUser('${u.uid}')">Delete</button>`:""}
+          </div>
+        </div>
+        <div class="owner-user-grid">
+          <div><span>Username</span><b>${esc(u.username||"—")}</b></div>
+          <div><span>Role</span><b>${esc(u.role||"—")}</b></div>
+          <div><span>Phone</span><b>${esc(u.phone||"—")}</b></div>
+          <div><span>Approval</span><b>${esc(approval)}</b></div>
+          <div><span>Created</span><b>${esc(created)}</b></div>
+          <div><span>PIN / Password</span><b>Protected — not viewable</b></div>
+        </div>
+      </div>`;
+    }).join(""):'<div class="notice">No users found.</div>';
+  },e=>console.error("Users listener:",e)));
+}
+
+
+window.openEditUser=function(uid){
+  if(currentProfile?.role!=="owner")return;
+  const u=latestUsers.find(x=>x.uid===uid);
+  if(!u){alert("User not found.");return;}
+
+  $("editUserUid").value=u.uid;
+  $("editUserUsername").value=u.username||"";
+  $("editUserDisplayName").value=u.displayName||"";
+  $("editUserPhone").value=u.phone||"";
+  $("editUserRole").value=u.role||"employee";
+  $("editUserApproval").value=u.approvalStatus||"approved";
+  $("editUserActive").value=u.active===false?"false":"true";
+
+  const protectedOwner=u.role==="owner";
+  $("editUserRole").disabled=true;
+  $("editUserActive").disabled=protectedOwner;
+  $("editUserApproval").disabled=protectedOwner;
+
+  $("userEditModal").classList.remove("hidden");
+  $("userEditModal").style.display="flex";
+};
+
+window.ownerResetSelectedUserPassword=async function(){
+  if(currentProfile?.role!=="owner"){alert("Owner only.");return;}
+  const uid=String($("editUserUid")?.value||"").trim();
+  const newPassword=String($("editUserNewPassword")?.value||"");
+  if(!uid){alert("Select a user first.");return;}
+  if(newPassword.length<4){alert("Enter at least 4 characters.");return;}
+
+  // Firebase Authentication intentionally does not return plaintext passwords.
+  // Changing another user's Auth password requires a trusted Admin backend.
+  // Do not store plaintext passwords in Firestore.
+  alert("Firebase does not allow this web page to read or change another user's Authentication password directly. Existing passwords cannot be viewed. Use an Owner-only Admin Function to SET a new password/PIN; do not store plaintext passwords in Firestore.");
+};
+
+window.closeEditUser=function(){
+  $("userEditModal").classList.add("hidden");
+  $("userEditModal").style.display="none";
+};
+window.saveEditUser=async function(){
+  if(currentProfile?.role!=="owner")return;
+  const uid=$("editUserUid").value;
+  const before=latestUsers.find(x=>x.uid===uid);
+  if(!before){alert("User not found.");return;}
+
+  const displayName=$("editUserDisplayName").value.trim();
+  const phone=$("editUserPhone").value.replace(/\D/g,"");
+  const approval=$("editUserApproval").value;
+  const active=$("editUserActive").value==="true";
+
+  if(!displayName){alert("Display Name is required.");return;}
+  if(phone&&!/^\d{7,15}$/.test(phone)){alert("Enter a valid phone number.");return;}
+
+  const after={
+    displayName,
+    phone,
+    ...(before.role==="owner"?{}:{approvalStatus:approval,active})
+  };
+
+  try{
+    await updateDoc(doc(db,"users",uid),after);
+    const requestRef=doc(db,"signupRequests",uid);
+    const requestSnap=await getDoc(requestRef);
+    if(requestSnap.exists()){
+      await updateDoc(requestRef,{
+        displayName,
+        phone,
+        ...(before.role==="owner"?{}:{status:approval})
+      });
+    }
+    try{await writeAudit("user_profile_edit",uid,displayName,{before,after});}
+    catch(e){console.warn("User edit audit:",e);}
+    closeEditUser();
+    alert("User updated.");
+  }catch(e){
+    console.error("Edit user:",e);
+    alert(`User update failed: ${e.code||e.message}`);
+  }
+};
+
+window.openOwnerPasswordModal=function(){
+  if(currentProfile?.role!=="owner")return;
+  ["ownerCurrentPassword","ownerNewPassword","ownerConfirmPassword"].forEach(id=>{if($(id))$(id).value="";});
+  $("ownerPasswordModal").classList.remove("hidden");
+  $("ownerPasswordModal").style.display="flex";
+  setTimeout(()=>$("ownerCurrentPassword")?.focus(),50);
+};
+window.closeOwnerPasswordModal=function(){
+  $("ownerPasswordModal").classList.add("hidden");
+  $("ownerPasswordModal").style.display="none";
+};
+window.changeOwnerPassword=async function(){
+  if(currentProfile?.role!=="owner")return;
+  const current=$("ownerCurrentPassword").value;
+  const next=$("ownerNewPassword").value;
+  const confirmNext=$("ownerConfirmPassword").value;
+
+  if(!current||!next||!confirmNext){alert("Complete all password fields.");return;}
+  if(next.length<6){alert("New password must be at least 6 characters.");return;}
+  if(next!==confirmNext){alert("New passwords do not match.");return;}
+  if(!auth.currentUser?.email){alert("Owner authentication email not found.");return;}
+
+  const btn=$("ownerChangePasswordBtn");
+  if(btn){btn.disabled=true;btn.textContent="Changing...";}
+  try{
+    const credential=EmailAuthProvider.credential(auth.currentUser.email,current);
+    await reauthenticateWithCredential(auth.currentUser,credential);
+    await updatePassword(auth.currentUser,next);
+    closeOwnerPasswordModal();
+    alert("Owner password changed successfully.");
+  }catch(e){
+    console.error("Owner password change:",e);
+    alert(`Password change failed: ${e.code||e.message}`);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent="Change Password";}
+  }
+};
+
+window.deleteAppUser=async function(uid){
+  if(currentProfile?.role!=="owner")return;
+  const target=latestUsers.find(u=>u.uid===uid);
+  if(!target){alert("User not found.");return;}
+  if(target.role==="owner"){alert("Owner account cannot be deleted from User Management.");return;}
+
+  const name=target.displayName||target.username||"User";
+
+  const ok=await requireCurrentAccountPassword(
+    `Permanently Delete User ${name}`,
+    "OWNER PASSWORD REQUIRED. This permanently deletes the employee login account and removes the user profile. Historical tip reports will NOT be deleted."
+  );
+  if(!ok)return;
+
+  if(!confirm(`Permanently delete ${name}? This cannot be undone. Historical tip reports will remain available for future re-linking.`))return;
+
+  try{
+    const result=await deleteUserAdmin({uid});
+    if(result?.data?.ok===false){
+      throw new Error(result.data.message||"Firebase Authentication delete failed.");
+    }
+
+    try{
+      const ref=doc(db,"users",uid);
+      const snap=await getDoc(ref);
+      if(snap.exists())await deleteDoc(ref);
+    }catch(e){ console.warn("users cleanup:",e); }
+
+    try{
+      const ref=doc(db,"signupRequests",uid);
+      const snap=await getDoc(ref);
+      if(snap.exists())await deleteDoc(ref);
+    }catch(e){ console.warn("signupRequests cleanup:",e); }
+
+    try{
+      const ds=await getDocs(query(collection(db,"deletedItems"),where("employeeUid","==",uid),limit(100)));
+      for(const d of ds.docs){
+        const x=d.data()||{};
+        if(x.itemType==="user_profile")await deleteDoc(d.ref);
+      }
+    }catch(e){ console.warn("deletedItems user cleanup:",e); }
+
+    try{
+      await writeAudit("user_permanent_delete",uid,name,{
+        role:target.role||"",
+        historicalReportsPreserved:true
+      });
+    }catch(e){ console.warn("Permanent delete audit:",e); }
+
+    alert(`${name} was permanently deleted. Historical tip reports were preserved.`);
+  }catch(e){
+    console.error("Permanent user delete:",e);
+    alert(`Permanent delete failed: ${e.code||e.message}`);
+  }
+};
+
+let creatingAngelaAccounts=false;
+async function findWorkAccount(username){
+  const snap=await getDocs(query(collection(db,"users"),where("username","==",username),limit(2)));
+  if(snap.docs.length>1)throw new Error("More than one account uses "+username+". Review Users first.");
+  return snap.docs.length?{uid:snap.docs[0].id,...snap.docs[0].data()}:null;
+}
+window.createAngelaWorkAccounts=async function(){
+  if(currentProfile?.role!=="owner"){alert("Owner access required.");return;}
+  if(creatingAngelaAccounts)return;
+  const pins=[$("angelaBarPin")?.value||"",$("angelaServerPin")?.value||""];
+  if(pins.some(pin=>!/^\d{4}$/.test(pin))){alert("Enter a 4-digit PIN for each Angela account.");return;}
+  creatingAngelaAccounts=true;
+  const button=$("createAngelaAccountsBtn"),status=$("angelaAccountsStatus");
+  if(button)button.disabled=true;
+  const messages=[];
+  try{
+    for(let i=0;i<ANGELA_WORK_PROFILES.length;i++){
+      const p=ANGELA_WORK_PROFILES[i],username=slugFor(p.name);
+      try{
+        let account=await findWorkAccount(username),created=false;
+        if(!account){
+          const result=await createUserAdmin({username,role:"employee",secret:pins[i]});
+          const uid=result?.data?.uid||result?.data?.user?.uid;
+          if(uid){const snap=await getDoc(doc(db,"users",uid));if(snap.exists())account={uid,...snap.data()};}
+          if(!account)account=await findWorkAccount(username);
+          if(!account)throw new Error("Account creation returned, but its user profile could not be verified. Retry to check its status.");
+          created=true;
+        }
+        if(account.role!=="employee" || slugFor(account.username)!==username)
+          throw new Error("This username belongs to a different account type. Review Users first.");
+        if(account.displayName && ![username,slugFor(p.name)].includes(slugFor(account.displayName)))
+          throw new Error("This username has a different display name. Review Users first.");
+        const changes={displayName:p.name,workPosition:p.position,personName:p.personName,
+          phone:account.phone||RECOVERED_EMPLOYEE_PHONES[p.personName]||""};
+        if(created){changes.active=true;changes.approvalStatus="approved";}
+        await updateDoc(doc(db,"users",account.uid),changes);
+        messages.push(p.name+": "+(created?"CREATED":"ALREADY EXISTS — existing PIN retained")+(account.active===false&&!created?" (disabled; review Users)":""));
+      }catch(e){messages.push(p.name+": "+String(e.message||e.code||"Could not create account"));}
+      if(status)status.textContent=messages.join("\n");
+    }
+    populateRoster();
+  }finally{
+    pins.fill("");
+    if($("angelaBarPin"))$("angelaBarPin").value="";
+    if($("angelaServerPin"))$("angelaServerPin").value="";
+    creatingAngelaAccounts=false;if(button)button.disabled=false;
+  }
+};
+
+window.createUserByOwner=async function(){
+  if(currentProfile.role!=="owner") return;
+  const username=$("uName").value.trim();
+  const role=$("uRole").value;
+  const secret=$("uPass").value.trim();
+
+  if(!username || !secret){
+    alert("Username and PIN/password required.");
+    return;
+  }
+  if(role==="employee" && !/^\d{4}$/.test(secret)){
+    alert("Employee PIN must be exactly 4 digits.");
+    return;
+  }
+  if((role==="manager" || role==="cashier") && secret.length<6){
+    alert(`${role==="cashier"?"Cashier":"Manager"} password must be at least 6 characters.`);
+    return;
+  }
+
+  try{
+    const result=role==="cashier"
+      ? await createCashierUserApi({username,secret})
+      : await createUserAdmin({username,role,secret});
+    $("uName").value="";
+    $("uPass").value="";
+    alert(`Created ${role}: ${result.data.displayName}`);
+  }catch(e){
+    console.error("Admin create user:",e);
+    alert(`Create user failed: ${e.message || e.code || "unknown error"}`);
+  }
+};
+
+window.setUserActive=async function(uid,active){
+  if(currentProfile.role!=="owner") return;
+  const verb = active ? "enable" : "disable";
+  if(!confirm(`${verb.charAt(0).toUpperCase()+verb.slice(1)} this user?`)) return;
+  try{
+    const ref=doc(db,"users",uid);
+    const s=await getDoc(ref);
+    if(!s.exists()){ alert("User profile not found."); return; }
+    const before=s.data();
+    await updateDoc(ref,{active:!!active});
+    try{
+      await writeAudit(active ? "user_enable" : "user_disable",uid,before?.displayName||before?.username||"",{
+        before,
+        after:{active:!!active}
+      });
+    }catch(auditErr){
+      console.warn("Status changed, audit log failed:",auditErr);
+    }
+    alert(`User ${active ? "enabled" : "disabled"} successfully.`);
+  }catch(e){
+    console.error("User status:",e);
+    alert(`User status failed: ${e.code || e.message}`);
+  }
+};
+
+window.openAddSubmission=function(){
+  $("mId").value="";
+  $("editTitle").textContent="Add Submission";
+  $("mEmployee").value="";
+  $("mDate").value=todayLocal();
+  $("mPosition").value="Server";
+  $("mShift").value="AM";
+  $("mBreakMode").value="none";
+  $("mClock").value="";
+  $("mGrandTotal").value=0;
+  $("mTotalAM").value=0;
+  $("mPaidTip").value=0;
+  $("mMeal").value=0;
+  $("mCash").value=0;
+  $("editModal").classList.remove("hidden");
+};
+window.closeEditModal=function(){ $("editModal").classList.add("hidden"); };
+
+window.editSubmission=function(id){
+  const r=latestRows.find(x=>x.id===id);
+  if(!r) return;
+  $("mId").value=id;
+  $("editTitle").textContent="Edit Submission";
+  $("mEmployee").value=r.employee||"";
+  $("mDate").value=r.date||todayLocal();
+  $("mPosition").value=r.position||"Server";
+  $("mShift").value=r.shift||"AM";
+  $("mBreakMode").value=r.breakMode||"none";
+  $("mClock").value=r.clock||"";
+  $("mGrandTotal").value=r.grandTotal||0;
+  $("mTotalAM").value=r.totalAM||0;
+  $("mPaidTip").value=r.paidTip||0;
+  $("mMeal").value=r.meal||0;
+  $("mCash").value=r.cashTip||0;
+  $("editModal").classList.remove("hidden");
+};
+
+window.saveStaffSubmission=async function(){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  const id=$("mId").value.trim();
+  const payload={
+    employee:$("mEmployee").value.trim(),
+    date:$("mDate").value,
+    position:$("mPosition").value,
+    shift:$("mShift").value,
+    breakMode:$("mBreakMode").value,
+    clock:$("mClock").value.trim(),
+    grandTotal:Number($("mGrandTotal").value)||0,
+    totalAM:Number($("mTotalAM").value)||0,
+    paidTip:Number($("mPaidTip").value)||0,
+    barSalesAM:(latestRows.find(x=>x.id===id)?.barSalesAM)||false,
+    barSalesPM:(latestRows.find(x=>x.id===id)?.barSalesPM)||false,
+    meal:Number($("mMeal").value)||0,
+    cashTip:Number($("mCash").value)||0,
+    status:"hourly_pending",
+    hourlyStatus:"waiting_manager",
+    reviewedBy:currentProfile.displayName||currentProfile.username,
+    reviewedAt:serverTimestamp(),
+    updatedAt:serverTimestamp()
+  };
+  if(!payload.employee || !payload.date){ alert("Employee and date required."); return; }
+
+  try{
+    let targetId=id;
+    if(id){
+      const ref=doc(db,"submissions",id);
+      const s=await getDoc(ref);
+      const before=s.exists()?s.data():null;
+      // Preserve employeeUid from original record by updating only manager-review fields.
+      await updateDoc(ref,payload);
+      await writeAudit("manager_review_to_hourly",id,payload.employee,{before,after:payload});
+    }else{
+      const ref=doc(collection(db,"submissions"));
+      targetId=ref.id;
+      const full={...payload,employeeUid:"",createdAt:serverTimestamp()};
+      await setDoc(ref,full);
+      await writeAudit("manager_add_to_hourly",ref.id,payload.employee,{after:full});
+    }
+    closeEditModal();
+    setTimeout(()=>{
+      document.querySelector('[data-stab="hourly"]')?.click();
+      setTimeout(()=>window.loadSubmissionToHourly?.(targetId),150);
+    },100);
+  }catch(e){ alert(`Save failed: ${e.code || e.message}`); }
+};
+
+window.deleteSubmission=async function(id){
+  if(!["manager","owner"].includes(currentProfile.role))return;
+  const ok=await requireCurrentAccountPassword(
+    "Delete Submission",
+    `Enter the ${String(currentProfile.role).toUpperCase()} password currently logged in. This submission will be recoverable by Owner.`
+  );
+  if(!ok)return;
+  try{
+    const ref=doc(db,"submissions",id),s=await getDoc(ref),before=s.exists()?s.data():null;
+    if(before)await archiveDeletedItem({
+      itemType:"submission",itemId:id,label:`Submission • ${before.employee||""} • ${before.date||""}`,
+      date:before.date||"",employeeName:before.employee||"",employeeUid:before.employeeUid||"",
+      snapshot:before,sourceCollection:"submissions"
+    });
+    await deleteDoc(ref);
+    await writeAudit("delete",id,before?.employee||"",{before});
+    await loadDeletedItems();
+  }catch(e){alert(`Delete failed: ${e.code||e.message}`);}
+};
+
+
+const HISTORY_UNDO_MS=3*24*60*60*1000;
+
+function tsMillis(v){
+  try{
+    if(!v) return 0;
+    if(typeof v.toMillis==="function") return v.toMillis();
+    if(typeof v.toDate==="function") return v.toDate().getTime();
+    if(v instanceof Date) return v.getTime();
+    if(typeof v.seconds==="number") return v.seconds*1000;
+    const n=new Date(v).getTime();
+    return Number.isFinite(n)?n:0;
+  }catch(e){ return 0; }
+}
+
+function historyTime(v){
+  const ms=tsMillis(v);
+  return ms?new Date(ms).toLocaleString():"";
+}
+
+
+window.deleteAllHistory=async function(){
+  if(currentProfile?.role!=="owner"){
+    alert("Owner only.");
+    return;
+  }
+
+  const passwordOk=await requireCurrentAccountPassword(
+    "Delete All History",
+    "OWNER PASSWORD REQUIRED. Deleted history remains recoverable during its Undo window."
+  );
+  if(!passwordOk)return;
+
+  try{
+    const qSnap=await getDocs(query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500)));
+    const rows=qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!r.deletedAt);
+
+    if(!rows.length){
+      alert("No active history to delete.");
+      return;
+    }
+
+    if(!confirm(`DELETE ALL OWNER CHANGE HISTORY?\n\n${rows.length} history entries will move to Recently Deleted.\nYou can Undo All for 3 days.`)) return;
+
+    const purgeAfter=new Date(Date.now()+HISTORY_UNDO_MS);
+
+    for(const r of rows){
+      await updateDoc(doc(db,"auditLogs",r.id),{
+        deletedAt:serverTimestamp(),
+        deletedBy:currentProfile.displayName||currentProfile.username||"Owner",
+        purgeAfter
+      });
+    }
+
+    alert(`Delete All complete. ${rows.length} history entries moved to Recently Deleted.`);
+  }catch(e){
+    console.error("History Delete All:",e);
+    alert(`History Delete All failed: ${e.code||e.message}`);
+  }
+};
+window.undoAllHistory=async function(){
+  if(currentProfile?.role!=="owner"){
+    alert("Owner only.");
+    return;
+  }
+
+  try{
+    const qSnap=await getDocs(query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500)));
+    const rows=qSnap.docs.map(d=>({id:d.id,...d.data()})).filter(r=>!!r.deletedAt);
+
+    const restorable=rows.filter(r=>{
+      const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
+      return !purgeAt || purgeAt>Date.now();
+    });
+
+    if(!restorable.length){
+      alert("Nothing available to Undo.");
+      return;
+    }
+
+    if(!confirm(`UNDO ALL DELETED HISTORY?\n\nRestore ${restorable.length} history entries?`)) return;
+
+    for(const r of restorable){
+      await updateDoc(doc(db,"auditLogs",r.id),{
+        deletedAt:null,
+        deletedBy:"",
+        purgeAfter:null,
+        restoredAt:serverTimestamp(),
+        restoredBy:currentProfile.displayName||currentProfile.username||"Owner"
+      });
+    }
+
+    alert(`Undo All complete. Restored ${restorable.length} history entries.`);
+  }catch(e){
+    console.error("History Undo All:",e);
+    alert(`History Undo All failed: ${e.code||e.message}`);
+  }
+};
+async function purgeExpiredHistory(rows){
+  if(currentProfile?.role!=="owner") return;
+  const now=Date.now();
+  const expired=rows.filter(r=>{
+    if(!r.deletedAt) return false;
+    const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
+    return purgeAt>0 && purgeAt<=now;
+  });
+  for(const r of expired){
+    try{ await deleteDoc(doc(db,"auditLogs",r.id)); }
+    catch(e){ console.warn("History permanent cleanup:",r.id,e); }
+  }
+}
+
+function listenHistory(){
+  if(currentProfile.role!=="owner") return;
+  const q=query(collection(db,"auditLogs"),orderBy("createdAt","desc"),limit(500));
+  unsubs.push(onSnapshot(q,async snap=>{
+    const rows=snap.docs.map(d=>({id:d.id,...d.data()}));
+
+    // Permanently purge soft-deleted history after the 3-day Undo window.
+    await purgeExpiredHistory(rows);
+
+    const active=rows.filter(r=>!r.deletedAt);
+    const trash=rows.filter(r=>!!r.deletedAt).filter(r=>{
+      const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
+      return !purgeAt || purgeAt>Date.now();
+    });
+
+    $("historyBody").innerHTML=active.length?active.map(r=>{
+      const time=historyTime(r.createdAt);
+      return `<tr>
+        <td>${esc(time)}</td><td>${esc(r.actor||"")}</td><td>${esc(r.actorRole||"")}</td>
+        <td>${esc(r.action||"")}</td><td>${esc(r.employee||"")}</td>
+        <td>${esc(r.submissionId||"")}</td>
+        <td>${esc(JSON.stringify(r.details||{}).slice(0,300))}</td>
+      </tr>`;
+    }).join(""):'<tr><td colspan="7">No active history.</td></tr>';
+
+    $("historyTrashBody").innerHTML=trash.length?trash.map(r=>{
+      const purgeAt=tsMillis(r.purgeAfter) || (tsMillis(r.deletedAt)+HISTORY_UNDO_MS);
+      return `<tr>
+        <td>${esc(historyTime(r.deletedAt))}</td>
+        <td>${esc(historyTime(r.createdAt))}</td>
+        <td>${esc(r.actor||"")}</td>
+        <td>${esc(r.action||"")}</td>
+        <td>${esc(r.employee||"")}</td>
+        <td>${esc(purgeAt?new Date(purgeAt).toLocaleString():"")}</td>
+      </tr>`;
+    }).join(""):'<tr><td colspan="6">Recently Deleted is empty.</td></tr>';
+  },e=>console.error("History listener:",e)));
+}
+
+
+
+
+
+
+window.deleteHourlyQueueSubmission=async function(id){
+  if(!["manager","owner"].includes(currentProfile.role))return;
+  const r=latestRows.find(x=>x.id===id);
+  const ok=await requireCurrentAccountPassword(
+    "Delete Queue Submission",
+    `Enter the ${String(currentProfile.role).toUpperCase()} password currently logged in. Owner can restore this submission later.`
+  );
+  if(!ok)return;
+  try{
+    const ref=doc(db,"submissions",id),s=await getDoc(ref),before=s.exists()?s.data():r||null;
+    if(before)await archiveDeletedItem({
+      itemType:"submission",itemId:id,label:`Queue Submission • ${before.employee||""} • ${before.date||""}`,
+      date:before.date||"",employeeName:before.employee||"",employeeUid:before.employeeUid||"",
+      snapshot:before,sourceCollection:"submissions"
+    });
+    await deleteDoc(ref);
+    await writeAudit("hourly_queue_duplicate_delete",id,before?.employee||"",{before});
+    await loadDeletedItems();
+  }catch(e){alert(`Delete failed: ${e.code||e.message}`);}
+};
+
+function parseClockParts(r){
+  const text=String(r.clock||"").replaceAll("–","-");
+  const pairs=text.split("/").map(s=>s.trim());
+  if(pairs.length>1){
+    const a=pairs[0].split("-").map(s=>s.trim());
+    const p=pairs[1].split("-").map(s=>s.trim());
+    return {amIn:a[0]||"",amOut:a[1]||"",pmIn:p[0]||"",pmOut:p[1]||""};
+  }
+  const one=pairs[0].split("-").map(s=>s.trim());
+  return {in:one[0]||"",out:one[1]||""};
+}
+
+function renderHourlyQueue(rows){
+  const el=$("hourlyQueue"); if(!el) return;
+  const q=rows.filter(r=>["hourly_pending","approved"].includes(r.status));
+  el.innerHTML=q.length?q.map(r=>`
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px solid #edf0f4;padding:10px 0">
+      <div>
+        <b>${esc(r.employee)} — ${esc(r.shift)}</b>
+        <div class="small">${esc(r.date)} • ${esc(r.clock)} • Grand ${fmtMoney(r.grandTotal)} • Meal $${Number(r.meal||0).toFixed(2)} • Cash $${Number(r.cashTip||0).toFixed(2)}</div>
+      </div>
+      <div class="actions">
+        <button class="btn green" onclick="loadSubmissionToHourly('${r.id}')">Open in Hourly</button>
+        <button class="btn red" onclick="deleteHourlyQueueSubmission('${r.id}')">Delete</button>
+      </div>
+    </div>`).join(""):'<div class="notice good">No approved employee data waiting.</div>';
+}
+
+window.loadSubmissionToHourly=function(id){
+  const r=latestRows.find(x=>x.id===id);
+  if(!r) return;
+  currentHourlySubmissionId=id;
+  currentHourlyReportId=null;
+  $("hDate").value=r.date||todayLocal();
+  $("hEmployee").value=r.employee||"";
+  $("hPosition").value=r.position||"Server";
+  $("hShift").value=r.shift||"AM";
+  $("hMeal").value=Number(r.meal||0);
+  $("hGrandTotal").value=Number(r.grandTotal||0);
+  $("hTotalAM").value=Number(r.totalAM||0);
+  $("hCashTip").value=Number(r.cashTip||0);
+  $("hPaidTip").value=Number(r.paidTip||0);
+  $("hCardFee").value=Number(r.payCardTipFee ?? r.cardFee ?? 0);
+  $("hAmBar").value=r.barSalesAM?"yes":"no";
+  $("hPmBar").value=r.barSalesPM?"yes":"no";
+  for(let i=1;i<=9;i++){
+    if($(`hBtServerName${i}`)) $(`hBtServerName${i}`).value="";
+    if($(`hBtServerGrand${i}`)) $(`hBtServerGrand${i}`).value="";
+  }
+  if($("hBartenderShiftType")) $("hBartenderShiftType").value="AM";
+  if($("hBtPrevAMInput")) $("hBtPrevAMInput").value="";
+  if($("hBtPrev24Input")) $("hBtPrev24Input").value="";
+  syncHourlyShift();
+  const c=parseClockParts(r);
+  if($("hShift").value==="DOUBLE"){
+    $("hAmIn").value=c.amIn||c.in||"";
+    $("hAmOut").value=c.amOut||"";
+    $("hPmIn").value=c.pmIn||"";
+    $("hPmOut").value=c.pmOut||c.out||"";
+  }else{
+    $("hIn").value=c.in||"";
+    $("hOut").value=c.out||"";
+  }
+  $("hourlyResult").classList.add("hidden");
+  window.scrollTo({top:$("hourly").offsetTop-10,behavior:"smooth"});
+};
+
+
+
+function reportRowsForExport(){
+  return latestHourlyReports.map(reportForWorkPosition).map(r=>({
+    id:r.id||"",
+    date:r.date||"",
+    employee:r.employee||"",
+    position:r.position||"",
+    shift:r.shift||"",
+    busserAM:r.busserAM==="N/A"?"-":(r.busserAM||"-"),
+    hourInAM:r.hourInAM||r.hours?.hourInAM||"",
+    hourOutAM:r.hourOutAM||r.hours?.hourOutAM||"",
+    hourInPM:r.hourInPM||r.hours?.hourInPM||"",
+    hourOutPM:r.hourOutPM||r.hours?.hourOutPM||"",
+    hourIn:r.hourIn||r.hours?.hourIn||"",
+    hourOut:r.hourOut||r.hours?.hourOut||"",
+    totalHoursWork:Number(r.totalHoursWork??r.totalHours??0),
+    totalMinutesWork:r.totalMinutesWork??null,
+    grandTotal:Number(r.grandTotal||0),
+    totalAM:Number(r.totalAM||0),
+    totalPM:Number(r.totalPM||0),
+    totalTips:Number(r.totalTips||0),
+    payCardTipFee:Number(r.payCardTipFee??r.cardFee??0),
+    paidTip:Number(r.paidTip||0),
+    busserRate:Number(r.busserRate||0),
+    busserTipOut:Number(r.busserTipOut||0),
+    busserTipOutAM:Number(r.busserTipOutAM||0),
+    busserTipOutPM:Number(r.busserTipOutPM||0),
+    amBarSales:Boolean(r.amBarSales??r.barSalesAM),
+    amBarTip:Number(r.amBarTipOut??r.barTipAM??0),
+    pmBarSales:Boolean(r.pmBarSales??r.barSalesPM),
+    pmBarTip:Number(r.pmBarTipOut??r.barTipPM??0),
+    barTipOut:Number(r.barTipOut||0),
+    bartenderShiftType:r.bartenderShiftType||"",
+    bartenderServerGrandTotalSummary:Number(r.bartenderServerGrandTotalSummary||0),
+    bartenderGrossBarTipOut:Number(r.bartenderGrossBarTipOut||0),
+    bartenderLessAM:Number(r.bartenderLessAM||0),
+    bartenderLess24:Number(r.bartenderLess24||0),
+    bartenderBarTipReceived:Number(r.bartenderBarTipReceived||0),
+    bartenderPeriodReceipts:bartenderReceiptPeriods(r),
+    totalBeforeMeal:Number(r.totalBeforeMeal||0),
+    cashTip:Number(r.cashTip||0),
+    grandTotalTip:Number(r.grandTotalTip||0),
+    hourlyRate:Number(r.hourlyRate||0),
+    hourlyMinimum:Number(r.hourlyMinimum||0),
+    adjustmentSalaryHourly:Number(r.adjustmentSalaryHourly||0),
+    adjustmentCandidate:Number(r.adjustmentCandidate??calculatedHourlyAdjustment(r)),
+    adjustmentPayoutVersion:r.adjustmentPayoutVersion||"",
+    adjustmentDecision:String(r.adjustmentDecision||"NO ADJUSTMENT").toUpperCase(),
+    grandTotalAfterAdjustment:Number(r.grandTotalAfterAdjustment||0),
+    meal:Number(r.meal||0),
+    totalPaidOut:Number(r.totalPaidOut||0),
+    status:"MONEY READY",
+    signatureStatus:r.signatureStatus||r.employeeSignatureStatus||"",
+    signedAt:r.signedAt||r.employeeSignedAt||"",
+    pickupSignature:r.pickupSignature||null,
+    pickedUpBy:r.employee||"",
+    pickedUpProcessedBy:r.pickedUpProcessedBy||"",
+    pickedUpAt:r.pickedUpAt||null,
+    finalizedBy:r.updatedBy||r.createdBy||r.finalizedBy||"",
+    createdAt:r.createdAt||null
+  }));
+}
+
+function xlsEscape(v){
+  return String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function xlsCellString(v,style=""){
+  return `<Cell${style?` ss:StyleID="${style}"`:""}><Data ss:Type="String">${xlsEscape(v)}</Data></Cell>`;
+}
+function xlsCellNumber(v,style="Number2"){
+  const n=Number(v||0);
+  return `<Cell ss:StyleID="${style}"><Data ss:Type="Number">${Number.isFinite(n)?n:0}</Data></Cell>`;
+}
+
+function xlsBlob(rows){
+  rows=rows.map(reportForWorkPosition);
+  const header=[
+    "Date","Name","Position","Shift","Busser AM",
+    "Hour In AM","Hour Out AM","Hour In PM","Hour Out PM","Total Hours Work",
+    "Grand Total","Total AM","Total PM","Total Tips","Pay Card Tip Fee","Paid Tip",
+    "Busser Rate %","Busser Tip Out","AM Bar Sales","AM Bar Tip","PM Bar Sales","PM Bar Tip",
+    "Bar Tip Out","Bartender Shift","Server Sales Summary","Gross @ 0.6%","Less Bartender AM","Less Bartender 2-4","Bar Tip Out Received","Total Before Meal","Cash Tip","Grand Total Tip","Hourly Rate","Hourly Minimum",
+    "Adjustment Salary Hourly","Adjustment Decision","Grand Total After Adjustment","Meal",
+    "Total Paid Out","Signature Status","Signed At","Status","Finalized By",
+    "BAR AM Received","BAR 2-4 Received","BAR PM Received","Adjustment Available"
+  ];
+
+  const widths=[
+    95,170,105,90,165,
+    100,100,100,100,115,
+    110,105,105,105,120,105,
+    105,110,100,105,100,105,
+    105,135,125,105,120,100,115,
+    145,160,150,95,
+    125,125,180,115,150
+  ];
+
+  const cols=header.map((_,i)=>widths[i]||125).map(w=>`<Column ss:AutoFitWidth="0" ss:Width="${w}"/>`).join("");
+  const headerRow=`<Row ss:StyleID="Header" ss:Height="34">${header.map(h=>xlsCellString(h)).join("")}</Row>`;
+
+  const dataRows=rows.map(r=>{
+    const hours=r.hours||{};
+    const shift=String(r.shift||"").toUpperCase();
+    const isDouble=shift==="DOUBLE"||(shift==="LONG"&&!!(r.hourInAM||hours.hourInAM));
+    const amIn=isDouble?r.hourInAM:(shift==="AM"?r.hourIn:"");
+    const amOut=isDouble?r.hourOutAM:(shift==="AM"?r.hourOut:"");
+    const pmIn=isDouble?r.hourInPM:(shift==="PM"?r.hourIn:"");
+    const pmOut=isDouble?r.hourOutPM:(shift==="PM"?r.hourOut:"");
+
+    const sigStatus=r.signatureStatus||r.employeeSignatureStatus||"";
+    const signedAt=r.signedAt||r.employeeSignedAt||"";
+
+    return `<Row ss:Height="27">${
+      [
+        xlsCellString(r.date,"Body"),
+        xlsCellString(r.employee,"Body"),
+        xlsCellString(r.position,"Body"),
+        xlsCellString(r.shift,"Body"),
+        xlsCellString(r.busserAM||"-","Body"),
+        xlsCellString(amIn,"Body"),
+        xlsCellString(amOut,"Body"),
+        xlsCellString(pmIn,"Body"),
+        xlsCellString(pmOut,"Body"),
+        xlsCellNumber(r.totalHoursWork,"Number14"),
+        xlsCellNumber(r.grandTotal,"Money14"),
+        xlsCellNumber(r.totalAM,"Money14"),
+        xlsCellNumber(r.totalPM,"Money14"),
+        xlsCellNumber(r.totalTips,"Money14"),
+        xlsCellNumber(r.payCardTipFee,"Money14"),
+        xlsCellNumber(r.paidTip,"Money14"),
+        xlsCellNumber(r.busserRate,"Rate14"),
+        xlsCellNumber(r.busserTipOut,"Money14"),
+        xlsCellString(r.amBarSales?"YES":"NO","Body"),
+        xlsCellNumber(r.amBarTip,"Money14"),
+        xlsCellString(r.pmBarSales?"YES":"NO","Body"),
+        xlsCellNumber(r.pmBarTip,"Money14"),
+        xlsCellNumber(r.barTipOut,"Money14"),
+        xlsCellString((r.bartenderShiftType||"").replace("2PM_4PM","2 PM - 4 PM"),"Body"),
+        xlsCellNumber(r.bartenderServerGrandTotalSummary,"Money14"),
+        xlsCellNumber(r.bartenderGrossBarTipOut,"Money14"),
+        xlsCellNumber(r.bartenderLessAM,"Money14"),
+        xlsCellNumber(r.bartenderLess24,"Money14"),
+        xlsCellNumber(r.bartenderBarTipReceived,"Money14"),
+        xlsCellNumber(r.totalBeforeMeal,"Money14"),
+        xlsCellNumber(r.cashTip,"Money14"),
+        xlsCellNumber(r.grandTotalTip,"Money14"),
+        xlsCellNumber(r.hourlyRate,"Money14"),
+        xlsCellNumber(r.hourlyMinimum,"Money14"),
+        xlsCellNumber(r.adjustmentSalaryHourly,"Money14"),
+        xlsCellString(r.adjustmentDecision==="NONE"?"NO ADJUSTMENT":r.adjustmentDecision,"Body"),
+        xlsCellNumber(r.grandTotalAfterAdjustment,"Money14"),
+        xlsCellNumber(r.meal,"Money14"),
+        xlsCellNumber(r.totalPaidOut,"MoneyBold14"),
+        xlsCellString(sigStatus,"Body"),
+        xlsCellString(signedAt,"Body"),
+        xlsCellString(r.status,"Body"),
+        xlsCellString(r.finalizedBy,"Body"),
+        xlsCellNumber(bartenderPeriodAmount(r,"AM"),"Money14"),
+        xlsCellNumber(bartenderPeriodAmount(r,"2PM_4PM"),"Money14"),
+        xlsCellNumber(bartenderPeriodAmount(r,"PM"),"Money14"),
+        xlsCellNumber(r.adjustmentCandidate??calculatedHourlyAdjustment(r),"Money14")
+      ].join("")
+    }</Row>`;
+  }).join("");
+
+  const xml=`<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Arial" ss:Size="14"/>
+  </Style>
+  <Style ss:ID="Body">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Arial" ss:Size="14"/>
+  </Style>
+  <Style ss:ID="Header">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#9FB3D1"/>
+    <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D4E6"/>
+    <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D4E6"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C8D4E6"/>
+   </Borders>
+   <Font ss:FontName="Arial" ss:Size="14" ss:Bold="1" ss:Color="#10213C"/>
+   <Interior ss:Color="#DCE8FF" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="Number14"><Font ss:FontName="Arial" ss:Size="14"/><NumberFormat ss:Format="0.00"/></Style>
+  <Style ss:ID="Rate14"><Font ss:FontName="Arial" ss:Size="14"/><NumberFormat ss:Format="0.000"/></Style>
+  <Style ss:ID="Money14"><Font ss:FontName="Arial" ss:Size="14"/><NumberFormat ss:Format="$#,##0.00;[Red]-$#,##0.00"/></Style>
+  <Style ss:ID="MoneyBold14"><Font ss:FontName="Arial" ss:Size="14" ss:Bold="1"/><NumberFormat ss:Format="$#,##0.00;[Red]-$#,##0.00"/></Style>
+ </Styles>
+
+ <Worksheet ss:Name="Daily Report">
+  <Table>${cols}${headerRow}${dataRows}</Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <FreezePanes/><FrozenNoSplit/><SplitHorizontal>1</SplitHorizontal><TopRowBottomPane>1</TopRowBottomPane>
+   <Selected/><ProtectObjects>False</ProtectObjects><ProtectScenarios>False</ProtectScenarios>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+  return new Blob([xml],{type:"application/vnd.ms-excel"});
+}
+
+
+function pdfEscape(s){
+  return String(s??"")
+    .normalize("NFKD").replace(/[^\x20-\x7E]/g," ")
+    .replace(/\\/g,"\\\\").replace(/\(/g,"\\(").replace(/\)/g,"\\)");
+}
+function pdfMoney(v){
+  const n=Number(v||0);
+  const sign=n<0?"-$ ":"$ ";
+  return sign+Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function pdfRate(v){
+  return Number(v||0).toLocaleString("en-US",{minimumFractionDigits:3,maximumFractionDigits:3})+"%";
+}
+function pdfBool(v){ return v?"YES":"NO"; }
+
+function pdfField(label,value,x,y){
+  return `BT /F1 11 Tf ${x} ${y} Td (${pdfEscape(label)}) Tj ET\n`+
+         `BT /F2 16 Tf ${x} ${y-17} Td (${pdfEscape(value)}) Tj ET\n`;
+}
+
+
+function pdfSignatureCommands(signature,x,y,w,h){
+  const strokes=signature?.strokes;
+  if(!Array.isArray(strokes) || !strokes.length) return "";
+  let c="0.8 w\n";
+  for(const rawStroke of strokes){
+    const stroke=Array.isArray(rawStroke) ? rawStroke : (Array.isArray(rawStroke?.points)?rawStroke.points:[]);
+    if(stroke.length<2) continue;
+    const pts=stroke.map(p=>({
+      x:x+Math.max(0,Math.min(1,Number(p.x||0)))*w,
+      y:y+(1-Math.max(0,Math.min(1,Number(p.y||0))))*h
+    }));
+    c+=`${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)} m\n`;
+    for(let i=1;i<pts.length;i++){
+      c+=`${pts[i].x.toFixed(2)} ${pts[i].y.toFixed(2)} l\n`;
+    }
+    c+="S\n";
+  }
+  return c;
+}
+
+function pdfReportContent(r,index,total){
+  const hours={...r,...(r.hours||{})};
+  r={...r,
+    hourIn:r.hourIn??hours.hourIn??"",hourOut:r.hourOut??hours.hourOut??"",
+    hourInAM:r.hourInAM??hours.hourInAM??"",hourOutAM:r.hourOutAM??hours.hourOutAM??"",
+    hourInPM:r.hourInPM??hours.hourInPM??"",hourOutPM:r.hourOutPM??hours.hourOutPM??"",
+    payCardTipFee:r.payCardTipFee??r.cardFee??0,
+    amBarTip:r.amBarTip??r.amBarTipOut??r.barTipAM??0,
+    pmBarTip:r.pmBarTip??r.pmBarTipOut??r.barTipPM??0,
+    amBarSales:r.amBarSales??r.barSalesAM??false,
+    pmBarSales:r.pmBarSales??r.barSalesPM??false
+  };
+  const shift=String(r.shift||"").toUpperCase();
+  const isDouble=shift==="DOUBLE"||(shift==="LONG"&&!!(r.hourInAM||hours.hourInAM));
+  const paidOut=smallReportPaidOut(r);
+  const employeeGrandTotal=smallReportGrandTotal(r);
+  const position=String(r.position||"Server");
+  const bartender=position.toLowerCase()==="bartender";
+
+  const amIn=isDouble?r.hourInAM:(shift==="AM"?r.hourIn:"-");
+  const amOut=isDouble?r.hourOutAM:(shift==="AM"?r.hourOut:"-");
+  const pmIn=isDouble?r.hourInPM:(["PM","LONG"].includes(shift)?r.hourIn:"-");
+  const pmOut=isDouble?r.hourOutPM:(["PM","LONG"].includes(shift)?r.hourOut:"-");
+
+  const txt=(font,size,x,y,text)=>`BT /${font} ${size} Tf ${x} ${y} Td (${pdfEscape(text)}) Tj ET\n`;
+  const line=(x1,y1,x2,y2,w=0.6)=>`${w} w ${x1} ${y1} m ${x2} ${y2} l S\n`;
+  const box=(x,y,w,h,fill="0.97 0.98 1")=>`${fill} rg ${x} ${y} ${w} ${h} re f\n0.82 0.86 0.91 RG 0.7 w ${x} ${y} ${w} ${h} re S\n0 0 0 rg\n0 0 0 RG\n`;
+  const sectionTitle=(x,y,w,title)=>{
+    let s=`0.06 0.14 0.25 rg ${x} ${y-18} ${w} 24 re f\n0 0 0 rg\n`;
+    s+=txt("F2",10,x+10,y-11,title.toUpperCase());
+    // title text is white
+    s=s.replace(`BT /F2 10 Tf ${x+10} ${y-11} Td (`, `1 1 1 rg\nBT /F2 10 Tf ${x+10} ${y-11} Td (`)+`0 0 0 rg\n`;
+    return s;
+  };
+  const metric=(x,y,label,value,wide=0)=>{
+    const w=wide||156;
+    let s=box(x,y-33,w,33,"0.985 0.99 1");
+    s+=txt("F1",7.8,x+9,y-13,label);
+    s+=txt("F2",12.2,x+9,y-28,value);
+    return s;
+  };
+
+  let c="";
+  // Header band
+  c+="0.06 0.14 0.25 rg 0 704 612 88 re f\n0 0 0 rg\n";
+  c+="1 1 1 rg\n";
+  c+=txt("F2",20,28,758,"FRED ZHANG TIP CALCULATOR");
+  c+=txt("F1",9.5,28,740,"EMPLOYEE TIP REPORT");
+  c+=txt("F1",9,466,758,`REPORT ${index+1} / ${total}`);
+  c+=txt("F1",9,466,741,String(r.date||"-"));
+  c+="0 0 0 rg\n";
+
+  // Employee identity card
+  c+=box(28,646,556,46,"0.96 0.975 0.995");
+  c+=txt("F2",16,42,674,String(r.employee||"Employee"));
+  c+=txt("F1",9,42,658,`${position}  |  ${shift||"-"}`);
+  c+=txt("F1",8.5,430,674,"STATUS");
+  c+=txt("F2",10.5,430,657,String(r.status||"MONEY READY").replaceAll("_"," ").toUpperCase());
+
+  // Work & Sales section
+  c+=sectionTitle(28,632,270,"Work & Sales");
+  const leftX=28, colW=129, gap=12;
+  let y=602;
+  const workMetrics=[
+    ["Hour In AM",amIn||"-"],["Hour Out AM",amOut||"-"],
+    ["Hour In PM",pmIn||"-"],["Hour Out PM",pmOut||"-"],
+    ["Total Hours",Number(r.totalHoursWork||0).toFixed(2)],["Busser AM",r.busserAM||"N/A"],
+    ["Grand Total",pdfMoney(r.grandTotal)],["Total AM",pdfMoney(r.totalAM)],
+    ["Total PM",pdfMoney(r.totalPM)],["Total Tips",pdfMoney(r.totalTips)]
+  ];
+  for(let i=0;i<workMetrics.length;i+=2){
+    c+=metric(leftX,y,workMetrics[i][0],workMetrics[i][1],colW);
+    if(workMetrics[i+1])c+=metric(leftX+colW+gap,y,workMetrics[i+1][0],workMetrics[i+1][1],colW);
+    y-=43;
+  }
+
+  // Tips & deductions section
+  c+=sectionTitle(314,632,270,"Tips & Deductions");
+  const rx=314; y=602;
+  const tipsMetrics=[
+    ["Paid Tip",pdfMoney(r.paidTip)],["Card Fee",pdfMoney(r.payCardTipFee)],
+    ["Busser AM",pdfMoney(r.busserTipOutAM)],["Busser PM",pdfMoney(r.busserTipOutPM)],
+    ["Busser Total",pdfMoney(r.busserTipOut)],[bartender?"Bar Tip Received":"Bar Tip Out",pdfMoney(bartender?r.bartenderBarTipReceived:r.barTipOut)],
+    ["AM Bar Sales",pdfBool(r.amBarSales)],["PM Bar Sales",pdfBool(r.pmBarSales)],
+    ["AM Bar Tip",pdfMoney(r.amBarTip)],["PM Bar Tip",pdfMoney(r.pmBarTip)]
+  ];
+  let ty=y;
+  for(let i=0;i<tipsMetrics.length;i+=2){
+    c+=metric(rx,ty,tipsMetrics[i][0],tipsMetrics[i][1],colW);
+    if(tipsMetrics[i+1])c+=metric(rx+colW+gap,ty,tipsMetrics[i+1][0],tipsMetrics[i+1][1],colW);
+    ty-=43;
+  }
+
+  // Bartender detail panel, only when relevant
+  let payoutTop=365;
+  if(bartender){
+    c+=sectionTitle(28,374,556,"Bartender Calculation");
+    const bx=28, bw=128, bg=11;
+    const bvals=bartenderReceiptPeriods(r).length?[
+      ["BAR AM Received",pdfMoney(bartenderPeriodAmount(r,"AM"))],
+      ["BAR 2-4 Received",pdfMoney(bartenderPeriodAmount(r,"2PM_4PM"))],
+      ["BAR PM Received",pdfMoney(bartenderPeriodAmount(r,"PM"))],
+      ["Periods",bartenderReceiptPeriods(r).map(p=>p.checkpoint==="2PM_4PM"?"2-4":p.checkpoint).join(" + ")],
+      ["Received Total",pdfMoney(r.bartenderBarTipReceived)],
+      ["Calculation","Sum of periods"]
+    ]:[
+      ["Shift",String(r.bartenderShiftType||"-").replace("2PM_4PM","2 PM - 4 PM")],
+      ["Server Sales",pdfMoney(r.bartenderServerGrandTotalSummary)],
+      ["Gross @ 0.6%",pdfMoney(r.bartenderGrossBarTipOut)],
+      ["Less AM",pdfMoney(r.bartenderLessAM)],
+      ["Less 2-4",pdfMoney(r.bartenderLess24)],
+      ["Received",pdfMoney(r.bartenderBarTipReceived)]
+    ];
+    for(let i=0;i<6;i++) c+=metric(bx+(i%3)*(bw+bg),344-Math.floor(i/3)*43,bvals[i][0],bvals[i][1],bw);
+    payoutTop=252;
+  }
+
+  // Payout summary - large, separated, no duplicate totals
+  c+=sectionTitle(28,payoutTop,556,"Payout Summary");
+  const py=payoutTop-48;
+  const pboxW=174;
+  const pGap=17;
+  const payoutVals=[
+    ["Total Before Meal",pdfMoney(r.totalBeforeMeal)],
+    ["Meal",pdfMoney(r.meal)],
+    ["TOTAL PAID OUT",pdfMoney(paidOut)],
+    ["Cash Tip",pdfMoney(r.cashTip)],
+    ["GRAND TOTAL",pdfMoney(employeeGrandTotal)],
+    ["Adjustment",r.adjustmentDecision==="NONE"?"NO ADJUSTMENT":String(r.adjustmentDecision||"PENDING")+" "+pdfMoney(r.adjustmentDecision==='ACCEPTED'?r.adjustmentSalaryHourly:r.adjustmentCandidate??calculatedHourlyAdjustment(r))]
+  ];
+  for(let i=0;i<3;i++){
+    const x=28+i*(pboxW+pGap);
+    c+=box(x,py-38,pboxW,42,i===2?"0.90 0.97 0.92":"0.985 0.99 1");
+    c+=txt("F1",8.2,x+10,py-15,payoutVals[i][0]);
+    c+=txt("F2",14.5,x+10,py-32,payoutVals[i][1]);
+  }
+  const py2=py-54;
+  for(let i=0;i<3;i++){
+    const x=28+i*(pboxW+pGap);
+    c+=box(x,py2-38,pboxW,42,i===1?"1 0.97 0.86":"0.985 0.99 1");
+    c+=txt("F1",8.2,x+10,py2-15,payoutVals[i+3][0]);
+    c+=txt("F2",14.5,x+10,py2-32,payoutVals[i+3][1]);
+  }
+
+  // Formula note
+  if(bartender){
+    c+=txt("F1",8,28,94,"Total Paid Out = Total Before Meal - Meal"+(r.adjustmentPayoutVersion?" + Accepted Adjustment":""));
+    c+=txt("F1",8,28,81,"Grand Total = Total Before Meal + Cash Tip");
+  }else{
+    c+=txt("F1",8.5,28,198,"Paid Out = Before Meal - Meal | Grand Total = Before Meal + Cash Tip");
+  }
+
+  // Signature & footer
+  const sigY=36;
+  c+=txt("F2",9,380,sigY+72,"EMPLOYEE SIGNATURE");
+  c+=box(380,sigY,204,62,"1 1 1");
+  c+=pdfSignatureCommands(r.pickupSignature,390,sigY+8,184,44);
+  if(Array.isArray(r.pickupSignature?.strokes) && r.pickupSignature.strokes.length){
+    c+=txt("F1",7.5,380,sigY-10,"SIGNED");
+  }
+  c+=txt("F1",8,28,42,`Generated ${new Date().toLocaleString()}  |  Page ${index+1}`);
+  c+=txt("F1",7.5,28,27,"Fred Zhang Tip Calculator - Internal Employee Report");
+  return c;
+}
+
+function simplePdfBlob(rows){
+  rows=rows.map(reportForWorkPosition);
+  const n=rows.length;
+  const font1=3+n*2;
+  const font2=font1+1;
+  const objects=[];
+  const kids=[];
+
+  objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
+
+  for(let i=0;i<n;i++){
+    const pageObj=3+i*2;
+    const contentObj=pageObj+1;
+    kids.push(`${pageObj} 0 R`);
+
+    const content=pdfReportContent(rows[i],i,n);
+
+    objects[pageObj]=
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] `+
+      `/Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> >> `+
+      `/Contents ${contentObj} 0 R >>`;
+
+    objects[contentObj]=
+      `<< /Length ${content.length} >>\nstream\n${content}\nendstream`;
+  }
+
+  objects[2]=`<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${n} >>`;
+
+  // Helvetica / Helvetica-Bold are standard PDF sans-serif fonts and visually
+  // match Arial closely without shipping any font file.
+  objects[font1]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+  objects[font2]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+
+  const maxObj=font2;
+  let pdf="%PDF-1.4\n";
+  const offsets=[0];
+
+  for(let i=1;i<=maxObj;i++){
+    offsets[i]=pdf.length;
+    pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;
+  }
+
+  const xref=pdf.length;
+  pdf+=`xref\n0 ${maxObj+1}\n0000000000 65535 f \n`;
+  for(let i=1;i<=maxObj;i++){
+    pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
+  }
+
+  pdf+=`trailer\n<< /Size ${maxObj+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Blob([pdf],{type:"application/pdf"});
+}
+
+async function shareReportFile(blob,filename,target){
+  const file=new File([blob],filename,{type:blob.type});
+  if(navigator.share && navigator.canShare && navigator.canShare({files:[file]})){
+    try{
+      await navigator.share({
+        files:[file],
+        title:"Fred Zhang Tip Calculator Report",
+        text: target==="whatsapp" ? "Tip report — please send via WhatsApp." : "Tip report — please send via email."
+      });
+      return;
+    }catch(e){
+      if(e.name==="AbortError") return;
+      console.warn("Share files fallback:",e);
+    }
+  }
+  // Desktop fallback: download actual file. Browsers do not permit silent attachment
+  // to WhatsApp Web or email; user can attach the downloaded file.
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+  alert(`Report downloaded as ${filename}. On this browser, automatic file attachment to ${target==="whatsapp"?"WhatsApp":"email"} is blocked; attach the downloaded file.`);
+}
+
+function downloadBlob(blob,filename){
+  const a=document.createElement("a");
+  const url=URL.createObjectURL(blob);
+  a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),3000);
+}
+window.downloadAllReportsXls=function(){
+  const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to download.");return;}
+  downloadBlob(xlsBlob(rows),`Fred_Zhang_Final_Daily_Report_${todayLocal()}.xls`);
+};
+window.downloadAllReportsPdf=function(){
+  const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to download.");return;}
+  downloadBlob(simplePdfBlob(rows),`Fred_Zhang_Final_Daily_Report_${todayLocal()}.pdf`);
+};
+
+window.shareAllReportsXls=async function(target){
+  const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to send.");return;}
+  await shareReportFile(xlsBlob(rows),`Fred_Zhang_Tip_Report_${todayLocal()}.xls`,target);
+};
+window.shareAllReportsPdf=async function(target){
+  const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to send.");return;}
+  await shareReportFile(simplePdfBlob(rows),`Fred_Zhang_Tip_Report_${todayLocal()}.pdf`,target);
+};
+
+
+
+
+
+function smallReportClockFields(r){
+  const shift=String(r.shift||"").toUpperCase();
+  const amIn=r.hourInAM||r.hours?.hourInAM||"";
+  const amOut=r.hourOutAM||r.hours?.hourOutAM||"";
+  const pmIn=r.hourInPM||r.hours?.hourInPM||"";
+  const pmOut=r.hourOutPM||r.hours?.hourOutPM||"";
+  const singleIn=r.hourIn||r.hours?.hourIn||"";
+  const singleOut=r.hourOut||r.hours?.hourOut||"";
+
+  // DOUBLE/LONG with a real break has two separate clock pairs.
+  if((shift==="DOUBLE"||shift==="LONG") && (amIn||amOut||pmIn||pmOut)){
+    return {
+      in1:amIn||singleIn,
+      out1:amOut||"",
+      in2:pmIn||"",
+      out2:pmOut||singleOut
+    };
+  }
+  return {in1:singleIn||amIn,in2:"",out1:singleOut||pmOut,out2:""};
+}
+
+function smallReportBarAmount(r){
+  return String(r.position||"").toLowerCase()==="bartender"
+    ? Number(r.bartenderBarTipReceived||0)
+    : Number(r.barTipOut||0);
+}
+
+
+function minimumHourlyTarget(r){
+  return window.FredTipCalculatorLogic.calculateHourlyAdjustment(r).hourlyMinimum;
+}
+function adjustmentBaseWithCash(r){
+  return Number(r.totalBeforeMeal||0)+Number(r.cashTip||0);
+}
+function calculatedHourlyAdjustment(r){
+  const target=minimumHourlyTarget(r);
+  const base=adjustmentBaseWithCash(r);
+  return howRoundCent(Math.max(0,target-base));
+}
+function smallReportPaidOut(r){
+  return Number.isFinite(Number(r.totalPaidOut)) && r.totalPaidOut!=null
+    ? Number(r.totalPaidOut) : howRoundCent(Math.max(0,Number(r.totalBeforeMeal||0)-Number(r.meal||0)));
+}
+function smallReportGrandTotal(r){
+  return Number.isFinite(Number(r.grandTotalTip)) && r.grandTotalTip!=null
+    ? Number(r.grandTotalTip) : howRoundCent(Number(r.totalBeforeMeal||0)+Number(r.cashTip||0));
+}
+
+function smallReportSignatureSvg(signature,width=240,height=86){
+  const strokes=signature?.strokes;
+  if(!Array.isArray(strokes)||!strokes.length)return "";
+  const paths=[];
+  for(const raw of strokes){
+    const pts=Array.isArray(raw)?raw:(Array.isArray(raw?.points)?raw.points:[]);
+    if(pts.length<2)continue;
+    const d=pts.map((p,i)=>{
+      const x=Math.max(0,Math.min(1,Number(p.x||0)))*width;
+      const y=Math.max(0,Math.min(1,Number(p.y||0)))*height;
+      return `${i===0?"M":"L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    }).join(" ");
+    paths.push(`<path d="${d}" fill="none" stroke="#10213c" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`);
+  }
+  if(!paths.length)return "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="white"/>${paths.join("")}</svg>`;
+}
+
+function smallReportSignatureHtml(r){
+  const svg=smallReportSignatureSvg(r.pickupSignature);
+  if(!svg)return `<div class="small-report-signature-pending">PENDING SIGNATURE</div>`;
+  return `<div class="small-report-signature">${svg}</div>`;
+}
+
+function smallReportFilteredRows(){
+  const date=$("smallReportDate")?.value||"";
+  const employee=$("smallReportEmployee")?.value||"";
+  return [...latestHourlyReports]
+    .filter(r=>(!date||r.date===date)&&(!employee||r.employee===employee))
+    .sort((a,b)=>{
+      const d=String(b.date||"").localeCompare(String(a.date||""));
+      return d || String(a.employee||"").localeCompare(String(b.employee||""));
+    });
+}
+
+function populateSmallReportEmployeeFilter(){
+  const sel=$("smallReportEmployee");
+  if(!sel)return;
+  const current=sel.value;
+  const names=[...new Set(latestHourlyReports.map(r=>r.employee).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  sel.innerHTML=`<option value="">All Employees</option>`+
+    names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
+  if(names.includes(current))sel.value=current;
+}
+
+
+
+window.newHourlyEntryFromSmallReport=function(){
+  if(!["manager","owner"].includes(currentProfile?.role||"")) return;
+  if(hourlyV1Mode && document.body.classList.contains("hourly-v1-small-report")){
+    window.hv1CloseSmallReport();
+    alert("Select an employee card on the Tip Calculation Team Board.");
+    return;
+  }
+
+  // Clear any edit context so the next Submit Final creates a brand-new report.
+  currentHourlyReportId="";
+  currentHourlySubmissionId="";
+
+  // Reset the underlying Hourly Adjustment fields.
+  if($("hDate")) $("hDate").value=todayLocal();
+  if($("hEmployee")) $("hEmployee").selectedIndex=0;
+  if($("hPosition")) $("hPosition").value="Server";
+  if($("hShift")) $("hShift").value="AM";
+  if($("hBusserAM")) $("hBusserAM").value="WITHOUT";
+
+  ["hIn","hOut","hAmIn","hAmOut","hPmIn","hPmOut"].forEach(id=>{
+    if($(id)) $(id).value="";
+  });
+  ["hGrandTotal","hTotalAM","hPaidTip","hCardFee","hCashTip","hMeal"].forEach(id=>{
+    if($(id)) $(id).value="0";
+  });
+
+  if($("hAmBar")) $("hAmBar").value="no";
+  if($("hPmBar")) $("hPmBar").value="no";
+  if($("hBartenderShiftType")) $("hBartenderShiftType").value="AM";
+  if($("hBartenderBarReceived")) $("hBartenderBarReceived").value="0";
+  if($("hBtPrevAMInput")) $("hBtPrevAMInput").value="";
+  if($("hBtPrev24Input")) $("hBtPrev24Input").value="";
+
+  for(let i=1;i<=9;i++){
+    if($(`hBtServerName${i}`)) $(`hBtServerName${i}`).value="";
+    if($(`hBtServerGrand${i}`)) $(`hBtServerGrand${i}`).value="";
+  }
+
+  $("hourlyEditBanner")?.classList.add("hidden");
+
+  // Open Hourly Adjustment in the correct app mode.
+  if(hourlyWorkspaceMode){
+    window.openHourlyWorkspacePanel("hourly");
+  }else{
+    openStaffTab("hourly");
+  }
+
+  setTimeout(()=>{
+    window.resetHourlyWizard?.(true);
+    window.startHourlyWizardFromLegacy?.();
+    $("hourly")?.scrollIntoView({behavior:"smooth",block:"start"});
+  },100);
+};
+
+
+window.deleteSmallReportRow=async function(reportId){
+  if(!["manager","owner"].includes(currentProfile?.role||"")) return;
+  const row=latestHourlyReports.find(r=>r.id===reportId);
+  if(!row){alert("Report not found.");return;}
+  const ok=await requireCurrentAccountPassword(
+    `Delete ${row.employee||"Daily Report"}`,
+    `Enter the ${String(currentProfile.role).toUpperCase()} password currently logged in. The report will move to Owner Deleted / Undo and can be restored.`
+  );
+  if(!ok)return;
+  try{
+    await archiveDeletedItem({
+      itemType:"hourly_report",itemId:reportId,
+      label:`Daily Report • ${row.employee||""} • ${row.date||""}`,
+      date:row.date||"",employeeName:row.employee||"",employeeUid:row.employeeUid||"",
+      snapshot:row,sourceCollection:"hourlyReports"
+    });
+    await deleteDoc(doc(db,"hourlyReports",reportId));
+    if(currentHourlyReportId===reportId)currentHourlyReportId="";
+    await loadDeletedItems();renderSmallReport();
+  }catch(e){alert(`Delete failed: ${e.code||e.message}`);}
+};
+
+window.deleteAllSmallReportRows=async function(){
+  if(currentProfile?.role!=="owner"){alert("Delete All is Owner only.");return;}
+  const rows=smallReportFilteredRows();
+  if(!rows.length){alert("No Daily Report rows to delete.");return;}
+  const ok=await requireCurrentAccountPassword(
+    "Delete All Daily Reports",
+    `OWNER PASSWORD REQUIRED. ${rows.length} report(s) will move to Deleted / Undo.`
+  );
+  if(!ok)return;
+  try{
+    for(const r of rows){
+      await archiveDeletedItem({
+        itemType:"hourly_report",itemId:r.id,label:`Daily Report • ${r.employee||""} • ${r.date||""}`,
+        date:r.date||"",employeeName:r.employee||"",employeeUid:r.employeeUid||"",
+        snapshot:r,sourceCollection:"hourlyReports"
+      });
+    }
+    for(let i=0;i<rows.length;i+=400){
+      const batch=writeBatch(db);
+      rows.slice(i,i+400).forEach(r=>batch.delete(doc(db,"hourlyReports",r.id)));
+      await batch.commit();
+    }
+    currentHourlyReportId="";
+    await loadDeletedItems();renderSmallReport();
+    alert(`${rows.length} Daily Report row(s) moved to Deleted / Undo.`);
+  }catch(e){alert(`Delete All failed: ${e.code||e.message}`);}
+};
+
+function buildSmallReportPrintableHtml(rows){
+  const safe=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const money=v=>Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
+  const sig=r=>{
+    const svg=smallReportSignatureSvg(r.pickupSignature,220,78);
+    return svg || '<div style="height:78px;border:1px dashed #c8a64b;display:flex;align-items:center;justify-content:center;font-weight:700">PENDING SIGNATURE</div>';
+  };
+
+  return `<!doctype html><html><head><meta charset="utf-8">
+    <title>Fred Zhang Daily Report</title>
+    <style>
+      @page{size:landscape;margin:0.35in}
+      *{box-sizing:border-box}
+      body{font-family:Arial,sans-serif;color:#111827;margin:0}
+      h1{font-size:20px;margin:0 0 4px}
+      .sub{font-size:11px;color:#5f6b7a;margin-bottom:12px}
+      table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:8px}
+      th{background:#10213c;color:white;padding:5px 3px;border:1px solid #9eb0c8;white-space:nowrap}
+      td{border:1px solid #d4dde8;padding:4px 3px;vertical-align:middle;word-wrap:break-word}
+      .sig{width:220px;height:78px}
+      .emp{font-weight:700}
+    </style></head><body>
+    <h1>Fred Zhang Tip Calculator — Daily Report</h1>
+    <div class="sub">Generated ${safe(new Date().toLocaleString())}</div>
+    <table>
+      <thead><tr>
+        <th>Date</th><th>Employee</th><th>Shift</th>
+        <th>In 1</th><th>Out 1</th><th>In 2</th><th>Out 2</th><th>Total Hrs</th>
+        <th>Paid Tips</th><th>Card Fee</th><th>Busser</th><th>Bar Out / Received</th>
+        <th>Before Meal</th><th>Cash Tip</th><th>Meal</th><th>Total Paid Out</th><th>Grand Total</th><th style="width:230px">Signature</th>
+      </tr></thead>
+      <tbody>
+      ${rows.map(r=>{
+        const c=smallReportClockFields(r);
+        return `<tr>
+          <td>${safe(r.date||"")}</td>
+          <td><span class="emp">${safe(r.employee||"")}</span><br>${safe(r.position||"")}</td>
+          <td>${safe(r.shift||"")}</td>
+          <td>${safe(c.in1||"")}</td><td>${safe(c.out1||"")}</td>
+          <td>${safe(c.in2||"")}</td><td>${safe(c.out2||"")}</td>
+          <td>${Number(r.totalHoursWork??r.totalHours??0).toFixed(2)}</td>
+          <td>${money(r.paidTip)}</td><td>${money(r.payCardTipFee??r.cardFee)}</td>
+          <td>${money(r.busserTipOut)}</td><td>${money(smallReportBarAmount(r))}</td>
+          <td>${money(r.totalBeforeMeal)}</td><td>${money(r.cashTip)}</td>
+          <td>${money(r.meal)}</td>
+          <td><b>${money(smallReportPaidOut(r))}</b></td>
+          <td><b>${money(smallReportGrandTotal(r))}</b></td>
+          <td class="sig">${sig(r)}</td>
+        </tr>`;
+      }).join("")}
+      </tbody>
+    </table>
+    </body></html>`;
+}
+
+window.downloadSmallReportPdf=function(){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const rows=smallReportFilteredRows();
+  if(!rows.length){alert("No Daily Report data for this filter.");return;}
+  const normalized=rows.map(r=>({
+    ...r,
+    totalPaidOut:smallReportPaidOut(r),
+    employeeGrandTotal:smallReportGrandTotal(r)
+  }));
+  const date=$("smallReportDate")?.value||todayLocal();
+  downloadBlob(simplePdfBlob(normalized),`Fred_Zhang_Small_Report_ALL_${date}.pdf`);
+};
+
+
+
+function normalizeEmployeeNameKey(v){
+  return String(v||"").trim().toLowerCase().replace(/\s+/g," ");
+}
+function normalizePhone(v){
+  const raw=String(v||"").trim();
+  if(!raw)return "";
+  const plus=raw.startsWith("+");
+  const digits=raw.replace(/\D/g,"");
+  return plus?`+${digits}`:digits;
+}
+function rememberEmployeePhone(name,phone,source=""){
+  const key=normalizeEmployeeNameKey(name);
+  const normalized=normalizePhone(phone);
+  if(!key||!normalized)return;
+  employeePhoneDirectory.set(key,{phone:normalized,name:String(name||"").trim(),source});
+}
+
+async function refreshEmployeePhoneDirectory(force=false){
+  if(!["manager","owner","cashier"].includes(currentProfile?.role||"") && !hourlyWorkspaceMode){
+    return employeePhoneDirectory;
+  }
+  if(!force && employeePhoneDirectory.size && Date.now()-employeePhoneDirectoryLoadedAt<60000){
+    return employeePhoneDirectory;
+  }
+
+  const next=new Map();
+
+  // 0) Recovered restaurant employee phone list (2026-08-24).
+  // Firestore/User edits below override this fallback when a newer number exists.
+  Object.entries(RECOVERED_EMPLOYEE_PHONES).forEach(([name,phone])=>{
+    const key=normalizeEmployeeNameKey(name);
+    const normalized=normalizePhone(phone);
+    if(key&&normalized) next.set(key,{phone:normalized,name,source:"recovered-2026-08-24"});
+  });
+
+  // 1) Existing live users cache.
+  for(const u of latestUsers||[]){
+    const name=u.displayName||u.username||"";
+    const phone=normalizePhone(u.phone||"");
+    const key=normalizeEmployeeNameKey(name);
+    if(key&&phone) next.set(key,{phone,name,source:"users-cache"});
+  }
+
+
+  // 2) Custom employee master directory.
+  // This lets Manager/Owner add employees and phone numbers without creating login credentials.
+  try{
+    const snap=await getDocs(query(collection(db,"employeeDirectory"),limit(500)));
+    snap.forEach(d=>{
+      const u=d.data()||{};
+      if(u.active===false)return;
+      const name=String(u.displayName||u.name||"").trim();
+      const phone=normalizePhone(u.phone||"");
+      const key=normalizeEmployeeNameKey(name);
+      if(name)addDynamicEmployeeName(name);
+      if(key&&phone) next.set(key,{phone,name,source:"employeeDirectory",id:d.id});
+    });
+  }catch(e){
+    console.warn("Employee directory Firestore read:",e);
+  }
+
+  // Local fallback for environments whose Firestore rules have not yet added employeeDirectory.
+  try{
+    const local=JSON.parse(localStorage.getItem("fz_employee_directory")||"[]");
+    for(const u of Array.isArray(local)?local:[]){
+      if(u.active===false)continue;
+      const name=String(u.displayName||"").trim();
+      const phone=normalizePhone(u.phone||"");
+      const key=normalizeEmployeeNameKey(name);
+      if(name)addDynamicEmployeeName(name);
+      if(key&&phone&&!next.has(key))next.set(key,{phone,name,source:"local-directory",id:u.id||""});
+    }
+  }catch(e){}
+
+  // 2) Pull all app users directly so the Hourly sub-app does not depend on Owner → Users being open.
+  try{
+    const snap=await getDocs(query(collection(db,"users"),limit(500)));
+    syncEmployeeAccountRoster(snap.docs.map(d=>({uid:d.id,...d.data()})));
+    snap.forEach(d=>{
+      const u=d.data()||{};
+      const name=u.displayName||u.username||"";
+      const phone=normalizePhone(u.phone||"");
+      const key=normalizeEmployeeNameKey(name);
+      if(key&&phone) next.set(key,{phone,name,source:"users"});
+    });
+  }catch(e){
+    console.warn("Employee phone directory users:",e);
+  }
+
+  // 3) Fallback to approved signup requests; some legacy employee profiles kept the phone here.
+  try{
+    const snap=await getDocs(query(collection(db,"signupRequests"),limit(500)));
+    snap.forEach(d=>{
+      const u=d.data()||{};
+      const name=u.displayName||u.name||u.username||"";
+      const phone=normalizePhone(u.phone||u.mobilePhone||"");
+      const key=normalizeEmployeeNameKey(name);
+      if(key&&phone&&!next.has(key)) next.set(key,{phone,name,source:"signupRequests"});
+    });
+  }catch(e){
+    console.warn("Employee phone directory signupRequests:",e);
+  }
+
+  employeePhoneDirectory=next;
+  employeePhoneDirectoryLoadedAt=Date.now();
+  populateRoster();
+  populateBartenderServerDropdowns();
+  return employeePhoneDirectory;
+}
+
+
+function recoveredPhoneForEmployeeName(name){
+  const key=normalizeEmployeeNameKey(name);
+  for(const [n,p] of Object.entries(RECOVERED_EMPLOYEE_PHONES)){
+    if(normalizeEmployeeNameKey(n)===key)return normalizePhone(p);
+  }
+  return "";
+}
+
+async function phoneForEmployeeName(name){
+  await refreshEmployeePhoneDirectory(false);
+  const key=normalizeEmployeeNameKey(name);
+  let hit=employeePhoneDirectory.get(key);
+  if(hit?.phone)return hit.phone;
+
+  // One forced refresh in case the phone was edited recently.
+  await refreshEmployeePhoneDirectory(true);
+  hit=employeePhoneDirectory.get(key);
+  return hit?.phone||"";
+}
+
+function findEmployeeUserByName(name){
+  const key=normalizeEmployeeNameKey(name);
+  if(!key)return null;
+  const live=latestUsers.find(u=>
+    normalizeEmployeeNameKey(u.displayName||"")===key ||
+    normalizeEmployeeNameKey(u.username||"")===key
+  );
+  if(live)return live;
+  const cached=employeePhoneDirectory.get(key);
+  return cached?{displayName:cached.name,phone:cached.phone}:null;
+}
+
+
+window.openSmallReportDetail=function(reportId){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const r=latestHourlyReports.find(x=>x.id===reportId);
+  if(!r){alert("Report not found.");return;}
+  const c=smallReportClockFields(r);
+  const barLabel=String(r.position||"").toLowerCase()==="bartender"?"Bar Tip Out Received":"Bar Tip Out";
+  $("smallReportDetailTitle").textContent=r.employee||"Employee Report";
+  $("smallReportDetailSub").textContent=`${r.date||""} • ${r.position||""} • ${r.shift||""}`;
+  $("smallReportDetailBody").innerHTML=`
+    <div class="sr-detail-grid">
+      <div><span>Clock In 1</span><b>${esc(c.in1||"-")}</b></div>
+      <div><span>Clock Out 1</span><b>${esc(c.out1||"-")}</b></div>
+      <div><span>Clock In 2</span><b>${esc(c.in2||"-")}</b></div>
+      <div><span>Clock Out 2</span><b>${esc(c.out2||"-")}</b></div>
+      <div><span>Total Hours</span><b>${Number(r.totalHoursWork??r.totalHours??0).toFixed(2)}</b></div>
+      <div><span>Paid Tip</span><b>${fmtMoney(r.paidTip)}</b></div>
+      <div><span>Tip Card Fee</span><b>${fmtMoney(r.payCardTipFee??r.cardFee)}</b></div>
+      <div><span>Busser AM</span><b>${fmtMoney(r.busserTipOutAM||0)}</b></div>
+      <div><span>Busser PM</span><b>${fmtMoney(r.busserTipOutPM||0)}</b></div>
+      <div><span>Busser Total</span><b>${fmtMoney(r.busserTipOut||0)}</b></div>
+      <div><span>${barLabel}</span><b>${fmtMoney(smallReportBarAmount(r))}</b></div>
+      ${bartenderReceiptPeriods(r).map(p=>`<div><span>BAR ${bartenderPeriodLabel(p.checkpoint)} Received</span><b>${fmtMoney(p.amount)}</b></div>`).join("")}
+      <div><span>Total Before Meal</span><b>${fmtMoney(r.totalBeforeMeal)}</b></div>
+      <div><span>Cash Tip</span><b>${fmtMoney(r.cashTip)}</b></div>
+      <div><span>Meal</span><b>${fmtMoney(r.meal)}</b></div>
+      <div class="accent"><span>Total Paid Out</span><b>${fmtMoney(smallReportPaidOut(r))}</b></div>
+      <div class="accent grand"><span>Grand Total</span><b>${fmtMoney(smallReportGrandTotal(r))}</b><small>Total Before Meal + Cash Tip</small></div>
+    </div>`;
+  $("smallReportDetailSignature").innerHTML=smallReportSignatureHtml(r);
+  $("smallReportDetailActions").innerHTML=`
+    <button class="btn green" type="button" onclick="signSmallReportFromDetail('${r.id}')">${Array.isArray(r.pickupSignature?.strokes)&&r.pickupSignature.strokes.length?"RE-SIGN":"SIGN"}</button>
+    <button class="btn gold" type="button" onclick="editSmallReportFromDetail('${r.id}')">EDIT</button>
+    <button class="btn red" type="button" onclick="deleteSmallReportFromDetail('${r.id}')">DELETE</button>`;
+  const modal=$("smallReportDetailModal");
+  modal.classList.remove("hidden");
+  modal.style.display="flex";
+  document.body.classList.add("small-report-modal-open");
+  requestAnimationFrame(()=>modal.querySelector(".small-report-detail-modalbox")?.scrollTo(0,0));
+};
+window.closeSmallReportDetail=function(){
+  const modal=$("smallReportDetailModal");
+  modal?.classList.add("hidden");
+  if(modal)modal.style.display="none";
+  document.body.classList.remove("small-report-modal-open");
+  // Always return to V1 Daily Report — never to legacy Hourly V01.
+  if(hourlyV1Mode){
+    document.body.classList.add("hourly-v1-mode","hourly-v1-small-report");
+    $("hourlyV1Workspace")?.classList.remove("hidden");
+    $("hv1SmallReportBox")?.classList.remove("hidden");
+  }
+};
+document.addEventListener("click",e=>{
+  if(e.target?.id==="smallReportDetailModal")closeSmallReportDetail();
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape" && !$("smallReportDetailModal")?.classList.contains("hidden"))closeSmallReportDetail();
+});
+
+window.signSmallReportFromDetail=function(id){
+  closeSmallReportDetail();
+  signSmallReport(id);
+};
+window.editSmallReportFromDetail=function(id){
+  closeSmallReportDetail();
+  editSubmittedHourlyFromSmallReport(id);
+};
+window.deleteSmallReportFromDetail=function(id){
+  closeSmallReportDetail();
+  deleteSmallReportRow(id);
+};
+
+window.signSmallReport=function(reportId){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const r=latestHourlyReports.find(x=>x.id===reportId);
+  if(!r){alert("Report not found.");return;}
+
+  // Reuse the existing employee signature pad and store the signature
+  // directly on this hourlyReports record.
+  window.markMoneyPickedUp(
+    r.id,
+    r.sourceSubmissionId||"",
+    r.employee||""
+  );
+};
+
+
+function smsBodyUrl(phone,message){
+  const clean=normalizePhone(phone);
+  const isApple=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  // iOS commonly accepts '&body=', Android commonly accepts '?body='.
+  return `sms:${clean}${isApple?"&":"?"}body=${encodeURIComponent(message)}`;
+}
+
+async function openNativeSmsComposer(phone,message){
+  const clean=normalizePhone(phone);
+  if(!clean)return false;
+
+  const url=smsBodyUrl(clean,message);
+
+  // Must be triggered from the user's click. Use a real <a> instead of
+  // assigning window.location, which is less reliable in some Android/PWA builds.
+  try{
+    const a=document.createElement("a");
+    a.href=url;
+    a.style.display="none";
+    a.setAttribute("rel","noopener");
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return true;
+  }catch(e){
+    console.warn("Native SMS composer:",e);
+  }
+
+  // Last fallback: copy number + message so it is never lost.
+  try{
+    await navigator.clipboard?.writeText(`${clean}\n${message}`);
+    alert(`Could not open the SMS app. Phone number and message were copied.\n\n${clean}`);
+  }catch(e){
+    alert(`Could not open the SMS app.\n\nPhone: ${clean}\n\nMessage:\n${message}`);
+  }
+  return false;
+}
+
+window.sendSmallReportSms=async function(reportId){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const r=latestHourlyReports.find(x=>x.id===reportId);
+  if(!r){alert("Report not found.");return;}
+
+  const hasSignature=Array.isArray(r.pickupSignature?.strokes)&&r.pickupSignature.strokes.length;
+  if(!hasSignature){
+    alert(`Please collect ${r.employee||"employee"}'s signature first. The employee PDF must include the signature.`);
+    return;
+  }
+
+  // Resolve ONE employee phone by exact employee name.
+  // Do not invoke the generic share sheet because that opens a contact/recipient chooser.
+  const phone=await phoneForEmployeeName(r.employee);
+  if(!phone){
+    alert(`No mobile phone found for ${r.employee||"this employee"}. Add/update the Employee Phone Directory first.`);
+    return;
+  }
+
+  const rr={
+    ...r,
+    totalPaidOut:smallReportPaidOut(r),
+    employeeGrandTotal:smallReportGrandTotal(r)
+  };
+  const blob=simplePdfBlob([rr]);
+  const safeName=String(r.employee||"Employee").replace(/[^a-z0-9_-]+/gi,"_");
+  const filename=`Fred_Zhang_Tip_Report_${safeName}_${r.date||todayLocal()}.pdf`;
+  let portalLink="";
+  try{
+    const token=await fzEnsureEmployeePortal(r.employee,latestHourlyReports);
+    if(token)portalLink=fzPortalUrl(token);
+  }catch(e){console.warn("Private report portal link:",e);}
+  const msg=`Hi ${r.employee||""}, your complete signed tip report for ${r.date||""} (${r.shift||""}) is ready. Total Paid Out: ${fmtMoney(smallReportPaidOut(r))}. Cash Tip: ${fmtMoney(r.cashTip)}. Grand Total: ${fmtMoney(smallReportGrandTotal(r))}.${portalLink?` View all your work reports without signing up: ${portalLink}`:""} The complete PDF has been downloaded on this device; attach that PDF to this message.`;
+
+  // Browser security does not allow a website to silently attach a local PDF
+  // to an SMS/MMS while also forcing a specific recipient. We therefore:
+  // 1) download the exact signed PDF, then
+  // 2) open the native SMS composer already addressed to the employee's exact number.
+  downloadBlob(blob,filename);
+
+  const ok=await openNativeSmsComposer(phone,msg);
+  if(ok){
+    setTimeout(()=>{
+      alert(`SMS opened directly for ${r.employee||"employee"} at ${phone}. Attach ${filename} from Downloads, then Send.`);
+    },500);
+  }
+};
+window.editSubmittedHourlyFromSmallReport=function(reportId){
+  if(!["manager","owner"].includes(currentProfile?.role||"")) return;
+  const row=latestHourlyReports.find(r=>r.id===reportId);
+  if(!row){ alert("Report not found."); return; }
+
+  // Reuse the existing finalized-report editor so we update the SAME report,
+  // not create a duplicate.
+  if(typeof window.editHourlyReport==="function"){
+    currentHourlyReportId=reportId;
+    window.editHourlyReport(reportId);
+
+    if(hourlyWorkspaceMode){
+      setTimeout(()=>window.openHourlyWorkspacePanel("hourly"),80);
+    }else{
+      openStaffTab("hourly");
+    }
+
+    setTimeout(()=>{
+      window.startHourlyWizardFromLegacy?.();
+      $("hourly")?.scrollIntoView({behavior:"smooth",block:"start"});
+    },120);
+    return;
+  }
+
+  alert("Edit function is unavailable in this build.");
+};
+
+
+
+function employeeDirectoryDocId(name){
+  return "emp_"+normalizeEmployeeNameKey(name).replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"");
+}
+function loadLocalEmployeeDirectory(){
+  try{
+    const x=JSON.parse(localStorage.getItem("fz_employee_directory")||"[]");
+    return Array.isArray(x)?x:[];
+  }catch(e){return [];}
+}
+function saveLocalEmployeeDirectoryRow(row,oldName=""){
+  const rows=loadLocalEmployeeDirectory();
+  const oldKey=normalizeEmployeeNameKey(oldName);
+  const newKey=normalizeEmployeeNameKey(row.displayName);
+  const filtered=rows.filter(x=>{
+    const k=normalizeEmployeeNameKey(x.displayName);
+    return k!==oldKey && k!==newKey;
+  });
+  filtered.push(row);
+  localStorage.setItem("fz_employee_directory",JSON.stringify(filtered));
+}
+function deleteLocalEmployeeDirectoryName(name){
+  const key=normalizeEmployeeNameKey(name);
+  const rows=loadLocalEmployeeDirectory().filter(x=>normalizeEmployeeNameKey(x.displayName)!==key);
+  localStorage.setItem("fz_employee_directory",JSON.stringify(rows));
+}
+
+window.openEmployeeDirectoryEditor=function(name=""){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  try{name=decodeURIComponent(name||"");}catch(e){}
+  const key=normalizeEmployeeNameKey(name);
+  const hit=employeePhoneDirectory.get(key);
+  $("employeeDirectoryOldName").value=name||"";
+  $("employeeDirectoryName").value=name||hit?.name||"";
+  $("employeeDirectoryPhone").value=hit?.phone||recoveredPhoneForEmployeeName(name)||"";
+  $("employeeDirectoryModalTitle").textContent=name?"Edit Employee / Phone":"Add Employee";
+  $("employeeDirectoryModal").classList.remove("hidden");
+  $("employeeDirectoryModal").style.display="flex";
+  setTimeout(()=>$("employeeDirectoryName")?.focus(),50);
+};
+window.closeEmployeeDirectoryEditor=function(){
+  $("employeeDirectoryModal").classList.add("hidden");
+  $("employeeDirectoryModal").style.display="none";
+};
+
+window.saveEmployeeDirectoryEditor=async function(){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const oldName=String($("employeeDirectoryOldName")?.value||"").trim();
+  const name=String($("employeeDirectoryName")?.value||"").trim().replace(/\s+/g," ");
+  const phone=normalizePhone($("employeeDirectoryPhone")?.value||"");
+
+  if(!name){alert("Employee Name is required.");return;}
+  if(phone&&!/^\+?\d{7,15}$/.test(phone)){alert("Enter a valid mobile phone number.");return;}
+
+  const row={
+    displayName:name,
+    phone,
+    active:true,
+    updatedBy:currentProfile.displayName||currentProfile.username||"",
+    updatedAt:Date.now()
+  };
+
+  // Immediate local persistence so the feature still works if Firestore rules
+  // have not yet been updated for employeeDirectory.
+  saveLocalEmployeeDirectoryRow(row,oldName);
+  if(oldName && normalizeEmployeeNameKey(oldName)!==normalizeEmployeeNameKey(name)){
+    removeDynamicEmployeeName(oldName);
+  }
+  addDynamicEmployeeName(name);
+
+  let cloudSaved=false;
+  try{
+    const newId=employeeDirectoryDocId(name);
+    await setDoc(doc(db,"employeeDirectory",newId),{
+      displayName:name,
+      phone,
+      active:true,
+      updatedBy:currentProfile.displayName||currentProfile.username||"",
+      updatedAt:serverTimestamp()
+    },{merge:true});
+    cloudSaved=true;
+
+    if(oldName && normalizeEmployeeNameKey(oldName)!==normalizeEmployeeNameKey(name)){
+      const oldId=employeeDirectoryDocId(oldName);
+      try{
+        await setDoc(doc(db,"employeeDirectory",oldId),{
+          active:false,
+          replacedBy:newId,
+          updatedBy:currentProfile.displayName||currentProfile.username||"",
+          updatedAt:serverTimestamp()
+        },{merge:true});
+      }catch(e){}
+    }
+  }catch(e){
+    console.warn("Employee directory cloud save:",e);
+  }
+
+  // If Owner edits an employee who already has an application login,
+  // update the live user profile too.
+  if(currentProfile?.role==="owner"){
+    const existing=latestUsers.find(u=>
+      normalizeEmployeeNameKey(u.displayName||u.username)===normalizeEmployeeNameKey(oldName||name)
+    );
+    if(existing?.uid){
+      try{
+        await updateDoc(doc(db,"users",existing.uid),{displayName:name,phone});
+        const req=doc(db,"signupRequests",existing.uid);
+        const reqSnap=await getDoc(req);
+        if(reqSnap.exists()) await updateDoc(req,{displayName:name,phone});
+      }catch(e){console.warn("Live user phone/name update:",e);}
+    }
+  }
+
+  employeePhoneDirectoryLoadedAt=0;
+  closeEmployeeDirectoryEditor();
+  await refreshPhoneDirectoryUi();
+
+  if(cloudSaved){
+    alert(`${name} saved to the shared employee directory.`);
+  }else{
+    alert(`${name} saved on this device. Shared Firestore directory write is currently blocked by database rules.`);
+  }
+};
+
+window.refreshPhoneDirectoryUi=async function(){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const el=$("phoneDirectoryStatus");
+  if(el)el.textContent="Loading employee phone numbers...";
+  await refreshEmployeePhoneDirectory(true);
+  if(el)el.textContent=`Employee phone directory: ${employeePhoneDirectory.size} number(s) loaded (recovered list + live database).`;
+  renderPhoneDirectoryList();
+};
+
+window.renderPhoneDirectoryList=function(){
+  const host=$("phoneDirectoryList");
+  if(!host)return;
+  const rows=[...employeePhoneDirectory.values()].sort((a,b)=>String(a.name||"").localeCompare(String(b.name||"")));
+  host.innerHTML=rows.length?rows.map(r=>`
+    <div class="phone-directory-row">
+      <b>${esc(r.name||"")}</b>
+      <span>${esc(r.phone||"")}</span>
+      <button class="btn light" type="button" onclick="openNativeSmsComposer('${esc(r.phone||"")}','Hi ${esc(r.name||"")},')">SMS</button>
+      <button class="btn gold" type="button" onclick="openEmployeeDirectoryEditor('${encodeURIComponent(r.name||"")}')">EDIT</button>
+      <div class="phone-source">${esc(r.source||"directory")}</div>
+    </div>`).join(""):'<div class="notice">No phone numbers loaded.</div>';
+};
+
+window.clearSmallReportFilters=function(){
+  if($("smallReportDate"))$("smallReportDate").value="";
+  if($("smallReportEmployee"))$("smallReportEmployee").value="";
+  renderSmallReport();
+};
+window.smallReportToday=function(){
+  if($("smallReportDate"))$("smallReportDate").value=todayLocal();
+  renderSmallReport();
+};
+window.smallReportYesterday=function(){
+  const d=new Date();
+  d.setDate(d.getDate()-1);
+  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");
+  if($("smallReportDate"))$("smallReportDate").value=`${y}-${m}-${day}`;
+  renderSmallReport();
+};
+
+window.renderSmallReport=function(){
+  populateSmallReportEmployeeFilter();
+  refreshEmployeePhoneDirectory(false).then(()=>{
+    const el=$("phoneDirectoryStatus");
+    if(el)el.textContent=`Employee phone directory: ${employeePhoneDirectory.size} number(s) loaded (recovered list + live database).`;
+    renderPhoneDirectoryList();
+  }).catch(()=>{});
+  const body=$("smallReportBody"),summary=$("smallReportSummary");
+  if(!body||!summary)return;
+
+  const rows=smallReportFilteredRows();
+  const signed=rows.filter(r=>Array.isArray(r.pickupSignature?.strokes)&&r.pickupSignature.strokes.length).length;
+  const totalHours=rows.reduce((a,r)=>a+Number(r.totalHoursWork??r.totalHours??0),0);
+  const paidOutTotal=rows.reduce((a,r)=>a+smallReportPaidOut(r),0);
+  const grandTotalAll=rows.reduce((a,r)=>a+smallReportGrandTotal(r),0);
+
+  summary.innerHTML=`
+    <div class="kpi"><span>Reports</span><b>${rows.length}</b></div>
+    <div class="kpi"><span>Total Hours</span><b>${totalHours.toFixed(2)}</b></div>
+    <div class="kpi"><span>Total Paid Out</span><b>${fmtMoney(paidOutTotal)}</b></div>
+    <div class="kpi"><span>Grand Total</span><b>${fmtMoney(grandTotalAll)}</b><div class="small">Total Before Meal + Cash Tip</div></div>
+    <div class="kpi"><span>Signatures</span><b>${signed}/${rows.length}</b></div>`;
+
+  if(!rows.length){
+    body.innerHTML='<tr><td colspan="1" style="padding:24px;text-align:center">No finalized Hourly Adjustment reports for this filter.</td></tr>';
+    return;
+  }
+
+  body.innerHTML=rows.map(r=>{
+    return `<tr class="small-report-name-row">
+      <td>
+        <button class="small-report-name-btn" type="button" onclick="openSmallReportDetail('${r.id}')">
+          ${esc(r.employee||"")}
+        </button>
+      </td>
+    </tr>`;
+  }).join("");
+};
+
+function smallReportHtmlXlsBlob(rows){
+  const escH=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const money=v=>Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
+  const signatureDataUri=signature=>{
+    const svg=smallReportSignatureSvg(signature,240,86);
+    if(!svg)return "";
+    return "data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svg)));
+  };
+
+  const body=rows.map(r=>{
+    const c=smallReportClockFields(r);
+    const bar=smallReportBarAmount(r);
+    const sig=signatureDataUri(r.pickupSignature);
+    const sigCell=sig
+      ? `<img src="${sig}" width="240" height="86" style="display:block;border:1px solid #ccd6e5">`
+      : `<div style="width:240px;height:86px;display:flex;align-items:center;justify-content:center;border:1px dashed #c8a64b;background:#fff8df;font-weight:bold">PENDING SIGNATURE</div>`;
+
+    return `<tr style="height:96px">
+      <td>${escH(r.date||"")}</td>
+      <td><b>${escH(r.employee||"")}</b><br><span>${escH(r.position||"")}</span></td>
+      <td>${escH(r.shift||"")}</td>
+      <td>${escH(c.in1||"")}</td>
+      <td>${escH(c.out1||"")}</td>
+      <td>${escH(c.in2||"")}</td>
+      <td>${escH(c.out2||"")}</td>
+      <td>${Number(r.totalHoursWork??r.totalHours??0).toFixed(2)}</td>
+      <td>${money(r.paidTip)}</td>
+      <td>${money(r.payCardTipFee??r.cardFee)}</td>
+      <td>${money(r.busserTipOutAM||0)}</td>
+      <td>${money(r.busserTipOutPM||0)}</td>
+      <td>${money(r.busserTipOut||0)}</td>
+      <td>${money(bar)}</td>
+      <td>${money(r.totalBeforeMeal)}</td>
+      <td>${money(r.cashTip)}</td>
+      <td>${money(r.meal)}</td>
+      <td><b>${money(smallReportPaidOut(r))}</b></td>
+      <td><b>${money(smallReportGrandTotal(r))}</b></td>
+      <td style="width:260px;height:96px">${sigCell}</td>
+    </tr>`;
+  }).join("");
+
+  const html=`<!DOCTYPE html>
+  <html xmlns:o="urn:schemas-microsoft-com:office:office"
+        xmlns:x="urn:schemas-microsoft-com:office:excel"
+        xmlns="http://www.w3.org/TR/REC-html40">
+  <head>
+    <meta charset="UTF-8">
+    <style>
+      table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:12pt}
+      th{background:#10213c;color:#fff;font-weight:bold;text-align:center;vertical-align:middle;border:1px solid #9fb0c8;padding:8px;white-space:nowrap}
+      td{border:1px solid #cdd7e5;padding:8px;vertical-align:middle;white-space:nowrap}
+      .sig{width:260px}
+    </style>
+  </head>
+  <body>
+    <table>
+      <colgroup>
+        <col style="width:95px"><col style="width:180px"><col style="width:90px">
+        <col style="width:90px"><col style="width:90px"><col style="width:90px"><col style="width:90px">
+        <col style="width:95px"><col style="width:110px"><col style="width:110px">
+        <col style="width:115px"><col style="width:145px"><col style="width:145px">
+        <col style="width:110px"><col style="width:130px"><col style="width:260px">
+      </colgroup>
+      <thead><tr>
+        <th>Date</th><th>Employee</th><th>Shift</th>
+        <th>Clock In 1</th><th>Clock Out 1</th><th>Clock In 2</th><th>Clock Out 2</th>
+        <th>Total Hours</th><th>Paid Tips</th><th>Tip Card Fee</th>
+        <th>Busser AM</th><th>Busser PM</th><th>Busser Total</th><th>Bar Tip Out / Received</th>
+        <th>Total Tip Before Meal</th><th>Cash Tip</th><th>Meal</th><th>Total Paid Out</th><th>Grand Total (Total Before Meal + Cash Tip)</th><th>Signature</th>
+      </tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+  </body></html>`;
+
+  return new Blob([html],{type:"application/vnd.ms-excel"});
+}
+
+window.downloadSmallReportXls=function(){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const rows=smallReportFilteredRows();
+  if(!rows.length){alert("No Daily Report data for this filter.");return;}
+  const date=$("smallReportDate")?.value||todayLocal();
+  downloadBlob(smallReportHtmlXlsBlob(rows),`Fred_Zhang_Small_Report_${date}.xls`);
+};
+
+window.shareSmallReportXls=async function(target){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const rows=smallReportFilteredRows();
+  if(!rows.length){alert("No Daily Report data for this filter.");return;}
+  const date=$("smallReportDate")?.value||todayLocal();
+  await shareReportFile(smallReportHtmlXlsBlob(rows),`Fred_Zhang_Small_Report_${date}.xls`,target);
+};
+
+
+function finalGroupId(name){
+  return "finalName_"+Array.from(new TextEncoder().encode(name))
+    .map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+
+function syncOwnerFinalControls(){
+  const b=$("clearAllFinalBtn");
+  if(b) b.classList.toggle("hidden", currentProfile?.role!=="owner");
+}
+
+window.clearAllFinalDailyReports=async function(){
+  if(currentProfile?.role!=="owner"){
+    alert("Owner only.");
+    return;
+  }
+  if(!latestHourlyReports.length){
+    alert("No Final Daily Reports to clear.");
+    return;
+  }
+  if(!confirm(`CLEAR ALL FINAL DAILY REPORTS?\n\nDelete ${latestHourlyReports.length} finalized report(s)?\n\nOWNER ONLY — this cannot be undone.`)) return;
+
+  try{
+    const rows=[...latestHourlyReports];
+    for(const r of rows){
+      await deleteDoc(doc(db,"hourlyReports",r.id));
+      if(r.sourceSubmissionId){
+        try{
+          await updateDoc(doc(db,"submissions",r.sourceSubmissionId),{
+            status:"archived",
+            hourlyStatus:"cleared_by_owner",
+            hourlyReportId:"",
+            updatedAt:serverTimestamp()
+          });
+        }catch(e){console.warn(e);}
+        try{ await deleteDoc(doc(db,"moneyReadyBoard",r.sourceSubmissionId)); }catch(e){console.warn(e);}
+      }
+    }
+    try{ await writeAudit("final_daily_clear_all","ALL","",{count:rows.length}); }catch(e){}
+    alert("Final Daily Report cleared.");
+  }catch(e){
+    alert(`Clear All failed: ${e.code||e.message}`);
+  }
+};
+
+
+
+
+let pendingPickup=null;
+let pickupSignatureStrokes=[];
+let pickupDrawing=false;
+let pickupCurrentStroke=null;
+
+function pickupCanvas(){
+  return $("pickupSignatureCanvas");
+}
+function pickupCanvasPoint(evt){
+  const c=pickupCanvas();
+  const rect=c.getBoundingClientRect();
+  const clientX=evt.touches?.[0]?.clientX ?? evt.clientX;
+  const clientY=evt.touches?.[0]?.clientY ?? evt.clientY;
+  return {
+    x:Math.max(0,Math.min(1,(clientX-rect.left)/rect.width)),
+    y:Math.max(0,Math.min(1,(clientY-rect.top)/rect.height))
+  };
+}
+function redrawPickupSignature(){
+  const c=pickupCanvas();
+  if(!c) return;
+  const ctx=c.getContext("2d");
+  ctx.clearRect(0,0,c.width,c.height);
+  ctx.lineWidth=3;
+  ctx.lineCap="round";
+  ctx.lineJoin="round";
+  ctx.strokeStyle="#10213c";
+  pickupSignatureStrokes.forEach(stroke=>{
+    if(!stroke?.length) return;
+    ctx.beginPath();
+    stroke.forEach((p,i)=>{
+      const x=p.x*c.width, y=p.y*c.height;
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    });
+    ctx.stroke();
+  });
+}
+function initPickupSignatureCanvas(){
+  const c=pickupCanvas();
+  if(!c || c.dataset.ready==="1") return;
+  c.dataset.ready="1";
+
+  const startDraw=e=>{
+    e.preventDefault();
+    pickupDrawing=true;
+    pickupCurrentStroke=[pickupCanvasPoint(e)];
+    pickupSignatureStrokes.push(pickupCurrentStroke);
+    redrawPickupSignature();
+  };
+  const moveDraw=e=>{
+    if(!pickupDrawing) return;
+    e.preventDefault();
+    pickupCurrentStroke.push(pickupCanvasPoint(e));
+    redrawPickupSignature();
+  };
+  const endDraw=e=>{
+    if(!pickupDrawing) return;
+    e?.preventDefault?.();
+    pickupDrawing=false;
+    pickupCurrentStroke=null;
+  };
+
+  c.addEventListener("pointerdown",startDraw);
+  c.addEventListener("pointermove",moveDraw);
+  window.addEventListener("pointerup",endDraw);
+  c.addEventListener("touchstart",startDraw,{passive:false});
+  c.addEventListener("touchmove",moveDraw,{passive:false});
+  c.addEventListener("touchend",endDraw,{passive:false});
+}
+
+window.clearPickupSignature=function(){
+  pickupSignatureStrokes=[];
+  redrawPickupSignature();
+};
+
+window.cancelPickupSignature=function(){
+  pendingPickup=null;
+  pickupSignatureStrokes=[];
+  const m=$("pickupSignatureModal");
+  if(m){ m.classList.add("hidden"); m.style.setProperty("display","none","important"); }
+};
+
+window.markMoneyPickedUp=function(reportId,submissionId,employee){
+  if(!["manager","owner"].includes(currentProfile?.role||"")){
+    alert("Manager/Owner only.");
+    return;
+  }
+
+  const modal=$("pickupSignatureModal");
+  const employeeLabel=$("pickupSignatureEmployee");
+  if(!modal || !employeeLabel){
+    alert("Pickup signature screen failed to load. Please refresh this build.");
+    return;
+  }
+
+  pendingPickup={reportId,submissionId,employee};
+  pickupSignatureStrokes=[];
+  employeeLabel.textContent=`Employee: ${employee||""}`;
+  modal.classList.remove("hidden");
+  modal.style.setProperty("display","flex","important");
+  modal.style.visibility="visible";
+  modal.style.opacity="1";
+  initPickupSignatureCanvas();
+  setTimeout(()=>{
+    redrawPickupSignature();
+    pickupCanvas()?.scrollIntoView?.({block:"center",behavior:"smooth"});
+  },50);
+};
+
+window.submitPickupSignature=async function(){
+  if(!pendingPickup) return;
+
+  const pointCount=pickupSignatureStrokes.reduce((n,s)=>n+(s?.length||0),0);
+  if(pointCount<4){
+    alert("Please sign before saving the signature.");
+    return;
+  }
+
+  const {reportId,submissionId,employee}=pendingPickup;
+
+  try{
+    // Remove every board item matching this employee/report/submission.
+    const boardSnap=await getDocs(query(collection(db,"moneyReadyBoard"),limit(100)));
+    const employeeKey=String(employee||"").trim().toLowerCase();
+    const matches=boardSnap.docs.filter(d=>{
+      const r=d.data()||{};
+      return d.id===submissionId
+        || d.id===reportId
+        || String(r.submissionId||"")===String(submissionId||"")
+        || String(r.reportId||"")===String(reportId||"")
+        || (employeeKey && String(r.employee||"").trim().toLowerCase()===employeeKey);
+    });
+
+    for(const d of matches){
+      await deleteDoc(doc(db,"moneyReadyBoard",d.id));
+    }
+
+    const signaturePayload={
+      // Firestore-safe shape: no array directly inside another array.
+      strokes:pickupSignatureStrokes.map(stroke=>({
+        points:(stroke||[]).map(p=>({x:Number(p.x||0),y:Number(p.y||0)}))
+      })),
+      signedAtLocal:new Date().toISOString()
+    };
+
+    if(submissionId){
+      try{
+        await updateDoc(doc(db,"submissions",submissionId),{
+          pickupStatus:"picked_up",
+          pickedUpAt:serverTimestamp(),
+          pickedUpBy:employee||"",
+          pickedUpProcessedBy:currentProfile.displayName||currentProfile.username,
+          pickupSignature:signaturePayload,
+          updatedAt:serverTimestamp()
+        });
+      }catch(e){ console.warn("Submission pickup update:",e); }
+    }
+
+    if(reportId){
+      await updateDoc(doc(db,"hourlyReports",reportId),{
+        pickupStatus:"picked_up",
+        pickedUpAt:serverTimestamp(),
+        pickedUpBy:employee||"",
+        pickedUpProcessedBy:currentProfile.displayName||currentProfile.username,
+        pickupSignature:signaturePayload,
+        signatureStatus:"SIGNED"
+      });
+    }
+
+    try{
+      await writeAudit("money_picked_up_signed",reportId||submissionId||"",employee||"",{
+        submissionId:submissionId||"",
+        deletedBoardDocs:matches.length,
+        signaturePoints:pointCount
+      });
+    }catch(e){}
+
+    const pickupModal=$("pickupSignatureModal");
+    if(pickupModal){ pickupModal.classList.add("hidden"); pickupModal.style.setProperty("display","none","important"); }
+    pendingPickup=null;
+    pickupSignatureStrokes=[];
+
+    alert(`Signature saved for ${employee||"employee"}. Removed ${matches.length} matching Server Room board item(s).`);
+  }catch(e){
+    console.error("Picked Up:",e);
+    alert(`Picked Up failed: ${e.code||e.message}`);
+  }
+};
+
+function renderFinalDailyByName(){
+  syncOwnerFinalControls();
+  const el=$("finalDailyByName");
+  if(!el) return;
+
+  const rows=[...latestHourlyReports].sort((a,b)=>{
+    const n=(a.employee||"").localeCompare(b.employee||"");
+    return n || String(b.date||"").localeCompare(String(a.date||""));
+  });
+
+  if(!rows.length){
+    el.innerHTML='<div class="notice">No finalized reports yet.</div>';
+    return;
+  }
+
+  const groups={};
+  rows.forEach(r=>{
+    const name=r.employee||"Unknown Employee";
+    (groups[name]||(groups[name]=[])).push(r);
+  });
+
+  el.innerHTML=Object.entries(groups).map(([name,list])=>`
+    <div class="final-name-card">
+      <button class="final-name-row" type="button" onclick="toggleFinalEmployee('${encodeURIComponent(name)}')">
+        <div>
+          <div style="font-size:22px;font-weight:1000">${esc(name)}</div>
+          <div class="small">${list.length} report${list.length===1?"":"s"} • Latest ${esc(list[0]?.date||"")}</div>
+        </div>
+        <div style="font-size:24px">▾</div>
+      </button>
+      <div id="${finalGroupId(name)}" class="final-detail hidden">
+        ${list.map(r=>`
+          <article style="border-top:1px solid #edf0f4;padding:16px 0">
+            <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
+              <div>
+                <b style="font-size:18px">${esc(r.date||"")} • ${esc(r.shift||"")}</b>
+                <div class="small">${esc(r.position||"")} • MONEY READY ${Array.isArray(r.pickupSignature?.strokes)&&r.pickupSignature.strokes.length?"• Pickup Signature: SIGNED":""}</div>
+              </div>
+              <div class="actions">
+                <button class="btn light" type="button" onclick="editHourlyReport('${r.id}')">Edit</button>
+                <button class="btn light" type="button" onclick="window.republishMoneyReady('${r.id}')">Announce Again</button>
+                <button class="btn light" type="button"
+                  onclick="window.markMoneyPickedUp('${r.id}','${r.sourceSubmissionId||""}',this.dataset.employee)"
+                  data-employee="${esc(r.employee||"")}">Picked Up</button>
+                <button class="btn light" type="button" onclick="resendReportSms('${r.sourceSubmissionId||""}')">SMS Report</button>
+                <button class="btn red" type="button" onclick="deleteHourlyReport('${r.id}')">Delete</button>
+              </div>
+            </div>
+            <div class="grid3" style="margin-top:12px">
+              <div class="kpi"><span>Grand Total</span><b>${fmtMoney(r.grandTotal)}</b></div>
+              <div class="kpi"><span>Total AM</span><b>${fmtMoney(r.totalAM)}</b></div>
+              <div class="kpi"><span>Total PM</span><b>${fmtMoney(r.totalPM)}</b></div>
+              <div class="kpi"><span>Total Tips</span><b>${fmtMoney(r.totalTips)}</b></div>
+              <div class="kpi"><span>Paid Tip</span><b>${fmtMoney(r.paidTip)}</b></div>
+              <div class="kpi"><span>Busser Rate</span><b>${fmtPct(r.busserRate)}</b></div>
+              <div class="kpi"><span>Busser Tip Out</span><b>${fmtMoney(r.busserTipOut)}</b></div>
+              <div class="kpi"><span>Bar Tip Out</span><b>${fmtMoney(r.barTipOut)}</b></div>
+              ${String(r.position||"").toLowerCase()==="bartender"?`
+              <div class="kpi"><span>Bartender Shift</span><b>${esc((r.bartenderShiftType||"").replace("2PM_4PM","2 PM - 4 PM"))}</b></div>
+              <div class="kpi"><span>Server Sales Summary</span><b>${fmtMoney(r.bartenderServerGrandTotalSummary)}</b></div>
+              <div class="kpi"><span>Gross @ 0.6%</span><b>${fmtMoney(r.bartenderGrossBarTipOut)}</b></div>
+              <div class="kpi"><span>Less Bartender AM</span><b>${fmtMoney(r.bartenderLessAM)}</b></div>
+              <div class="kpi"><span>Less Bartender 2-4</span><b>${fmtMoney(r.bartenderLess24)}</b></div>
+              <div class="kpi"><span>Bar Tip Out Received</span><b>${fmtMoney(r.bartenderBarTipReceived)}</b></div>`:""}
+              <div class="kpi"><span>Meal</span><b>${fmtMoney(r.meal)}</b></div>
+              <div class="kpi"><span>Hourly Adjustment</span><b>${fmtMoney(r.adjustmentSalaryHourly)}</b></div>
+              <div class="kpi"><span>TOTAL PAID OUT</span><b>${fmtMoney(r.totalPaidOut)}</b></div>
+            </div>
+          </article>`).join("")}
+      </div>
+    </div>`).join("");
+}
+
+window.toggleFinalEmployee=function(encodedName){
+  const name=decodeURIComponent(encodedName);
+  const el=$(finalGroupId(name));
+  if(el) el.classList.toggle("hidden");
+};
+
+
+window.openStaffTab=function(name){
+  const btn=document.querySelector(`[data-stab="${name}"]`);
+  if(btn) btn.click();
+};
+
+
+let analyticsMetric="sales";
+let analyticsPeriod="daily";
+
+const ANALYTICS_METRICS={
+  sales:{label:"Sales",money:true,value:r=>Number(r.grandTotal||0)},
+  tip:{label:"Tip",money:true,value:r=>Number(r.totalBeforeMeal||0)+Number(r.cashTip||0)},
+  paidout:{label:"Paid Out",money:true,value:r=>Number(r.totalBeforeMeal||0)-Number(r.meal||0)},
+  cash:{label:"Cash Tip",money:true,value:r=>Number(r.cashTip||0)},
+  busser:{label:"Busser",money:true,value:r=>Number(r.busserTipOut||0)},
+  bar:{label:"Bar",money:true,value:r=>Math.max(0,Number(smallReportBarAmount(r)||0))},
+  tips:{label:"Paid Tips",money:true,value:r=>Number(r.paidTip||0)},
+  hours:{label:"Hours",money:false,value:r=>Number(r.totalHoursWork??r.totalHours??0)}
+};
+
+function analyticsDateObject(s){
+  const m=String(s||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m)return null;
+  return new Date(Number(m[1]),Number(m[2])-1,Number(m[3]),12,0,0);
+}
+function analyticsIso(d){
+  const z=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${z(d.getMonth()+1)}-${z(d.getDate())}`;
+}
+function analyticsWeekStart(dateStr){
+  const d=analyticsDateObject(dateStr); if(!d)return "";
+  const day=d.getDay();
+  const delta=(day+6)%7; // Monday
+  d.setDate(d.getDate()-delta);
+  return analyticsIso(d);
+}
+function analyticsMonthKey(dateStr){
+  return String(dateStr||"").slice(0,7);
+}
+function analyticsBucketKey(dateStr){
+  if(analyticsPeriod==="weekly")return analyticsWeekStart(dateStr);
+  if(analyticsPeriod==="monthly")return analyticsMonthKey(dateStr);
+  return String(dateStr||"");
+}
+function analyticsBucketLabel(key){
+  if(analyticsPeriod==="monthly"){
+    const [y,m]=key.split("-").map(Number);
+    if(!y||!m)return key;
+    return new Date(y,m-1,1).toLocaleDateString(undefined,{month:"short",year:"numeric"});
+  }
+  if(analyticsPeriod==="weekly"){
+    const d=analyticsDateObject(key);
+    return d?`Week of ${d.toLocaleDateString(undefined,{month:"short",day:"numeric"})}`:key;
+  }
+  const d=analyticsDateObject(key);
+  return d?d.toLocaleDateString(undefined,{month:"short",day:"numeric"}):key;
+}
+function analyticsValueText(v){
+  const cfg=ANALYTICS_METRICS[analyticsMetric]||ANALYTICS_METRICS.sales;
+  if(cfg.money)return fmtMoney(v);
+  return `${Number(v||0).toFixed(2)} h`;
+}
+function populateAnalyticsEmployeeFilter(){
+  const sel=$("analyticsEmployee"); if(!sel)return;
+  const current=sel.value||"";
+  const names=[...new Set(latestHourlyReports.map(r=>String(r.employee||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  sel.innerHTML='<option value="">All Employees</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
+  if(names.includes(current))sel.value=current;
+}
+function analyticsFilteredReports(){
+  const from=$("analyticsFrom")?.value||"";
+  const to=$("analyticsTo")?.value||"";
+  const employee=$("analyticsEmployee")?.value||"";
+  return latestHourlyReports.filter(r=>{
+    const d=String(r.date||"");
+    return d && (!from||d>=from) && (!to||d<=to) && (!employee||String(r.employee||"")===employee);
+  });
+}
+function analyticsSeries(){
+  const metric=ANALYTICS_METRICS[analyticsMetric]||ANALYTICS_METRICS.sales;
+  const buckets=new Map();
+  analyticsFilteredReports().forEach(r=>{
+    const key=analyticsBucketKey(r.date);
+    if(!key)return;
+    buckets.set(key,(buckets.get(key)||0)+Math.max(0,Number(metric.value(r)||0)));
+  });
+  return [...buckets.entries()]
+    .map(([key,value])=>({key,label:analyticsBucketLabel(key),value}))
+    .sort((a,b)=>a.key.localeCompare(b.key));
+}
+function analyticsNiceMax(max){
+  if(max<=0)return 1;
+  const pow=Math.pow(10,Math.floor(Math.log10(max)));
+  const n=max/pow;
+  const nice=n<=1?1:n<=2?2:n<=5?5:10;
+  return nice*pow;
+}
+function analyticsCompact(v){
+  const cfg=ANALYTICS_METRICS[analyticsMetric]||ANALYTICS_METRICS.sales;
+  if(!cfg.money)return Number(v).toFixed(v>=100?0:1);
+  const a=Math.abs(v);
+  if(a>=1e6)return `$${(v/1e6).toFixed(1)}M`;
+  if(a>=1e3)return `$${(v/1e3).toFixed(1)}K`;
+  return `$${Number(v).toFixed(0)}`;
+}
+
+window.setAnalyticsMetric=function(metric){
+  if(!ANALYTICS_METRICS[metric])return;
+  analyticsMetric=metric;
+  document.querySelectorAll("[data-chart-metric]").forEach(b=>b.classList.toggle("on",b.dataset.chartMetric===metric));
+  renderAnalyticsChart();
+};
+window.setAnalyticsPeriod=function(period){
+  if(!["daily","weekly","monthly"].includes(period))return;
+  analyticsPeriod=period;
+  document.querySelectorAll("[data-chart-period]").forEach(b=>b.classList.toggle("on",b.dataset.chartPeriod===period));
+  renderAnalyticsChart();
+};
+window.analyticsRangeDays=function(days){
+  const to=new Date();
+  const from=new Date();
+  from.setDate(to.getDate()-Math.max(0,Number(days)-1));
+  if($("analyticsTo"))$("analyticsTo").value=analyticsIso(to);
+  if($("analyticsFrom"))$("analyticsFrom").value=analyticsIso(from);
+  renderAnalyticsChart();
+};
+window.analyticsAllHistory=function(){
+  if($("analyticsFrom"))$("analyticsFrom").value="";
+  if($("analyticsTo"))$("analyticsTo").value="";
+  renderAnalyticsChart();
+};
+
+window.renderAnalyticsChart=function(){
+  const host=$("analyticsChart"); if(!host)return;
+  populateAnalyticsEmployeeFilter();
+
+  const data=analyticsSeries();
+  const cfg=ANALYTICS_METRICS[analyticsMetric]||ANALYTICS_METRICS.sales;
+  const employee=$("analyticsEmployee")?.value||"All Employees";
+
+  if($("analyticsMetricLabel"))$("analyticsMetricLabel").textContent=cfg.label;
+  if($("analyticsChartTitle"))$("analyticsChartTitle").textContent=`${cfg.label} Trend`;
+  if($("analyticsChartSubtitle"))$("analyticsChartSubtitle").textContent=`${analyticsPeriod[0].toUpperCase()+analyticsPeriod.slice(1)} • ${employee}`;
+
+  if(!data.length){
+    ["analyticsTotal","analyticsAverage","analyticsHigh","analyticsLastValue"].forEach(id=>{if($(id))$(id).textContent=analyticsValueText(0)});
+    if($("analyticsChange"))$("analyticsChange").textContent="—";
+    if($("analyticsHighLabel"))$("analyticsHighLabel").textContent="—";
+    host.innerHTML='<div class="analytics-empty"><b>No finalized report data</b><span>Change the date range or employee filter.</span></div>';
+    return;
+  }
+
+  const total=data.reduce((a,x)=>a+x.value,0);
+  const avg=total/data.length;
+  const high=data.reduce((a,x)=>x.value>a.value?x:a,data[0]);
+  const first=data[0].value,last=data[data.length-1].value;
+  const change=first===0?(last===0?0:null):((last-first)/Math.abs(first))*100;
+
+  if($("analyticsTotal"))$("analyticsTotal").textContent=analyticsValueText(total);
+  if($("analyticsAverage"))$("analyticsAverage").textContent=analyticsValueText(avg);
+  if($("analyticsHigh"))$("analyticsHigh").textContent=analyticsValueText(high.value);
+  if($("analyticsHighLabel"))$("analyticsHighLabel").textContent=high.label;
+  if($("analyticsLastValue"))$("analyticsLastValue").textContent=analyticsValueText(last);
+  if($("analyticsChange")){
+    $("analyticsChange").textContent=change===null?"NEW":`${change>=0?"+":""}${change.toFixed(1)}%`;
+    $("analyticsChange").classList.toggle("analytics-positive",change!==null&&change>=0);
+    $("analyticsChange").classList.toggle("analytics-negative",change!==null&&change<0);
+  }
+
+  const W=1000,H=420, pad={l:72,r:28,t:28,b:58};
+  const innerW=W-pad.l-pad.r, innerH=H-pad.t-pad.b;
+  const maxY=analyticsNiceMax(Math.max(...data.map(x=>x.value))*1.08);
+  const x=(i)=>data.length===1?pad.l+innerW/2:pad.l+(i/(data.length-1))*innerW;
+  const y=(v)=>pad.t+innerH-(Math.max(0,v)/maxY)*innerH;
+
+  const line=data.map((d,i)=>`${i===0?"M":"L"} ${x(i).toFixed(2)} ${y(d.value).toFixed(2)}`).join(" ");
+  const area=`M ${x(0).toFixed(2)} ${(pad.t+innerH).toFixed(2)} L ${data.map((d,i)=>`${x(i).toFixed(2)} ${y(d.value).toFixed(2)}`).join(" L ")} L ${x(data.length-1).toFixed(2)} ${(pad.t+innerH).toFixed(2)} Z`;
+
+  const yTicks=[0,.25,.5,.75,1].map(t=>{
+    const val=maxY*(1-t), yy=pad.t+innerH*t;
+    return `<g><line x1="${pad.l}" y1="${yy}" x2="${W-pad.r}" y2="${yy}" class="stock-grid-line"/><text x="${pad.l-12}" y="${yy+4}" text-anchor="end" class="stock-axis-text">${esc(analyticsCompact(val))}</text></g>`;
+  }).join("");
+
+  const maxLabels=window.innerWidth<600?4:window.innerWidth<900?6:10;
+  const step=Math.max(1,Math.ceil(data.length/maxLabels));
+  const xLabels=data.map((d,i)=>{
+    if(i%step!==0 && i!==data.length-1)return "";
+    return `<text x="${x(i)}" y="${H-20}" text-anchor="middle" class="stock-axis-text">${esc(d.label)}</text>`;
+  }).join("");
+
+  const points=data.map((d,i)=>`
+    <g class="stock-point-group">
+      <circle cx="${x(i)}" cy="${y(d.value)}" r="5" class="stock-point"/>
+      <circle cx="${x(i)}" cy="${y(d.value)}" r="14" class="stock-point-hit">
+        <title>${esc(d.label)} — ${esc(analyticsValueText(d.value))}</title>
+      </circle>
+    </g>`).join("");
+
+  host.innerHTML=`
+    <svg viewBox="0 0 ${W} ${H}" class="stock-svg" role="img" aria-label="${esc(cfg.label)} trend chart">
+      <defs>
+        <linearGradient id="stockAreaGradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#2563eb" stop-opacity=".28"/>
+          <stop offset="100%" stop-color="#2563eb" stop-opacity=".02"/>
+        </linearGradient>
+      </defs>
+      ${yTicks}
+      <path d="${area}" fill="url(#stockAreaGradient)"/>
+      <path d="${line}" class="stock-line"/>
+      ${points}
+      ${xLabels}
+    </svg>
+    <div class="stock-chart-foot"><span>${data.length} period${data.length===1?"":"s"}</span><span>Hover/tap a point for value</span></div>`;
+};
+
+function listenHourlyReports(){
+  const q=query(collection(db,"hourlyReports"),orderBy("createdAt","desc"),limit(1000));
+  unsubs.push(onSnapshot(q,snap=>{
+    latestHourlyReports=snap.docs.map(d=>({id:d.id,...d.data()}));
+    if(hourlyV1Mode)hv1RenderCards();
+    fzSyncPublicReportPortals(latestHourlyReports).catch(()=>{});
+    renderFinalDailyByName();
+    populateSmallReportEmployeeFilter();
+    renderSmallReport();
+    populateAnalyticsEmployeeFilter();
+    renderAnalyticsChart();
+    const legacy=$("hourlyReportsList");
+    if(legacy){
+      legacy.innerHTML="";
+      legacy.classList.add("hidden");
+    }
+  },e=>console.error("Hourly reports:",e)));
+}
+
+
+
+window.republishMoneyReady=async function(reportId){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  const r=latestHourlyReports.find(x=>x.id===reportId);
+  if(!r){alert("Report not found.");return;}
+  const submissionId=r.sourceSubmissionId||reportId;
+  try{
+    await setDoc(doc(db,"moneyReadyBoard",submissionId),{
+      employee:r.employee||"",
+      submissionId:r.sourceSubmissionId||"",
+      reportId:r.id,
+      message:"Money is ready. Please see the Manager on Duty.",
+      active:true,
+      createdAt:serverTimestamp(),
+      finalizedBy:currentProfile.displayName||currentProfile.username,
+      announceNonce:Date.now()
+    },{merge:true});
+    alert(`${r.employee||"Employee"} sent to Server Room Board.`);
+  }catch(e){
+    alert(`Board publish failed: ${e.code||e.message}. Publish the V10.1 Firestore rules.`);
+  }
+};
+
+window.resendReportSms=async function(submissionId){
+  if(!submissionId){alert("This report is not linked to an employee submission.");return;}
+  try{
+    const result=await resendMoneyReadySms({submissionId});
+    if(result?.data?.ok) alert(`SMS sent to ${result.data.phoneMasked||"employee"}.`);
+  }catch(e){
+    alert(`SMS failed: ${e.message||e.code}. Check Twilio setup.`);
+  }
+};
+
+window.editHourlyReport=function(id){
+  $("hourlyEditBanner")?.classList.remove("hidden");
+  const r=latestHourlyReports.find(x=>x.id===id); if(!r) return;
+  currentHourlyReportId=id;
+  hourlyAdjustmentChoice=null;
+  currentHourlySubmissionId=r.sourceSubmissionId||null;
+  $("hDate").value=r.date||todayLocal();
+  $("hEmployee").value=r.employee||"";
+  $("hPosition").value=r.position||"Server";
+  $("hShift").value=r.shift||"AM";
+  $("hBusserAM").value=r.busserAM||"WITH";
+  $("hMeal").value=Number(r.meal||0);
+  $("hGrandTotal").value=Number(r.grandTotal||0);
+  $("hTotalAM").value=Number(r.totalAM||0);
+  $("hPaidTip").value=Number(r.paidTip||0);
+  $("hCardFee").value=Number(r.payCardTipFee ?? r.cardFee ?? 0);
+  $("hCashTip").value=Number(r.cashTip||0);
+  $("hAmBar").value=(r.barSalesAM||r.amBarSales)?"yes":"no";
+  $("hPmBar").value=(r.barSalesPM||r.pmBarSales)?"yes":"no";
+  syncHourlyShift();
+  if(String(r.position||"").toLowerCase()==="bartender"){
+    if($("hBartenderShiftType")) $("hBartenderShiftType").value=r.bartenderShiftType||"AM";
+    if($("hBtPrevAMInput")) $("hBtPrevAMInput").value=Number(r.bartenderPreviousAMInput||r.bartenderLessAM||0)||"";
+    if($("hBtPrev24Input")) $("hBtPrev24Input").value=Number(r.bartenderPrevious24Input||r.bartenderLess24||0)||"";
+    const entries=Array.isArray(r.bartenderServerEntries)?r.bartenderServerEntries:[];
+    for(let i=1;i<=9;i++){
+      const e=entries.find(x=>Number(x.slot)===i)||entries[i-1]||{};
+      if($(`hBtServerName${i}`)){
+        const sel=$(`hBtServerName${i}`);
+        const savedName=e.name||"";
+        if(savedName && !Array.from(sel.options).some(o=>o.value===savedName)){
+          const opt=document.createElement("option");
+          opt.value=savedName;
+          opt.textContent=savedName;
+          sel.appendChild(opt);
+        }
+        sel.value=savedName;
+      }
+      if($(`hBtServerGrand${i}`)) $(`hBtServerGrand${i}`).value=Number(e.grandTotal||0)||"";
+    }
+    calculateBartenderBarTipOut();
+    hydrateHowBartenderState(
+      r.bartenderShiftType||"AM",
+      r.bartenderServerEntries||[],
+      r.bartenderPreviousAMInput||r.bartenderLessAM||0,
+      r.bartenderPrevious24Input||r.bartenderLess24||0
+    );
+  }
+  const hrs=r.hours||{};
+  $("hIn").value=hrs.hourIn||"";
+  $("hOut").value=hrs.hourOut||"";
+  $("hAmIn").value=hrs.hourInAM||"";
+  $("hAmOut").value=hrs.hourOutAM||"";
+  $("hPmIn").value=hrs.hourInPM||"";
+  $("hPmOut").value=hrs.hourOutPM||"";
+  document.querySelector('[data-stab="hourly"]')?.click();
+};
+
+window.deleteHourlyReport=async function(id){
+  if(!["manager","owner"].includes(currentProfile.role)) return;
+  if(!confirm("Delete this final hourly report?")) return;
+  try{
+    const ref=doc(db,"hourlyReports",id);
+    const s=await getDoc(ref);
+    const before=s.exists()?s.data():null;
+    await deleteDoc(ref);
+    if(before?.sourceSubmissionId){
+      await updateDoc(doc(db,"submissions",before.sourceSubmissionId),{
+        status:"hourly_pending",
+        hourlyStatus:"waiting_manager",
+        hourlyReportId:"",
+        updatedAt:serverTimestamp()
+      });
+    }
+    await writeAudit("hourly_report_delete",id,before?.employee||"",{before});
+  }catch(e){ alert(`Delete report failed: ${e.code||e.message}`); }
+};
+
+
+function applyAutomaticBusserRule(){
+  const date=$("hDate").value, shift=$("hShift").value;
+  const weekend=isWeekendDate(date);
+  if(shift==="AM"){
+    $("hBusserAM").value=weekend?"WITH":"WITHOUT";
+  }else if(["DOUBLE","LONG"].includes(shift)){
+    $("hBusserAM").value=weekend?"WITH":"WITHOUT";
+  }else{
+    $("hBusserAM").value="WITHOUT";
+  }
+}
+
+function syncHourlyShift(){
+  const shift=$("hShift").value;
+  const dbl=shift==="DOUBLE";
+  $("hSingleClock").classList.toggle("hidden",dbl);
+  $("hDoubleClock").classList.toggle("hidden",!dbl);
+  $("hTotalAMWrap").classList.toggle("hidden",!["DOUBLE","LONG"].includes(shift));
+  const busser=$("hBusserAM")?.closest("div");
+  if(busser) busser.classList.toggle("hidden",shift==="PM" || $("hPosition").value==="Bartender");
+  const am=$("hAmBar")?.closest("div"), pm=$("hPmBar")?.closest("div");
+  if(am) am.classList.toggle("hidden",!(shift==="AM"||dbl));
+  if(pm) pm.classList.toggle("hidden",!(shift==="PM"||dbl));
+  applyAutomaticBusserRule();
+  syncBartenderBarReceivedField();
+}
+$("hShift").addEventListener("change",syncHourlyShift);
+$("hPosition").addEventListener("change",syncHourlyShift);
+$("hDate").addEventListener("change",applyAutomaticBusserRule);
+
+
+
+
+
+function populateBartenderServerDropdowns(){
+  const names=getEmployeeRoster();
+  const options=names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join("");
+
+  for(let i=1;i<=9;i++){
+    const sel=$(`hBtServerName${i}`);
+    if(!sel) continue;
+
+    const previous=sel.value||"";
+    // Populate once only. Rebuilding a native SELECT while it is open causes
+    // the "must click quickly" problem on Chrome/tablets.
+    if(sel.dataset.rosterLoaded!=="1" || sel.dataset.rosterNames!==JSON.stringify(names)){
+      sel.innerHTML=`<option value="">Select Server ${i}</option>${options}`;
+      sel.dataset.rosterLoaded="1";
+      sel.dataset.rosterNames=JSON.stringify(names);
+    }
+
+    if(previous){
+      if(!Array.from(sel.options).some(o=>o.value===previous)){
+        const opt=document.createElement("option");
+        opt.value=previous;
+        opt.textContent=previous;
+        sel.appendChild(opt);
+      }
+      sel.value=previous;
+    }
+  }
+}
+
+function bartenderServerEntries(){
+  const out=[];
+  for(let i=1;i<=9;i++){
+    const name=String($(`hBtServerName${i}`)?.value||"").trim();
+    const grandTotal=Number($(`hBtServerGrand${i}`)?.value||0);
+    out.push({slot:i,name,grandTotal:Number.isFinite(grandTotal)?grandTotal:0});
+  }
+  return out;
+}
+
+function isBartenderReport(report){
+  return String(report?.position||'').trim().toLowerCase()==='bartender';
+}
+function reportForWorkPosition(report){
+  if(isBartenderReport(report))return report;
+  // Explicit empty values also clear old Firestore fields when an existing
+  // report is updated from Bartender to Server. Preserve server deductions,
+  // cash, payout and every unrelated field.
+  return {...report,bartenderCheckpoints:[],bartenderPeriodReceipts:[],bartenderReceiptsSource:'',
+    bartenderShiftType:'',bartenderServerEntries:[],bartenderServerGrandTotalSummary:0,
+    bartenderGrossBarTipOut:0,bartenderLessAM:0,bartenderLess24:0,
+    bartenderPreviousAMInput:0,bartenderPrevious24Input:0,bartenderBarTipReceived:0};
+}
+function bartenderReceiptPeriods(report){
+  if(!isBartenderReport(report))return [];
+  const allowed=["AM","2PM_4PM","PM"],byPeriod=new Map();
+  for(const row of report?.bartenderPeriodReceipts||[]){
+    if(allowed.includes(row?.checkpoint) && Number.isFinite(Number(row.amount)))
+      byPeriod.set(row.checkpoint,{checkpoint:row.checkpoint,amount:howRoundCent(Math.max(0,Number(row.amount)))});
+  }
+  return allowed.filter(key=>byPeriod.has(key)).map(key=>byPeriod.get(key));
+}
+function bartenderPeriodLabel(key){return key==="2PM_4PM"?"2–4":key;}
+function bartenderPeriodAmount(report,key){
+  if(!isBartenderReport(report))return 0;
+  const periods=bartenderReceiptPeriods(report);
+  if(periods.length)return periods.find(p=>p.checkpoint===key)?.amount||0;
+  return String(report?.bartenderShiftType||"")===key?Number(report?.bartenderBarTipReceived||0):0;
+}
+function howAssignedBartenderReceipts(){
+  if(String($("hPosition")?.value||"").toLowerCase()!=="bartender")return null;
+  const name=String($("hEmployee")?.value||"").trim(),date=$("hDate")?.value||"";
+  if(!name || !date)return null;
+  const matches=n=>String(n||"").trim().toLowerCase()===name.toLowerCase();
+  const saved=(latestHourlyReports||[]).find(r=>r.id===currentHourlyReportId && matches(r.employee) && r.date===date);
+  let batch;try{batch=JSON.parse(localStorage.getItem(HV1_STORAGE_PREFIX+date)||"null")}catch{batch=null}
+  if(batch?.bar){
+    const assigned=["AM","2PM_4PM","PM"].filter(key=>matches(batch.bar[key]?.bartender));
+    const previousAssignment=batch.drafts?.[name]?.barAutoReceived || bartenderReceiptPeriods(saved).length;
+    if(assigned.length || previousAssignment){
+      const periods=assigned.map(checkpoint=>({checkpoint,amount:hv1BarReceived(checkpoint,batch)}));
+      return {source:"BAR_CENTER",periods,total:howRoundCent(periods.reduce((sum,p)=>sum+p.amount,0))};
+    }
+    return null;
+  }
+  const periods=bartenderReceiptPeriods(saved);
+  return periods.length?{source:"SAVED_REPORT",periods,total:howRoundCent(periods.reduce((sum,p)=>sum+p.amount,0))}:null;
+}
+function howBartenderReceiptsHtml(receipts){
+  return `<div class="how-info"><b>${receipts.source==="BAR_CENTER"?"Assigned BAR periods":"Saved report periods"}</b><br>${receipts.source==="BAR_CENTER"?"Each assigned period is included once. Edit assignments or sales in BAR Center.":"The saved period breakdown is retained while BAR Center data is unavailable."}</div>
+    <div class="how-summary">
+      ${receipts.periods.map(p=>`<div><small>BAR ${bartenderPeriodLabel(p.checkpoint)} Received</small><b>${howMoney(p.amount)}</b></div>`).join("")}
+      <div style="grid-column:1 / -1;background:#edf8f2"><small>TOTAL BAR TIP OUT RECEIVED</small><b>${howMoney(receipts.total)}</b></div>
+    </div>`;
+}
+
+function previousBartenderReceived(date,type){
+  const matches=(latestHourlyReports||[])
+    .filter(r=>String(r.position||"").toLowerCase()==="bartender" && String(r.date||"")===String(date||""))
+    .filter(r=>{
+      const periods=bartenderReceiptPeriods(r);
+      if(periods.length)return periods.some(p=>p.checkpoint===type);
+      const bt=String(r.bartenderShiftType||"");
+      return bt===type || (!bt && type==="AM" && String(r.shift||"").toUpperCase()==="AM");
+    }).sort((a,b)=>(b.updatedAt?.seconds||b.createdAt?.seconds||0)-(a.updatedAt?.seconds||a.createdAt?.seconds||0));
+  const report=matches[0];
+  if(!report)return 0;
+  return bartenderReceiptPeriods(report).length?bartenderPeriodAmount(report,type):Number(report.bartenderBarTipReceived||0);
+}
+
+window.calculateBartenderBarTipOut=function calculateBartenderBarTipOut(){
+  const isBartender=String($("hPosition")?.value||"").toLowerCase()==="bartender";
+  if(!isBartender) return {
+    bartenderShiftType:"",serverEntries:[],serverGrandTotalSummary:0,
+    grossBarTipOut:0,lessBartenderAM:0,lessBartender24:0,bartenderBarTipReceived:0
+  };
+
+  const type=$("hBartenderShiftType")?.value||"AM";
+  const date=$("hDate")?.value||"";
+  const enteredEntries=bartenderServerEntries();
+  const snapshot=howBartenderState[type]?.barCenterCalculation;
+  const inputKey=hv1BarFormKey({servers:enteredEntries,
+    previousAM:$("hBtPrevAMInput")?.value,previous24:$("hBtPrev24Input")?.value});
+  const managed=snapshot && snapshot.checkpoint===type && snapshot.inputKey===inputKey;
+  const serverEntries=managed?snapshot.serverEntries:enteredEntries;
+  const summary=managed?snapshot.summary:serverEntries.reduce((s,r)=>s+Number(r.grandTotal||0),0);
+  const gross=managed?snapshot.gross:summary*0.006;
+
+  const lessAM=managed?snapshot.lessAM:(type==="AM" ? 0 : hv1BarNumber($("hBtPrevAMInput")?.value));
+  const less24=managed?snapshot.less24:(type==="PM" ? hv1BarNumber($("hBtPrev24Input")?.value) : 0);
+
+  if($("hBtPrevAMWrap")) $("hBtPrevAMWrap").classList.toggle("hidden",type==="AM");
+  if($("hBtPrev24Wrap")) $("hBtPrev24Wrap").classList.toggle("hidden",type!=="PM");
+
+  let finalReceived=type==="AM" ? gross
+    : type==="2PM_4PM" ? gross-lessAM
+    : gross-lessAM-less24;
+
+  finalReceived=Math.max(0,managed?snapshot.finalReceived:finalReceived);
+
+  if($("hBtServerSummary")) $("hBtServerSummary").textContent=fmtMoney(summary);
+  if($("hBtGross")) $("hBtGross").textContent=fmtMoney(gross);
+  if($("hBtLessAM")) $("hBtLessAM").textContent=fmtMoney(lessAM);
+  if($("hBtLess24")) $("hBtLess24").textContent=fmtMoney(less24);
+  if($("hBtFinal")) $("hBtFinal").textContent=fmtMoney(finalReceived);
+  if($("hBartenderBarReceived")) $("hBartenderBarReceived").value=finalReceived.toFixed(2);
+  if($("hBtFormulaCheck")){
+    const label=type==="AM"
+      ? `${fmtMoney(summary)} × 0.6% = ${fmtMoney(finalReceived)}`
+      : type==="2PM_4PM"
+        ? `${fmtMoney(summary)} × 0.6% = ${fmtMoney(gross)} − Bartender AM ${fmtMoney(lessAM)} = ${fmtMoney(finalReceived)}`
+        : `${fmtMoney(summary)} × 0.6% = ${fmtMoney(gross)} − Bartender AM ${fmtMoney(lessAM)} − Bartender 2-4 ${fmtMoney(less24)} = ${fmtMoney(finalReceived)}`;
+    $("hBtFormulaCheck").textContent=label;
+  }
+
+  return {
+    bartenderShiftType:type,
+    serverEntries,
+    serverGrandTotalSummary:summary,
+    grossBarTipOut:gross,
+    lessBartenderAM:lessAM,
+    lessBartender24:less24,
+    bartenderPreviousAMInput:lessAM,
+    bartenderPrevious24Input:less24,
+    bartenderBarTipReceived:finalReceived
+  };
+}
+
+function syncBartenderBarReceivedField(){
+  const wrap=$("hBartenderBarReceivedWrap");
+  if(!wrap) return;
+  const isBartender=String($("hPosition")?.value||"").toLowerCase()==="bartender";
+  wrap.classList.toggle("hidden",!isBartender);
+  if(isBartender) populateBartenderServerDropdowns();
+  if(!isBartender){
+    if($("hBartenderBarReceived")) $("hBartenderBarReceived").value="0";
+    return;
+  }
+  calculateBartenderBarTipOut();
+}
+
+
+$("hBartenderShiftType")?.addEventListener("change",window.calculateBartenderBarTipOut);
+for(let i=1;i<=9;i++){
+  $(`hBtServerGrand${i}`)?.addEventListener("input",window.calculateBartenderBarTipOut);
+  $(`hBtServerName${i}`)?.addEventListener("change",window.calculateBartenderBarTipOut);
+}
+
+// Extra delegated listener makes the bartender calculation reliable on shared tablets/Chrome,
+// even if a field was rebuilt or restored after initial page load.
+document.addEventListener("input",e=>{
+  if(/^hBtServerGrand[1-9]$/.test(e.target?.id||"")) window.calculateBartenderBarTipOut();
+});
+document.addEventListener("change",e=>{
+  const id=e.target?.id||"";
+  if(id==="hBartenderShiftType" || /^hBtServerName[1-9]$/.test(id)) window.calculateBartenderBarTipOut();
+});
+$("hBtPrevAMInput")?.addEventListener("input",window.calculateBartenderBarTipOut);
+$("hBtPrev24Input")?.addEventListener("input",window.calculateBartenderBarTipOut);
+
+window.calculateHourlyV01=function(){
+  const workProfile=applyWorkProfilePosition();
+  const isBartenderNow=String($("hPosition")?.value||"").toLowerCase()==="bartender";
+  let bartenderWizardSnapshot=null;
+
+  if(isBartenderNow){
+    // Step-6 data was already captured when leaving Step 6.
+    // Step 7 has no bartender server fields, so NEVER recapture here.
+    bartenderWizardSnapshot=howBartenderFormula();
+  }
+
+  const L=window.FredTipCalculatorLogic;
+  if(!L){ alert("Tip Calculation calculation engine is unavailable."); return null; }
+  howSyncLongBusserForm();
+  const shift=$("hShift").value;
+  const hours=shift==="DOUBLE" ? {
+    hourInAM:$("hAmIn").value,
+    hourOutAM:$("hAmOut").value,
+    hourInPM:$("hPmIn").value,
+    hourOutPM:$("hPmOut").value
+  } : {
+    hourIn:$("hIn").value,
+    hourOut:$("hOut").value
+  };
+  if(!$("hEmployee").value || !$("hDate").value){alert("Choose employee and date.");return null;}
+  if(!(L.calculateTotalMinutes(shift,hours)>0)){alert("Enter valid clock times with positive working hours.");return null;}
+  for(const id of ["hGrandTotal","hPaidTip","hCardFee","hCashTip","hMeal"]){
+    const raw=String($(id)?.value??"").trim(),amount=L.parseMoney(raw,NaN);
+    if(raw==="" || !Number.isFinite(amount) || amount<0){alert("Enter a valid non-negative amount for "+id.slice(1)+". Use 0 when appropriate.");return null;}
+  }
+  if(["DOUBLE","LONG"].includes(shift)){
+    const raw=String($("hTotalAM")?.value??"").trim(),am=L.parseMoney(raw,NaN);
+    if(raw==="" || !Number.isFinite(am) || am<0 || am>L.parseMoney($("hGrandTotal").value)){
+      alert("Total AM must be between 0 and Grand Total.");return null;
+    }
+  }
+  lastHourlyResult=L.calculateReport({
+    date:$("hDate").value,
+    employee:$("hEmployee").value,
+    position:$("hPosition").value,
+    shift,
+    busserAM:$("hBusserAM").value,
+    hours,
+    grandTotal:$("hGrandTotal").value,
+    totalAM:$("hTotalAM").value,
+    paidTip:$("hPaidTip").value,
+    cardFee:$("hCardFee").value,
+    cashTip:$("hCashTip").value,
+    meal:$("hMeal").value,
+    amBarSales:$("hAmBar").value==="yes",
+    pmBarSales:$("hPmBar").value==="yes"
+  });
+
+  lastHourlyResult.barTipAM=lastHourlyResult.amBarTipOut||0;
+  lastHourlyResult.barTipPM=lastHourlyResult.pmBarTipOut||0;
+  // These fields used to be omitted for servers, leaving earlier bartender
+  // breakdowns in Firestore after updateDoc merged the new calculation.
+  lastHourlyResult.bartenderCheckpoints=[];
+  lastHourlyResult.bartenderPeriodReceipts=[];
+  lastHourlyResult.bartenderReceiptsSource='';
+
+  // Bartender Bar Tip Out Received:
+  // V13.5.2 uses the visible V13.5.1 Step-6 calculator as the authoritative source.
+  let bartenderBarTipReceived=0;
+  if(isBartenderNow && bartenderWizardSnapshot){
+    const d=howBartenderCurrent();
+    bartenderBarTipReceived=Number(bartenderWizardSnapshot.finalReceived||0);
+    const assignedReceipts=howAssignedBartenderReceipts();
+    if(assignedReceipts){
+      lastHourlyResult.bartenderCheckpoints=assignedReceipts.periods.map(p=>p.checkpoint);
+      lastHourlyResult.bartenderPeriodReceipts=assignedReceipts.periods.map(p=>({...p}));
+      lastHourlyResult.bartenderReceiptsSource=assignedReceipts.source;
+      bartenderBarTipReceived=assignedReceipts.total;
+    }
+
+
+
+    if(!Number.isFinite(bartenderBarTipReceived)){
+      alert("Bartender Bar Tip Out calculation is invalid. Please go BACK to Step 6 and review the server totals.");
+      return null;
+    }
+
+    lastHourlyResult.bartenderShiftType=howBartenderState.checkpoint||"";
+    lastHourlyResult.bartenderServerEntries=(bartenderWizardSnapshot.serverEntries||d.servers||[])
+      .map((row,i)=>({slot:i+1,name:String(row.name||""),grandTotal:Number(row.grandTotal||0)}))
+      .filter(row=>row.name || row.grandTotal>0);
+    lastHourlyResult.bartenderServerGrandTotalSummary=Number(bartenderWizardSnapshot.summary||0);
+    lastHourlyResult.bartenderGrossBarTipOut=Number(bartenderWizardSnapshot.gross||0);
+    lastHourlyResult.bartenderLessAM=Number(bartenderWizardSnapshot.lessAM||0);
+    lastHourlyResult.bartenderLess24=Number(bartenderWizardSnapshot.less24||0);
+    lastHourlyResult.bartenderPreviousAMInput=Number(d.previousAM||0);
+    lastHourlyResult.bartenderPrevious24Input=Number(d.previous24||0);
+    lastHourlyResult.bartenderBarTipReceived=bartenderBarTipReceived;
+    // V13.8.24-P16 hard guard: visible Step-6 result stays authoritative.
+    howSetSilent("hBartenderBarReceived",Number(bartenderBarTipReceived||0).toFixed(2));
+
+    // Keep the hidden field synchronized only for compatibility/report editing.
+    howSetSilent("hBartenderShiftType",howBartenderState.checkpoint||"AM");
+    howSetSilent("hBartenderBarReceived",bartenderBarTipReceived.toFixed(2));
+  }else{
+    lastHourlyResult.bartenderShiftType="";
+    lastHourlyResult.bartenderServerEntries=[];
+    lastHourlyResult.bartenderServerGrandTotalSummary=0;
+    lastHourlyResult.bartenderGrossBarTipOut=0;
+    lastHourlyResult.bartenderLessAM=0;
+    lastHourlyResult.bartenderLess24=0;
+    lastHourlyResult.bartenderPreviousAMInput=0;
+    lastHourlyResult.bartenderPrevious24Input=0;
+    lastHourlyResult.bartenderBarTipReceived=0;
+  }
+
+  if(bartenderBarTipReceived>0){
+    // Added to bartender payout. Cash Tip is still excluded from TOTAL PAID OUT.
+    lastHourlyResult.grandTotalTip=Number(lastHourlyResult.grandTotalTip||0)+bartenderBarTipReceived;
+    lastHourlyResult.totalBeforeMeal=Number(lastHourlyResult.totalBeforeMeal||0)+bartenderBarTipReceived;
+    lastHourlyResult.grandTotalAfterAdjustment=Number(lastHourlyResult.grandTotalAfterAdjustment||0)+bartenderBarTipReceived;
+    lastHourlyResult.totalPaidOut=Number(lastHourlyResult.totalPaidOut||0)+bartenderBarTipReceived;
+  }
+
+
+  // Tip Calculation BAR Center server override.
+  // Same 0.6% rate; this simply supplies the checkpoint split automatically.
+  if(hourlyV1Mode && hv1EditingEmployee && !isBartenderNow){
+    const bd=hv1ServerBarCalculationValues(hv1EditingEmployee);
+    if(bd){
+      const newBar=Number(bd.totalFee||0);
+      const oldBar=Number(lastHourlyResult.barTipOut||0);
+      const delta=newBar-oldBar;
+      lastHourlyResult.barTipAM=Number(bd.amFee||0);
+      lastHourlyResult.barTipPM=Number(bd.fee24||0)+Number(bd.pmFee||0);
+      lastHourlyResult.barTip24=Number(bd.fee24||0);
+      lastHourlyResult.barTipOut=newBar;
+      lastHourlyResult.barBreakdown={
+        amGrandTotal:Number(bd.amGT||0),
+        grandTotal24:Number(bd.gt24||0),
+        pmGrandTotal:Number(bd.pmGT||0),
+        amFee:Number(bd.amFee||0),
+        fee24:Number(bd.fee24||0),
+        pmFee:Number(bd.pmFee||0)
+      };
+      // Engine already deducted its original barTipOut. Apply only the difference.
+      if(Math.abs(delta)>0.000001){
+        ['grandTotalTip','totalBeforeMeal','grandTotalAfterAdjustment','totalPaidOut'].forEach(k=>{
+          lastHourlyResult[k]=Number(lastHourlyResult[k]||0)-delta;
+        });
+      }
+    }
+  }
+
+  // V13.8.24-P16 Busser split. Preserve the existing V01 total busser formula,
+  // but show/store the amount separately as Busser AM and Busser PM.
+  {
+    const br=Number(lastHourlyResult.busserRate||0)/100;
+    const totalBusser=Math.max(0,Number(lastHourlyResult.busserTipOut||0));
+    const resultShift=String(lastHourlyResult.shift||shift||"").toUpperCase();
+    let busserAM=0,busserPM=0;
+
+    if(String(lastHourlyResult.position||"").toLowerCase()==="bartender"){
+      busserAM=0; busserPM=0;
+    }else if(resultShift==="PM"){
+      busserPM=totalBusser;
+    }else if(["DOUBLE","LONG"].includes(resultShift)){
+      const totalAM=Math.max(0,Number(lastHourlyResult.totalAM||0));
+      const withBusserAM=String($("hBusserAM")?.value||"WITHOUT").toUpperCase()==="WITH";
+      const expectedAM=withBusserAM?Math.max(0,totalAM*br):0;
+      busserAM=Math.min(totalBusser,expectedAM);
+      busserPM=Math.max(0,totalBusser-busserAM);
+    }else{
+      busserAM=totalBusser;
+    }
+
+    lastHourlyResult.busserTipOutAM=busserAM;
+    lastHourlyResult.busserTipOutPM=busserPM;
+  }
+
+  // V13.8.25: V13.8.18/P24 payout contract, after all BAR overrides.
+  lastHourlyResult.grandTotalTip=L.roundCent(lastHourlyResult.totalBeforeMeal+lastHourlyResult.cashTip);
+  const savedDecision=currentHourlyReportId
+    ? latestHourlyReports.find(row=>row.id===currentHourlyReportId
+      && hourlyReportBelongsTo(row,lastHourlyResult.employee,lastHourlyResult.date)) : null;
+  const choice=hourlyReportBelongsTo(hourlyAdjustmentChoice,lastHourlyResult.employee,lastHourlyResult.date)
+    && hourlyAdjustmentChoice.reportId===String(currentHourlyReportId||'') ? hourlyAdjustmentChoice : null;
+  const override=choice?null:(savedDecision && Object.prototype.hasOwnProperty.call(savedDecision,'adjustmentOverride')
+    ? savedDecision.adjustmentOverride : savedDecision?.adjustmentDecision==='ACCEPTED'?savedDecision.adjustmentSalaryHourly:null);
+  const adjustment=L.calculateHourlyAdjustment({
+    ...lastHourlyResult,
+    adjustmentDecision:choice?.decision||savedDecision?.adjustmentDecision,
+    adjustmentOverride:override
+  });
+  Object.assign(lastHourlyResult,adjustment);
+  lastHourlyResult.adjustmentOverride=override;
+  lastHourlyResult.adjustmentPayoutVersion="13.8.29";
+  lastHourlyResult.grandTotalAfterAdjustment=L.roundCent(lastHourlyResult.grandTotalTip+adjustment.adjustmentSalaryHourly);
+  lastHourlyResult.totalPaidOutBeforeAdjustment=L.roundCent(Math.max(0,lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal));
+  lastHourlyResult.totalPaidOut=L.roundCent(Math.max(0,lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal+adjustment.adjustmentSalaryHourly));
+  lastHourlyResult.formulaVersion="13.8.29";
+  lastHourlyResult.payoutFormula="Total Before Meal - Meal + Accepted Adjustment";
+  lastHourlyResult.hours={...hours};
+
+  // Pay Card Tip Fee: manager input is authoritative.
+  // This avoids legacy V01 naming differences (cardFee vs payCardTipFee).
+  const enteredCardFee=L.parseMoney($("hCardFee")?.value||0);
+  lastHourlyResult.cardFee=enteredCardFee;
+  lastHourlyResult.payCardTipFee=enteredCardFee;
+
+  if(shift==="LONG" && !isBartenderNow){
+    const weekend=isWeekendDate(lastHourlyResult.date);
+    lastHourlyResult.busserSalesThrough4PM=lastHourlyResult.totalAM;
+    lastHourlyResult.salesWithoutBusser=weekend?0:lastHourlyResult.totalAM;
+    lastHourlyResult.busserSalesBasis=weekend?lastHourlyResult.grandTotal:lastHourlyResult.totalPM;
+    lastHourlyResult.busserPolicyVersion="LONG_MON_FRI_BAR_2_4_V1";
+  }
+  if(workProfile){lastHourlyResult.personName=workProfile.personName;lastHourlyResult.workProfile=workProfile.name;}
+  const r=lastHourlyResult;
+  const m=fmtMoney, p=fmtPct;
+  $("hrHours").textContent=r.totalHoursWork==null?"—":Number(r.totalHoursWork).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+  $("hrGrandTotal").textContent=m(r.grandTotal);
+  $("hrTotalAM").textContent=m(r.totalAM);
+  $("hrTotalPM").textContent=m(r.totalPM);
+  $("hrTotalTips").textContent=m(r.totalTips);
+  $("hrCardFee").textContent=m(Number($("hCardFee")?.value||0));
+  $("hrPaidTip").textContent=m(r.paidTip);
+  $("hrBusserRate").textContent=`${Number(r.busserRate||0).toFixed(2)}%`;
+  $("hrBusserTip").textContent=m(r.busserTipOut);
+  let busserSplitLine=$("hrBusserSplitLine");
+  if(!busserSplitLine){
+    busserSplitLine=document.createElement("div");
+    busserSplitLine.id="hrBusserSplitLine";
+    busserSplitLine.innerHTML='Busser AM <b id="hrBusserAM"></b> &nbsp; • &nbsp; Busser PM <b id="hrBusserPM"></b>';
+    $("hrBusserTip")?.parentElement?.insertAdjacentElement("afterend",busserSplitLine);
+  }
+  if($("hrBusserAM"))$("hrBusserAM").textContent=m(r.busserTipOutAM);
+  if($("hrBusserPM"))$("hrBusserPM").textContent=m(r.busserTipOutPM);
+  $("hrBarAM").textContent=m(r.barTipAM);
+  $("hrBarPM").textContent=m(r.barTipPM);
+  $("hrBarOut").textContent=m(r.barTipOut);
+  let bartenderReceivedLine=$("hrBartenderReceivedLine");
+  if(String(r.position||"").toLowerCase()==="bartender"){
+    if(!bartenderReceivedLine){
+      bartenderReceivedLine=document.createElement("div");
+      bartenderReceivedLine.id="hrBartenderReceivedLine";
+      bartenderReceivedLine.innerHTML='Bar Tip Out Received <b id="hrBartenderReceived"></b>';
+      $("hrBarOut").parentElement.insertAdjacentElement("afterend",bartenderReceivedLine);
+    }
+    $("hrBartenderReceived").textContent=m(r.bartenderBarTipReceived);
+    bartenderReceivedLine.classList.remove("hidden");
+  }else if(bartenderReceivedLine){
+    bartenderReceivedLine.classList.add("hidden");
+  }
+  $("hrBeforeMeal").textContent=m(r.totalBeforeMeal);
+  $("hrCashTip").textContent=m(r.cashTip);
+  $("hrGrandTip").textContent=m(r.grandTotalTip);
+  $("hrHourlyRate").textContent=m(r.hourlyRate);
+  $("hrMinimum").textContent=m(r.hourlyMinimum);
+  $("hrAdjustment").textContent=m(r.adjustmentSalaryHourly);
+  $("hrAfter").textContent=m(r.grandTotalAfterAdjustment);
+  $("hrMeal").textContent=m(r.meal);
+  $("hrPaidOut").textContent=m(r.totalPaidOut);
+  renderHourlyAdjustmentReview(r);
+  $("hourlyResult").classList.remove("hidden");
+  return r;
+};
+
+let hourlyFinalSaveInProgress=false;
+function hourlyAdjustmentReviewHtml(r){
+  const minutes=Number(r.totalMinutesWork);
+  const duration=r.totalMinutesWork!=null && Number.isFinite(minutes)
+    ? `${Math.floor(minutes/60)}h ${Math.round(minutes%60)}m`
+    : `${Number(r.totalHoursWork||0).toFixed(2)} hours`;
+  const candidate=Number(r.adjustmentCandidate||0),decision=r.adjustmentDecision||'PENDING';
+  return `<div class="how-card"><h3>Hourly Adjustment</h3>
+    <div class="how-summary">
+      <div><small>Hours × Hourly Rate</small><b>${esc(duration)} × ${fmtMoney(r.hourlyRate)}</b></div>
+      <div><small>Hourly Minimum</small><b>${fmtMoney(r.hourlyMinimum)}</b></div>
+      <div><small>Total Before Meal + Cash Tip</small><b>${fmtMoney(r.grandTotalTip)}</b></div>
+      <div><small>Adjustment Available</small><b>${fmtMoney(candidate)}</b></div>
+      <div><small>Status</small><b>${esc(candidate>0?decision:'NO ADJUSTMENT NEEDED')}</b></div>
+      <div><small>Adjustment Applied</small><b>${fmtMoney(r.adjustmentSalaryHourly)}</b></div>
+    </div>
+    ${candidate>0?`<p>Accept to add the adjustment to Total Paid Out. Cash Tip is already included in the minimum check.</p>
+      <div class="how-actions"><button type="button" class="btn green" onclick="setHourlyAdjustmentDecision('ACCEPTED')" aria-pressed="${decision==='ACCEPTED'}">ACCEPT ${fmtMoney(candidate)}</button>
+      <button type="button" class="btn light" onclick="setHourlyAdjustmentDecision('DECLINED')" aria-pressed="${decision==='DECLINED'}">DECLINE</button></div>`:''}
+  </div>`;
+}
+function renderHourlyAdjustmentReview(r){
+  const wizard=$('howAdjustmentReview'),legacy=$('hourlyAdjustmentReview');
+  if(wizard)wizard.innerHTML=hourlyAdjustmentReviewHtml(r);
+  if(legacy){legacy.innerHTML=hourlyAdjustmentReviewHtml(r);legacy.classList.toggle('hidden',hourlyWizardStep===7 && !!wizard);}
+}
+window.setHourlyAdjustmentDecision=function(decision){
+  if(!['manager','owner'].includes(currentProfile?.role||'') || hourlyFinalSaveInProgress || hv1LoadingEmployee)return;
+  if(!['ACCEPTED','DECLINED'].includes(decision))return;
+  captureHourlyWizard();
+  const r=calculateHourlyV01();if(!r || r.adjustmentCandidate<=0)return;
+  hourlyAdjustmentChoice={employee:r.employee,date:r.date,reportId:String(currentHourlyReportId||''),decision};
+  calculateHourlyV01();
+  if(hourlyV1Mode && hv1EditingEmployee)hv1CapturePage(false);
+};
+async function writeHourlyFinalForAccount(r,candidateId,submissionId){
+  const newRef=doc(collection(db,"hourlyReports"));
+  return runTransaction(db,async transaction=>{
+    const candidateRef=candidateId?doc(db,"hourlyReports",candidateId):null;
+    const snap=candidateRef?await transaction.get(candidateRef):null;
+    const before=snap?.exists()?snap.data():null;
+    const wasEditing=hourlyReportBelongsTo(before,r.employee,r.date);
+    // Verify both links before any write. A stale report/submission ID must
+    // never rename another work account's record or share its Money Ready row.
+    const sourceId=submissionId||(wasEditing?before.sourceSubmissionId:'')||'';
+    const sourceSnap=sourceId?await transaction.get(doc(db,"submissions",sourceId)):null;
+    const source=sourceSnap?.exists()?sourceSnap.data():null;
+    const sourceSubmissionId=hourlyReportBelongsTo(source,r.employee,r.date)?sourceId:'';
+    const ref=wasEditing?candidateRef:newRef;
+    const payload={...reportForWorkPosition(r),sourceSubmissionId,status:"money_ready",
+      employeeKey:fzEmployeeIdentityKey(r.employee),reportIdentityVersion:"13.8.28"};
+    if(sourceSubmissionId && source.employeeUid)payload.employeeUid=source.employeeUid;
+    if(wasEditing){
+      transaction.update(ref,{...payload,updatedAt:serverTimestamp(),
+        updatedBy:currentProfile.displayName||currentProfile.username});
+    }else{
+      transaction.set(ref,{...payload,createdAt:serverTimestamp(),createdByUid:currentUser.uid,
+        createdBy:currentProfile.displayName||currentProfile.username});
+    }
+    return {ref,wasEditing,sourceSubmissionId};
+  });
+}
+window.saveHourlyV01=async function(){
+  if(hourlyFinalSaveInProgress)return;
+  if(hv1LoadingEmployee){alert("Employee report is loading. Please wait.");return;}
+  if(hourlyV1Mode && hv1EditingEmployee
+    && ($("hEmployee")?.value!==hv1EditingEmployee || $("hDate")?.value!==hv1DateValue())){
+    alert("Employee/date does not match the open Team Board card. Reopen the correct employee card before submitting.");return;
+  }
+  const r=calculateHourlyV01();
+  if(!r) return;
+  hourlyFinalSaveInProgress=true;
+  const savingEmployee=r.employee,savingDate=r.date;
+  let savingSubmissionId=currentHourlySubmissionId;
+  let savingReportId=currentHourlyReportId;
+  let linkedSubmissionWarning="";
+  const savingFromTeam=hourlyV1Mode;
+  try{
+    const saved=await writeHourlyFinalForAccount(r,savingReportId,savingSubmissionId);
+    const {ref,wasEditing}=saved;
+    savingSubmissionId=saved.sourceSubmissionId;
+
+    savingReportId=ref.id;
+    if($("hEmployee")?.value===savingEmployee)currentHourlyReportId=ref.id;
+    const finalRow={...r,id:ref.id,status:"money_ready",sourceSubmissionId:savingSubmissionId||""};
+    latestHourlyReports=[finalRow,...latestHourlyReports.filter(x=>x.id!==ref.id)];
+    if(savingFromTeam)await hv1MarkFinal(ref.id,savingSubmissionId||"",savingEmployee,savingDate);
+
+
+    if(savingSubmissionId){
+      try{await updateDoc(doc(db,"submissions",savingSubmissionId),{
+        status:"money_ready",
+        hourlyStatus:"finalized",
+        hourlyReportId:ref.id,
+        finalReport:{
+          grandTotal:Number(r.grandTotal||0),
+          totalAM:Number(r.totalAM||0),
+          totalPM:Number(r.totalPM||0),
+          meal:Number(r.meal||0),
+          cashTip:Number(r.cashTip||0),
+          paidTip:Number(r.paidTip||0),
+          busserRate:Number(r.busserRate||0),
+          busserTipOut:Number(r.busserTipOut||0),
+          busserTipOutAM:Number(r.busserTipOutAM||0),
+          busserTipOutPM:Number(r.busserTipOutPM||0),
+          barTipOut:Number(r.barTipOut||0),
+    bartenderBarTipReceived:Number(r.bartenderBarTipReceived||0),
+    bartenderPeriodReceipts:bartenderReceiptPeriods(r),
+          grandTotalTip:Number(r.grandTotalTip||0),
+          hourlyRate:Number(r.hourlyRate||0),
+          hourlyMinimum:Number(r.hourlyMinimum||0),
+          adjustmentCandidate:Number(r.adjustmentCandidate||0),
+          adjustmentDecision:r.adjustmentDecision||"NONE",
+          adjustmentPayoutVersion:r.adjustmentPayoutVersion||"",
+          adjustmentSalaryHourly:Number(r.adjustmentSalaryHourly||0),
+          grandTotalAfterAdjustment:Number(r.grandTotalAfterAdjustment||0),
+          totalPaidOut:Number(r.totalPaidOut||0)
+        },
+        finalizedBy:currentProfile.displayName||currentProfile.username,
+        finalizedAt:serverTimestamp(),
+        updatedAt:serverTimestamp()
+      });}catch(e){
+        console.warn("Final report saved; linked submission sync failed:",e);
+        linkedSubmissionWarning="Final report is saved. The linked submission could not sync; reopen the saved report and submit again to retry the link. Do not create another report.";
+      }
+    }
+
+    // Optional actions must NOT cause Final Submit to fail.
+    try{
+      await writeAudit(wasEditing?"hourly_report_edit":"hourly_final_money_ready",
+        ref.id,r.employee,{after:r,sourceSubmissionId:savingSubmissionId||""});
+    }catch(e){ console.warn("Audit log skipped:",e); }
+
+    if(savingSubmissionId){
+      try{
+        const moneyReadyRef=doc(db,"moneyReadyBoard",savingSubmissionId);
+        await setDoc(moneyReadyRef,{
+          employee:r.employee||"",
+          submissionId:savingSubmissionId,
+          reportId:ref.id,
+          message:"Your tip money is ready. Please see the Manager on Duty.",
+          alert:true,
+          active:false,
+          announceNonce:Date.now(),
+          createdAt:serverTimestamp(),
+          finalizedBy:currentProfile.displayName||currentProfile.username
+        });
+
+        // Global dialogs on logged-out / Employee screens are published first.
+        await new Promise(resolve=>setTimeout(resolve,1200));
+        await updateDoc(moneyReadyRef,{active:true,boardActivatedAt:serverTimestamp()});
+      }catch(e){ console.warn("Money Ready board write skipped:",e); }
+    }
+
+    alert(wasEditing
+      ? "Final report updated. Daily Report refreshed. Existing report was edited — no duplicate created."
+      : "Final approved. Daily Report updated. Employee status: MONEY READY.");
+    if(linkedSubmissionWarning)alert(linkedSubmissionWarning);
+    if(!savingFromTeam){
+      openStaffTab("smallReport");
+      setTimeout(()=>renderSmallReport(),150);
+    }
+    if($("hEmployee")?.value===savingEmployee){currentHourlyReportId=null;currentHourlySubmissionId=null;hourlyAdjustmentChoice=null;}
+  }catch(e){
+    console.error("Final submit failed:",e);
+    alert(`Final Submit failed: ${e.code || e.message}`);
+  }finally{hourlyFinalSaveInProgress=false;}
+};
+
+window.exportCSV=function(){
+  const rows=[
+    ["Date","Employee","Position","Shift","Break","Clock","Grand Total","Total AM","Meal","Cash Tip","Status","Reviewed By"],
+    ...latestRows.map(r=>[
+      r.date,r.employee,r.position,r.shift,r.breakMode||"none",r.clock,
+      r.grandTotal||0,r.totalAM||0,r.meal||0,r.cashTip||0,r.status,r.reviewedBy||""
+    ])
+  ];
+  const csv=rows.map(row=>row.map(v=>`"${String(v??"").replaceAll('"','""')}"`).join(",")).join("\n");
+  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+  const a=document.createElement("a");
+  a.href=url; a.download="Juicy_Tip_Report.csv"; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+
+$("eDate").value=todayLocal();
+$("hDate").value=todayLocal();
+if($("smallReportDate")) $("smallReportDate").value="";
+populateRoster();
+refreshClockMode();
+syncHourlyShift();
+
+// V9.2 employee input improvements
+function fz24(id){
+ const e=document.getElementById(id); if(!e)return;
+ e.addEventListener("input",()=>{let d=e.value.replace(/\D/g,"").slice(0,4);e.value=d.length>2?d.slice(0,2)+":"+d.slice(2):d;});
+}
+["eIn","eOut","eContIn","eContOut","eAmIn","eAmOut","ePmIn","ePmOut"].forEach(fz24);
+["eGrandTotal","eTotalAM","eMeal","eCash"].forEach(id=>{
+ const e=document.getElementById(id); if(e)e.addEventListener("focus",()=>{if(Number(e.value)===0)setTimeout(()=>e.select(),0);});
+});
+
+// V9.3 workflow: approve -> hourly queue -> final money ready; final report edit/delete; fixed app user delete.
+
+// V9.4: employee Paid Tip field added; Total AM remains conditional for DOUBLE/LONG; formulas unchanged.
+
+// V9.5: employee live busser % for DOUBLE/LONG; Manager Review/Report submit routes same record into Hourly; final save triggers money_ready notification. V01 formulas unchanged.
+
+// V9.6: Paid Tip removed from employee; shift-sensitive WITH BAR AM/PM; Hourly result/report restored to V01-style fields and original FredTipCalculatorLogic engine.
+
+// V9.7: robust Employee Clear; finalized manager hourly calculation becomes employee-only final report with MONEY READY status.
+
+// V9.8: Server Room Money Ready Board + anonymous kiosk mode + automatic weekday/weekend busser rules.
+
+
+function fmtMoney(v){
+  return "$ " + Number(v||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function fmtPct(v){
+  return (Number(v||0)*100).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})+"%";
+}
+function selectZeroOnFocus(el){
+  if(!el) return;
+  el.addEventListener("focus",()=>{
+    const raw=String(el.value??"").trim();
+    if(raw==="" || Number(raw)===0) setTimeout(()=>el.select(),0);
+  });
+  el.addEventListener("click",()=>{
+    const raw=String(el.value??"").trim();
+    if(raw!=="" && Number(raw)===0) setTimeout(()=>el.select(),0);
+  });
+}
+["hGrandTotal","hTotalAM","hPaidTip","hCardFee","hCashTip","hMeal",
+ "mGrandTotal","mTotalAM","mPaidTip","mMeal","mCash",
+ "eGrandTotal","eTotalAM","eMeal","eCash"].forEach(id=>selectZeroOnFocus($(id)));
+
+// V9.9: Hourly queue duplicate delete; XLS/PDF sharing; automatic Money Ready SMS backend support.
+
+// V10.0: polished Hourly V01 UI, comma/space currency formatting, zero overwrite inputs, Final Daily Report, robust final submit.
+
+// V10.1: persistent Server Room Board, visible diagnostics, test chime, announce-again from Final Daily Report.
+
+// V10.3: separate Final Daily Report grouped by employee; draft autosave; queued global Money Ready overlays.
+
+// V10.4 FINAL: Final Daily Report is its own staff tab, grouped by employee; owner-only Clear All; final submit opens that tab.
+
+// V10.5: PDF rebuilt in legacy Fred Zhang one-employee-per-page report layout; XLS rebuilt as styled Excel XML matching legacy Daily Report columns. Busser Rate export fixed (1.500%, not 150%).
+
+// V10.7 REPORT STYLE: original Fred Zhang report layout restored; main PDF values 14pt; Excel Arial 14; network-first code cache.
+
+// V10.8: Employee can delete only their own non-final submission from Current / Pending Report.
+
+document.addEventListener("change",e=>{
+  if(e.target?.id==="hPosition") syncBartenderBarReceivedField();
+});
+
+// V10.9: Bartender-only Bar Tip Out Received is additional tip income and is included in final totals/reports.
+
+// V11.0 shared-tablet security and Money Ready cleanup.
+
+// V11.1: ALL authenticated roles use memory-only auth. Refresh/new tab/new window/shared link always requires fresh login.
+
+// V11.2: History soft delete + 3-day Undo/purge; Server Room cards auto-expire after 30 minutes.
+
+// V11.3: Owner History Delete All/Undo All; Picked Up deletes all matching board docs; board documents are physically deleted after 30 minutes.
+
+// V11.3.1: fixed missing getDocs import for Picked Up and History Delete All/Undo All.
+
+// V11.4: bartender AM / 2PM-4PM / PM server 1-9 Grand Total calculator using Fred formula at 0.6%; cash tip remains excluded from payout.
+
+// V11.5: Picked Up opens employee signature pad; signature strokes are stored and rendered into Final Report PDF.
+
+// V11.6: Bartender Server 1-9 names are dropdowns populated from active Employee accounts.
+
+// V11.6.1 fresh filename: forces Pickup Signature handler to load without stale app.js cache.
+
+// V11.6.2: Firestore-safe pickup signature storage + PDF signature rendering + bartender PDF spacing fix.
+
+// V11.7: full employee roster dropdown, stable select behavior, Firestore-safe pickup signature, clean PDF signature layout.
+
+// V11.7.1: PDF footer no-overlap; Picked Up By is the employee signer; processor retained separately.
+
+// V11.7.2: Picked Up By in PDF/report is always the employee whose tip report is being processed.
+
+// V11.8: reliable bartender 2-4/PM live calculation + explicit calculate button + formula check.
+
+// V11.9: Bartender previous AM and 2-4 tip-outs are manually entered by Manager; formulas use all server Grand Totals × 0.6%.
+
+// V12.0: bidirectional realtime sound/vibration/browser alerts for Employee <-> Manager/Owner while app is open.
+
+// V12.1: female-preferred English voice announcement for Money Ready in Server Room.
+
+// V12.1.1: browser voice warm-up/unlock support.
+
+// V12.1.2: delegated Picked Up / Announce Again buttons and defensive signature modal opening.
+
+window.__pickupBuild="12.1.4";
+console.log("Pickup signature build 12.1.4 loaded", typeof window.markMoneyPickedUp);
+
+// V12.1.4 clean rebuild from V12.1.2: direct Picked Up call, intact modal HTML.
+
+// V12.2: server-room audio session controls are handled by board-hotfix.js.
+
+setTimeout(()=>startGlobalMoneyReadyWatcher(),250);
+
+// V12.3: global Money Ready dialog on logged-out/employee views; bundled WAV chime; alert first, board activates after 900ms.
+
+// V12.4: separate anonymous Firebase alert session; primary Employee/Manager auth untouched; reliable global dialog token.
+
+// V12.4.1: Pay Card Tip Fee display/save normalization fix (V01 engine returns payCardTipFee).
+
+// V12.4.2: Pay Card Tip Fee hard fix. hCardFee input is authoritative for display/save.
+
+// V12.4.3: Busser Rate display fix only. 1.20 now renders as 1.20%, Busser Tip Out formula unchanged.
+
+// V13.0 PUSH STAGING: background FCM registration layer; stable V12.4.3 logic preserved.
+
+// V13.2: Check Tip workflow for Employee, Manager/Owner, Cashier, and Owner reporting.
+
+// V13.2.1: Quick Board table dropdown + cashier row results + callable-based Check Tip security fix.
+
+// V13.2.2: completed cashier reports persist; Cashier/Manager/Owner per-row review/edit/delete/reopen.
+
+window.__getTipCheckSheets=()=>latestTipCheckSheets; window.__refreshTipCheckSheets=()=>loadTipCheckSheets();
+
+// V13.3.1: Employee Check Tip status grouped by date.
+
+// V13.3.2: unified review Save accepts selected result directly.
+
+// V13.3.3 grouped checklist completion support
+
+// V13.3.4: hard role isolation + shared-device logout security.
+
+// V13.3.5: employee completed status ignores stale empty Check Tip sheets.
+
+// V13.3.6: employee sees own Check Tip rows read-only while waiting and after completion.
+
+// V13.3.7 cashier history role-switch compatibility.
+
+// V13.3.8 Owner full Check Tip controls and share actions.
+
+// V13.4.2: Employee Check Tip only; original Manager/Owner Hourly/Reports preserved.
+
+
+// ===== V13.4.3 ORIGINAL HOURLY ADJUSTMENT SIMPLE WIZARD =====
+let hourlyWizardStep=1;
+let hourlyWizardState={position:"Server",shift:"AM",busserAM:"WITHOUT"};
+
+function newHowBartenderCheckpoint(){
+  return {servers:Array.from({length:9},()=>({name:"",grandTotal:""})),previousAM:"",previous24:""};
+}
+let howBartenderState={
+  checkpoint:"AM",
+  AM:newHowBartenderCheckpoint(),
+  "2PM_4PM":newHowBartenderCheckpoint(),
+  PM:newHowBartenderCheckpoint()
+};
+
+function resetHowBartenderState(){
+  howBartenderState={checkpoint:"AM",AM:newHowBartenderCheckpoint(),"2PM_4PM":newHowBartenderCheckpoint(),PM:newHowBartenderCheckpoint()};
+}
+
+function hydrateHowBartenderState(type,entries,previousAM,previous24){
+  resetHowBartenderState();
+  const checkpoint=["AM","2PM_4PM","PM"].includes(type)?type:"AM";
+  howBartenderState.checkpoint=checkpoint;
+  const d=howBartenderState[checkpoint];
+  const src=Array.isArray(entries)?entries:[];
+  d.servers=Array.from({length:9},(_,i)=>{
+    const e=src.find(x=>Number(x.slot)===i+1)||src[i]||{};
+    return {name:String(e.name||""),grandTotal:Number(e.grandTotal||0)>0?String(Number(e.grandTotal)):""};
+  });
+  d.previousAM=Number(previousAM||0)>0?String(Number(previousAM)):"";
+  d.previous24=Number(previous24||0)>0?String(Number(previous24)):"";
+}
+
+function howBartenderCurrent(){return howBartenderState[howBartenderState.checkpoint];}
+function howRoundCent(v){return Math.round((Number(v)||0)*100)/100;}
+function howBartenderFormula(checkpoint=howBartenderState.checkpoint){
+  const d=howBartenderState[checkpoint]||newHowBartenderCheckpoint();
+  const saved=d.barCenterCalculation;
+  if(saved && saved.checkpoint===checkpoint && saved.inputKey===hv1BarFormKey(d)){
+    return {checkpoint,summary:howRoundCent(saved.summary),gross:howRoundCent(saved.gross),
+      lessAM:howRoundCent(saved.lessAM),less24:howRoundCent(saved.less24),
+      finalReceived:howRoundCent(saved.finalReceived),serverEntries:saved.serverEntries};
+  }
+  const summary=howRoundCent((d.servers||[]).reduce((s,r)=>s+(Number(r.grandTotal)||0),0));
+  const gross=howRoundCent(summary*0.006);
+  const lessAM=checkpoint==="AM"?0:howRoundCent(hv1BarNumber(d.previousAM));
+  const less24=checkpoint==="PM"?howRoundCent(hv1BarNumber(d.previous24)):0;
+  const finalReceived=Math.max(0,howRoundCent(gross-lessAM-less24));
+  return {checkpoint,summary,gross,lessAM,less24,finalReceived};
+}
+
+function howBartenderServerOptions(slot,selected=""){
+  const current=howVal("hEmployee");
+  const names=getEmployeeRoster().filter(n=>n!==current);
+  return `<option value="">Select Server ${slot}</option>`+names.map(n=>`<option value="${esc(n)}" ${n===selected?"selected":""}>${esc(n)}</option>`).join("");
+}
+
+function captureHowBartenderDom(){
+  const d=howBartenderCurrent();
+  if(!d)return;
+
+  // IMPORTANT: only capture when the Step-6 bartender form is actually on screen.
+  // On Step 7 those fields do not exist; capturing there would erase the saved server totals.
+  const firstName=$("howBtName1");
+  const firstGrand=$("howBtGrand1");
+  if(!firstName && !firstGrand) return;
+
+  for(let i=1;i<=9;i++){
+    const nameEl=$(`howBtName${i}`);
+    const grandEl=$(`howBtGrand${i}`);
+    if(nameEl || grandEl){
+      d.servers[i-1]={
+        name:String(nameEl?.value||"").trim(),
+        grandTotal:String(grandEl?.value||"").trim()
+      };
+    }
+  }
+  if($("howBtPreviousAM")) d.previousAM=String($("howBtPreviousAM").value||"").trim();
+  if($("howBtPrevious24")) d.previous24=String($("howBtPrevious24").value||"").trim();
+}
+
+function ensureHowBartenderPreviousDefaults(){
+  const d=howBartenderCurrent(); if(!d)return;
+  const date=howVal("hDate");
+  if(howBartenderState.checkpoint!=="AM" && !String(d.previousAM||"").trim()){
+    const v=previousBartenderReceived(date,"AM");
+    if(v>0)d.previousAM=String(v.toFixed(2));
+  }
+  if(howBartenderState.checkpoint==="PM" && !String(d.previous24||"").trim()){
+    const v=previousBartenderReceived(date,"2PM_4PM");
+    if(v>0)d.previous24=String(v.toFixed(2));
+  }
+}
+
+function validateHowBartenderStep(){
+  if(howAssignedBartenderReceipts())return true;
+  captureHowBartenderDom();
+  const d=howBartenderCurrent();
+  const used=(d.servers||[]).filter(r=>String(r.name||"").trim() || Number(r.grandTotal||0)>0);
+  if(!used.length){
+    alert("Enter at least one server name and Grand Total for this bartender checkpoint.");
+    return false;
+  }
+  for(const r of used){
+    if(!String(r.name||"").trim()){
+      alert("Choose a server name for every Grand Total entered.");
+      return false;
+    }
+    if(!(Number(r.grandTotal||0)>0)){
+      alert(`Enter the Grand Total for ${r.name}.`);
+      return false;
+    }
+  }
+  if(howBartenderState.checkpoint!=="AM" && String(d.previousAM||"").trim()===""){
+    alert("Enter Bartender AM Tip Out Received.");
+    return false;
+  }
+  // BAR 2–4 is OPTIONAL. If it is blank, PM subtracts AM only.
+  // If 2–4 exists, the existing cumulative formula subtracts AM + 2–4.
+  return true;
+}
+
+function syncHowBartenderToLegacy(){
+  const assigned=howAssignedBartenderReceipts();
+  if(assigned){howSetSilent("hBartenderBarReceived",assigned.total.toFixed(2));return {bartenderBarTipReceived:assigned.total};}
+  captureHowBartenderDom();
+  const d=howBartenderCurrent();
+  populateBartenderServerDropdowns();
+  howSetSilent("hBartenderShiftType",howBartenderState.checkpoint);
+  for(let i=1;i<=9;i++){
+    const row=d.servers[i-1]||{};
+    const sel=$(`hBtServerName${i}`);
+    if(sel && row.name && !Array.from(sel.options).some(o=>o.value===row.name)){
+      const opt=document.createElement("option"); opt.value=row.name; opt.textContent=row.name; sel.appendChild(opt);
+    }
+    if(sel)sel.value=row.name||"";
+    if($(`hBtServerGrand${i}`))$(`hBtServerGrand${i}`).value=row.grandTotal||"";
+  }
+  howSetSilent("hBtPrevAMInput",d.previousAM||"");
+  howSetSilent("hBtPrev24Input",d.previous24||"");
+  const calc=howBartenderFormula();
+  howSetSilent("hBartenderBarReceived",calc.finalReceived.toFixed(2));
+  return window.calculateBartenderBarTipOut();
+}
+
+function updateHowBartenderPreview(){
+  const assigned=howAssignedBartenderReceipts();
+  if(assigned){howSetSilent("hBartenderBarReceived",assigned.total.toFixed(2));return;}
+  captureHowBartenderDom();
+  const r=howBartenderFormula();
+  if($("howBtSummary"))$("howBtSummary").textContent=howMoney(r.summary);
+  if($("howBtGross"))$("howBtGross").textContent=howMoney(r.gross);
+  if($("howBtLessAM"))$("howBtLessAM").textContent=howMoney(r.lessAM);
+  if($("howBtLess24"))$("howBtLess24").textContent=howMoney(r.less24);
+  if($("howBtFinal"))$("howBtFinal").textContent=howMoney(r.finalReceived);
+  if($("howBtFormula")){
+    $("howBtFormula").textContent=r.checkpoint==="AM"
+      ? `${howMoney(r.summary)} × 0.6% = ${howMoney(r.finalReceived)}`
+      : r.checkpoint==="2PM_4PM"
+        ? `${howMoney(r.summary)} × 0.6% = ${howMoney(r.gross)} − AM ${howMoney(r.lessAM)} = ${howMoney(r.finalReceived)}`
+        : r.less24>0
+          ? `${howMoney(r.summary)} × 0.6% = ${howMoney(r.gross)} − AM ${howMoney(r.lessAM)} − 2 PM–4 PM ${howMoney(r.less24)} = ${howMoney(r.finalReceived)}`
+          : `${howMoney(r.summary)} × 0.6% = ${howMoney(r.gross)} − AM ${howMoney(r.lessAM)} = ${howMoney(r.finalReceived)} (No 2–4 BAR)`;
+  }
+  howSetSilent("hBartenderBarReceived",r.finalReceived.toFixed(2));
+}
+
+
+function howMoney(v){return Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD"});}
+function howVal(id){return $(id)?.value||"";}
+function howSet(id,v){if($(id)){$(id).value=v;$(id).dispatchEvent(new Event("change",{bubbles:true}));}}
+function howSetSilent(id,v){if($(id)) $(id).value=v;}
+function howField(label,id,value,type="text",placeholder=""){
+  const isMoney=type==="number";
+  const isTime=["howIn","howOut","howAmIn","howAmOut","howPmIn","howPmOut"].includes(id);
+  let display=String(value??"");
+  if(isMoney && (display==="" || Number(display)===0)) display="";
+  const classes=[isMoney?"how-money-input":"",isTime?"how-time-input":""].filter(Boolean).join(" ");
+  const actualType=isMoney?"text":type;
+  const attrs=[
+    `id="${id}"`,
+    `type="${actualType}"`,
+    classes?`class="${classes}"`:"",
+    `value="${display.replace(/"/g,"&quot;")}"`,
+    `placeholder="${placeholder}"`,
+    isMoney?'inputmode="decimal" autocomplete="off"':"",
+    isTime?'inputmode="numeric" maxlength="5" pattern="[0-9:]*" autocomplete="off" enterkeyhint="done"':""
+  ].filter(Boolean).join(" ");
+  return `<div class="how-field"><label>${label}</label><input ${attrs}></div>`;
+}
+
+function hourlyFormatTimeDigits(value){
+  const digits=String(value??"").replace(/\D/g,"").slice(0,4);
+  if(digits.length<2) return digits;
+  return `${digits.slice(0,2)}:${digits.slice(2)}`;
+}
+function hourlyParseTime(value){
+  const text=String(value??"").trim().toUpperCase().replace(/\s+/g," ");
+  if(!text) return null;
+  let match=text.match(/^(\d{1,2})(?:(?::|\.)(\d{1,2})|(\d{2}))?\s*(AM|PM)?$/);
+  let hour,minute,meridiem;
+  if(match){
+    hour=Number(match[1]);
+    minute=Number(match[2]||match[3]||0);
+    meridiem=match[4]||"";
+  }else{
+    const compact=text.match(/^(\d{3,4})\s*(AM|PM)?$/);
+    if(!compact) return null;
+    const digits=compact[1];
+    hour=Number(digits.slice(0,-2));
+    minute=Number(digits.slice(-2));
+    meridiem=compact[2]||"";
+  }
+  if(!Number.isInteger(hour)||!Number.isInteger(minute)||minute<0||minute>59) return null;
+  if(meridiem){
+    if(hour<1||hour>12) return null;
+    if(hour===12) hour=0;
+    if(meridiem==="PM") hour+=12;
+  }else if(hour<0||hour>23){
+    return null;
+  }
+  return hour*60+minute;
+}
+function hourlyNormalizeTime(value){
+  const raw=String(value??"").trim();
+  if(!raw) return "";
+  const minutes=hourlyParseTime(raw);
+  if(minutes===null) return hourlyFormatTimeDigits(raw);
+  return `${String(Math.floor(minutes/60)).padStart(2,"0")}:${String(minutes%60).padStart(2,"0")}`;
+}
+function bindHourlyTimeMask(){
+  const ids=["howIn","howOut","howAmIn","howAmOut","howPmIn","howPmOut"];
+  const inputs=ids.map(id=>$(id)).filter(Boolean);
+
+  inputs.forEach((el,index)=>{
+    if(el.dataset.timeMaskBound==="1") return;
+    el.dataset.timeMaskBound="1";
+    el.classList.add("how-time-input");
+    el.inputMode="numeric";
+    el.maxLength=5;
+    el.pattern="[0-9:]*";
+    el.autocomplete="off";
+    el.enterKeyHint="done";
+    el.value=hourlyNormalizeTime(el.value);
+
+    el.addEventListener("keydown",event=>{
+      if(event.key!=="Backspace" || el.selectionStart!==el.selectionEnd || el.selectionStart<1) return;
+      const caret=el.selectionStart;
+      if(el.value.charAt(caret-1)!==":") return;
+      event.preventDefault();
+
+      let digits=el.value.replace(/\D/g,"").slice(0,4);
+      const before=el.value.slice(0,caret).replace(/\D/g,"").length;
+      if(before>0) digits=digits.slice(0,before-1)+digits.slice(before);
+      el.value=hourlyFormatTimeDigits(digits);
+
+      let nextCaret=Math.max(0,before-1);
+      if(nextCaret>=2) nextCaret++;
+      setTimeout(()=>{try{el.setSelectionRange(nextCaret,nextCaret)}catch(e){}},0);
+    });
+
+    el.addEventListener("input",()=>{
+      const caret=el.selectionStart==null?el.value.length:el.selectionStart;
+      const digitsBefore=el.value.slice(0,caret).replace(/\D/g,"").length;
+      const digits=el.value.replace(/\D/g,"").slice(0,4);
+
+      el.value=hourlyFormatTimeDigits(digits);
+      let nextCaret=digitsBefore>=2?digitsBefore+1:digitsBefore;
+      nextCaret=Math.min(nextCaret,el.value.length);
+      try{el.setSelectionRange(nextCaret,nextCaret)}catch(e){}
+
+      if(digits.length===4){
+        setTimeout(()=>{
+          const next=inputs[index+1];
+          if(next){
+            next.focus();
+            try{next.setSelectionRange(0,next.value.length)}catch(e){}
+          }else{
+            el.blur();
+            $("howNext")?.scrollIntoView({behavior:"smooth",block:"end"});
+          }
+        },90);
+      }
+    });
+
+    el.addEventListener("blur",()=>{
+      el.value=hourlyNormalizeTime(el.value);
+    });
+  });
+}
+
+function bindHourlyMoneyOverwrite(){
+  $("hourlyOriginalWizard")?.querySelectorAll("input.how-money-input").forEach(el=>{
+    if(el.dataset.zeroOverwriteBound==="1") return;
+    el.dataset.zeroOverwriteBound="1";
+
+    const clearZero=()=>{
+      const raw=String(el.value??"").trim();
+      if(raw==="0" || raw==="0.0" || raw==="0.00") el.value="";
+    };
+    el.addEventListener("focus",clearZero);
+    el.addEventListener("pointerdown",clearZero);
+    el.addEventListener("beforeinput",clearZero);
+    el.addEventListener("blur",()=>{
+      const raw=String(el.value??"").trim();
+      if(raw && !/^\d*(?:\.\d{0,2})?$/.test(raw)){
+        const n=Number(raw.replace(/,/g,""));
+        el.value=Number.isFinite(n)?String(Math.max(0,n)):"";
+      }
+    });
+  });
+}
+function howChoice(name,value,label,on){
+  return `<button type="button" class="how-choice ${on?"on":""}" data-how-choice="${name}" data-how-value="${value}">${label}</button>`;
+}
+function howNav(back="BACK",next="SUBMIT"){
+  return `<div class="how-actions"><button type="button" class="btn light" id="howBack">${back}</button><button type="button" class="btn green" id="howNext">${next}</button></div><button type="button" class="btn light how-team-back" onclick="hv1ReturnToTeamBoard()">BACK TO TEAM BOARD</button>`;
+}
+window.hv1ReturnToTeamBoard=async function(){
+  if(!['manager','owner'].includes(currentProfile?.role||''))return;
+  if(hourlyFinalSaveInProgress){alert('Final report is saving. Please wait.');return;}
+  if(document.body.classList.contains('hourly-v1-editing'))return window.hv1SavePage();
+  if($('hourly') && !$('hourly').classList.contains('hidden')){
+    captureHourlyWizard();
+    const name=$('hEmployee')?.value,date=$('hDate')?.value;
+    if(name && date){
+      if($('hv1Date'))$('hv1Date').value=date;
+      hv1EditingEmployee=name;hourlyV1Mode=true;
+      const batch=hv1Load();batch.team ||= [];batch.drafts ||= {};
+      if(!batch.team.includes(name))batch.team.push(name);
+      const draft=batch.drafts[name]||hv1BlankDraft(name);
+      for(const id of HV1_BACKING_IDS){const value=hv1VisibleValue(id);hv1SetValue(draft,id,value,value!=='');}
+      draft.date=date;batch.drafts[name]=draft;hv1Save(batch);
+      return window.hv1SavePage();
+    }
+  }
+  const state=hv1Load();hv1ApplyBarAutomation(state);hv1Save(state);
+  if(!await hv1CloudSave(state)){alert("Saved on this device. Cloud sync failed; BAR remains open.");return;}
+  document.body.classList.remove('hourly-v1-editing','hourly-v1-small-report','small-report-fullscreen');
+  document.documentElement.classList.remove('small-report-fullscreen');
+  document.body.classList.add('hourly-v1-mode');hourlyV1Mode=true;
+  $('hourly')?.classList.add('hidden');$('smallReport')?.classList.add('hidden');
+  $('hv1BarBox')?.classList.add('hidden');$('hv1SmallReportBox')?.classList.add('hidden');
+  $('hv1BoardBox')?.classList.remove('hidden');$('hourlyV1Workspace')?.classList.remove('hidden');
+  hv1RenderCards();window.scrollTo(0,0);
+};
+
+function hideLegacyHourlyInput(){
+  const hourly=$("hourly"), wiz=$("hourlyOriginalWizard");
+  if(!hourly||!wiz)return;
+  const card=wiz.parentElement;
+  if(!card)return;
+  let started=false;
+  [...card.children].forEach(el=>{
+    if(el===wiz)return;
+    if(el.tagName==="H3" && el.textContent.trim()==="Employee & Shift") started=true;
+    if(started && el.id!=="hourlyResult") el.classList.add("hourlyLegacyHidden");
+  });
+  $("hourlyResult")?.classList.remove("hourlyLegacyHidden");
+}
+
+function syncWizardFromLegacy(){
+  hourlyWizardState.position=howVal("hPosition")||hourlyWizardState.position||"Server";
+  hourlyWizardState.shift=howVal("hShift")||hourlyWizardState.shift||"AM";
+  hourlyWizardState.busserAM=howVal("hBusserAM")||hourlyWizardState.busserAM||"WITHOUT";
+}
+
+
+let hourlyBartenderCalcMarker=null;
+
+function ensureHourlyBartenderCalcMarker(){
+  const calc=$("hBartenderBarReceivedWrap");
+  if(!calc || hourlyBartenderCalcMarker) return;
+  hourlyBartenderCalcMarker=document.createComment("hourly-bartender-calculator-home");
+  calc.parentNode.insertBefore(hourlyBartenderCalcMarker,calc);
+}
+
+function parkHourlyBartenderCalculator(){
+  const calc=$("hBartenderBarReceivedWrap");
+  if(!calc) return;
+  ensureHourlyBartenderCalcMarker();
+  if(hourlyBartenderCalcMarker?.parentNode && calc.parentNode!==hourlyBartenderCalcMarker.parentNode){
+    hourlyBartenderCalcMarker.parentNode.insertBefore(calc,hourlyBartenderCalcMarker.nextSibling);
+  }
+  calc.classList.add("hidden","hourlyLegacyHidden");
+}
+
+function mountHourlyBartenderCalculator(){
+  const calc=$("hBartenderBarReceivedWrap");
+  const mount=$("howBartenderCalcMount");
+  if(!calc || !mount) return;
+
+  ensureHourlyBartenderCalcMarker();
+  mount.appendChild(calc);
+  calc.classList.remove("hidden","hourlyLegacyHidden");
+  populateBartenderServerDropdowns();
+  window.calculateBartenderBarTipOut();
+}
+
+function clearHourlyBartenderCalculator(){
+  if($("hBartenderShiftType")) $("hBartenderShiftType").value="AM";
+  for(let i=1;i<=9;i++){
+    if($(`hBtServerName${i}`)) $(`hBtServerName${i}`).value="";
+    if($(`hBtServerGrand${i}`)) $(`hBtServerGrand${i}`).value="";
+  }
+  if($("hBtPrevAMInput")) $("hBtPrevAMInput").value="";
+  if($("hBtPrev24Input")) $("hBtPrev24Input").value="";
+  if($("hBartenderBarReceived")) $("hBartenderBarReceived").value="0.00";
+  window.calculateBartenderBarTipOut();
+}
+
+function renderHourlyWizard(){
+  const workProfile=applyWorkProfilePosition();
+  const mount=$("howBody"); if(!mount)return;
+  howSyncLongBusserForm();
+  parkHourlyBartenderCalculator();
+  hideLegacyHourlyInput();
+  if($("howStepBadge")) $("howStepBadge").textContent=`STEP ${hourlyWizardStep} / 7`;
+
+  const employeeOptions=[...($("hEmployee")?.options||[])].map(o=>`<option value="${o.value}" ${o.value===howVal("hEmployee")?"selected":""}>${o.textContent}</option>`).join("");
+  let body="";
+
+  if(hourlyWizardStep===1){
+    body=`<h3 class="how-title">Employee</h3><p class="how-sub">Choose the employee, position, and shift.</p>
+      <div class="how-card">
+        <div class="how-field"><label>Date</label><input id="howDate" type="date" value="${howVal("hDate")}" ${hourlyV1Mode&&hv1EditingEmployee?'disabled':''}></div>
+        <div class="how-field"><label>Employee Name</label><select id="howEmployee" ${hourlyV1Mode&&hv1EditingEmployee?'disabled':''}>${employeeOptions}</select></div>
+        ${hourlyV1Mode&&hv1EditingEmployee?'<p class="small">To enter another employee, use Back to Team Board and open their card.</p>':''}
+        <div class="how-field"><span class="how-label">Position</span><div class="how-choices">
+          ${workProfile?`<div class="how-info">${esc(workProfile.name)} — ${esc(workProfile.position)}</div>`:
+            howChoice("position","Server","SERVER",hourlyWizardState.position==="Server")+
+            howChoice("position","Bartender","BARTENDER",hourlyWizardState.position==="Bartender")}
+
+        </div></div>
+        <div class="how-field"><span class="how-label">Shift</span><div class="how-choices four">
+          ${howChoice("shift","AM","AM",hourlyWizardState.shift==="AM")}
+          ${howChoice("shift","PM","PM",hourlyWizardState.shift==="PM")}
+          ${howChoice("shift","DOUBLE","DOUBLE",hourlyWizardState.shift==="DOUBLE")}
+          ${howChoice("shift","LONG","LONG",hourlyWizardState.shift==="LONG")}
+        </div></div>
+      </div>${howNav("CANCEL","SUBMIT")}`;
+  }
+
+  if(hourlyWizardStep===2){
+    const dbl=hourlyWizardState.shift==="DOUBLE";
+    body=`<h3 class="how-title">Work Hours</h3><p class="how-sub">${howVal("hEmployee")||"Employee"}</p>
+      <div class="how-card"><div class="how-info"><b>Type the actual clock times.</b> Example: 10:45 and 16:00.</div>
+      ${dbl
+        ? howField("Hour In AM","howAmIn",howVal("hAmIn"),"text","10:45")+howField("Hour Out AM","howAmOut",howVal("hAmOut"),"text","16:00")+howField("Hour In PM","howPmIn",howVal("hPmIn"),"text","16:30")+howField("Hour Out PM","howPmOut",howVal("hPmOut"),"text","22:00")
+        : howField("Hour In","howIn",howVal("hIn"),"text","10:45")+howField("Hour Out","howOut",howVal("hOut"),"text","16:00")}
+      </div>${howNav()}`;
+  }
+
+  if(hourlyWizardStep===3){
+    let busser="";
+    if(hourlyWizardState.position==="Bartender"){
+      busser=`<div class="how-info"><b>Bartender Busser Rate: 0%</b><br>No busser tip out is calculated.</div>`;
+    }else if(hourlyWizardState.shift==="LONG"){
+      const weekend=isWeekendDate(howVal("hDate"));
+      busser=weekend
+        ? `<div class="how-info"><b>LONG — Saturday / Sunday: 1.50% all day.</b><br>Busser Tip Out = Grand Total × 1.50%.</div>`
+        : `<div class="how-info"><b>LONG — Monday–Friday: no busser through 4 PM.</b><br>Sales entered in BAR 2–4 are the no-busser portion.<br>Busser Tip Out = (Grand Total − BAR 2–4 sales) × 1.50%.</div>`;
+    }else if(hourlyWizardState.shift==="PM"){
+      busser=`<div class="how-info"><b>PM Busser Rate: 1.5%</b><br>Busser Tip Out will use the PM sales total.</div>`;
+    }else{
+      busser=`<div class="how-field"><span class="how-label">Busser AM</span><div class="how-choices">
+        ${howChoice("busserAM","WITHOUT","WITHOUT BUSSER AM",hourlyWizardState.busserAM==="WITHOUT")}
+        ${howChoice("busserAM","WITH","WITH BUSSER AM",hourlyWizardState.busserAM==="WITH")}
+      </div></div>`;
+    }
+    body=`<h3 class="how-title">Busser</h3><p class="how-sub">Confirm the busser setup for this shift.</p><div class="how-card">${busser}</div>${howNav()}`;
+  }
+
+  if(hourlyWizardStep===4){
+    const showAM=["DOUBLE","LONG"].includes(hourlyWizardState.shift);
+    body=`<h3 class="how-title">Sales Totals</h3><p class="how-sub">Enter the sales amount. The app calculates the split.</p>
+      <div class="how-card">
+        ${howField("Grand Total ($)","howGrand",howVal("hGrandTotal"),"number","0.00")}
+        ${showAM?howField(hourlyWizardState.shift==="LONG"?"Sales through 4 PM ($)":"Total AM ($)","howTotalAM",howVal("hTotalAM"),"number","0.00"):""}
+        <div class="how-metrics">
+          <div class="how-metric"><span>${hourlyWizardState.shift==="LONG"?"Sales through 4 PM":"Total AM"}</span><b id="howPreviewAM">$0.00</b></div>
+          <div class="how-metric"><span>${hourlyWizardState.shift==="LONG"?"Sales after 4 PM":"Total PM"}</span><b id="howPreviewPM">$0.00</b></div>
+          <div class="how-metric" style="grid-column:1 / -1">
+            <span id="howPreviewBusserLabel">Busser Rate (%)</span><b id="howPreviewBusserRate" aria-live="polite">—</b>
+            <small id="howPreviewBusserBasis" style="display:block;margin-top:6px;font-size:14px;line-height:1.4;color:#66738a"></small>
+          </div>
+        </div>
+      </div>${howNav()}`;
+  }
+
+  if(hourlyWizardStep===5){
+    body=`<h3 class="how-title">Tips & Meal</h3><p class="how-sub">Enter the final amounts from the receipt.</p>
+      <div class="how-card">
+        <div class="how-info"><b>Paid Tip is used directly.</b><br>Busser is not subtracted a second time.</div>
+        ${howField("Paid Tip ($)","howPaid",howVal("hPaidTip"),"number","0.00")}
+        ${howField("Pay Card Tip Fee ($)","howCardFee",howVal("hCardFee"),"number","0.00")}
+        ${howField("Cash Tip ($)","howCash",howVal("hCashTip"),"number","0.00")}
+        ${howField("Meal ($)","howMeal",howVal("hMeal"),"number","0.00")}
+      </div>${howNav()}`;
+  }
+
+  if(hourlyWizardStep===6){
+    if(hourlyWizardState.position==="Bartender"){
+      const assignedReceipts=howAssignedBartenderReceipts();
+      if(assignedReceipts){
+        body=`<h3 class="how-title">Bartender Bar Tip Out Received</h3><p class="how-sub">${esc(howVal("hEmployee"))} · ${esc(howVal("hDate"))}</p><div class="how-card">${howBartenderReceiptsHtml(assignedReceipts)}</div>${howNav()}`;
+      }else{
+      ensureHowBartenderPreviousDefaults();
+      const bt=howBartenderCurrent();
+      const result=howBartenderFormula();
+      body=`<h3 class="how-title">Bartender Bar Tip Out Received</h3>
+        <p class="how-sub">Choose the bartender checkpoint, then enter each server name and Grand Total.</p>
+        <div class="how-card">
+          <div class="how-field"><span class="how-label">Bartender Checkpoint</span>
+            <div class="how-choices how-bt-checkpoints">
+              <button type="button" class="how-choice ${howBartenderState.checkpoint==="AM"?"on":""}" data-how-bt-checkpoint="AM">BARTENDER AM</button>
+              <button type="button" class="how-choice ${howBartenderState.checkpoint==="2PM_4PM"?"on":""}" data-how-bt-checkpoint="2PM_4PM">BARTENDER 2 PM–4 PM</button>
+              <button type="button" class="how-choice ${howBartenderState.checkpoint==="PM"?"on":""}" data-how-bt-checkpoint="PM">BARTENDER PM</button>
+            </div>
+          </div>
+
+          <div class="how-info"><b>Enter the Grand Total for every server working in this checkpoint.</b><br>Unused rows may remain blank.</div>
+
+          <div class="how-bt-grid">
+            <div class="how-bt-row how-bt-head"><b>Server Name</b><b>Grand Total ($)</b></div>
+            ${bt.servers.map((row,i)=>`<div class="how-bt-row">
+              <select id="howBtName${i+1}">${howBartenderServerOptions(i+1,row.name)}</select>
+              <input id="howBtGrand${i+1}" class="how-money-input how-bt-grand" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" value="${Number(row.grandTotal||0)===0?"":esc(row.grandTotal)}">
+            </div>`).join("")}
+          </div>
+
+          ${howBartenderState.checkpoint!=="AM"?howField("Bartender AM Tip Out Received ($)","howBtPreviousAM",bt.previousAM,"number","0.00"):""}
+          ${howBartenderState.checkpoint==="PM"?howField("Bartender 2 PM–4 PM Tip Out Received ($)","howBtPrevious24",bt.previous24,"number","0.00"):""}
+
+          <div class="how-metrics how-bt-metrics">
+            <div class="how-metric"><span>All Server Grand Total</span><b id="howBtSummary">${howMoney(result.summary)}</b></div>
+            <div class="how-metric"><span>Gross @ 0.6%</span><b id="howBtGross">${howMoney(result.gross)}</b></div>
+            <div class="how-metric"><span>Less Bartender AM</span><b id="howBtLessAM">${howMoney(result.lessAM)}</b></div>
+            <div class="how-metric"><span>Less Bartender 2 PM–4 PM</span><b id="howBtLess24">${howMoney(result.less24)}</b></div>
+            <div class="how-metric how-bt-final"><span>FINAL BAR TIP OUT RECEIVED</span><b id="howBtFinal">${howMoney(result.finalReceived)}</b></div>
+          </div>
+
+          <div id="howBtFormula" class="notice good" style="margin-top:14px;font-weight:900"></div>
+          <div class="how-bt-formulas">
+            <b>AM:</b> All Server Grand Total × 0.6%<br>
+            <b>2 PM–4 PM:</b> All Server Grand Total × 0.6% − Bartender AM Tip Out Received<br>
+            <b>PM:</b> All Server Grand Total × 0.6% − Bartender AM Tip Out Received − Bartender 2 PM–4 PM Tip Out Received
+          </div>
+        </div>${howNav()}`;
+      }
+    }else{
+      const am=hourlyWizardState.shift==="AM"||hourlyWizardState.shift==="DOUBLE";
+      const pm=hourlyWizardState.shift==="PM"||hourlyWizardState.shift==="DOUBLE"||hourlyWizardState.shift==="LONG";
+      const barAuto=(hourlyV1Mode&&hv1EditingEmployee)?(hv1Draft(hv1EditingEmployee)?.barAuto||null):null;
+      const grand=Number(howVal("hGrandTotal")||0);
+      const totalAM=["DOUBLE","LONG"].includes(hourlyWizardState.shift)?Number(howVal("hTotalAM")||0):(hourlyWizardState.shift==="PM"?0:grand);
+      const totalPM=hourlyWizardState.shift==="PM"?grand:(["DOUBLE","LONG"].includes(hourlyWizardState.shift)?Math.max(0,grand-totalAM):0);
+
+      const draftNow=(hourlyV1Mode&&hv1EditingEmployee)?hv1Draft(hv1EditingEmployee):null;
+      const amChecked=draftNow?.entered?.hAmBar
+        ? howVal("hAmBar")==="yes"
+        : (barAuto?Number(barAuto.amGT||0)>0:howVal("hAmBar")==="yes");
+      const pmChecked=draftNow?.entered?.hPmBar
+        ? howVal("hPmBar")==="yes"
+        : (barAuto?!!(barAuto.valid24||barAuto.validPM):howVal("hPmBar")==="yes");
+
+      const amTip=amChecked
+        ? (barAuto?Math.max(0,Number(barAuto.amFee||0)):Math.max(0,totalAM*0.006))
+        : 0;
+      const tip24=pmChecked && barAuto ? Math.max(0,Number(barAuto.fee24||0)) : 0;
+      const pmTip=pmChecked
+        ? (barAuto?Math.max(0,Number(barAuto.pmFee||0)):Math.max(0,totalPM*0.006))
+        : 0;
+      const totalBarTip=Math.max(0,amTip+tip24+pmTip);
+
+      const pmInvalid=barAuto && Number(barAuto.pmGT||0)>0 && !barAuto.validPM;
+      const p24Invalid=barAuto && Number(barAuto.gt24||0)>0 && !barAuto.valid24;
+
+      body=`<h3 class="how-title">Bar Tip Out</h3><p class="how-sub">${barAuto?"BAR Center supplies the amounts. You can uncheck a BAR period when it should not apply. Negative amounts are never allowed.":"Check only the shift that had bar sales."}</p>
+        <div class="how-card">
+          ${am?`<label class="check-card"><input id="howAmBar" type="checkbox" ${amChecked?"checked":""}><span><strong>AM BAR SALES</strong><span>${barAuto?`Cumulative ${howMoney(barAuto.amGT||0)}`:"Checked = 0.6% of Total AM"}</span></span></label>`:""}
+          ${pm?`<label class="check-card"><input id="howPmBar" type="checkbox" ${pmChecked?"checked":""}><span><strong>PM BAR SALES</strong><span>${barAuto?`PM cumulative ${howMoney(barAuto.pmGT||0)} • 2–4 is optional (${howMoney(barAuto.gt24||0)})`:"Checked = 0.6% of Total PM"}</span></span></label>`:""}
+          ${(p24Invalid||pmInvalid)?`<div class="notice warn" style="margin-top:12px"><b>BAR checkpoint ignored:</b> ${p24Invalid?`2–4 cumulative ${howMoney(barAuto.gt24||0)} is lower than AM cumulative ${howMoney(barAuto.amGT||0)}. `:""}${pmInvalid?`PM cumulative ${howMoney(barAuto.pmGT||0)} is lower than the previous cumulative checkpoint, so PM Bar Tip is $0.00.`:""}</div>`:""}
+          <div class="how-metrics">
+            <div class="how-metric"><span>AM Bar Tip</span><b>${howMoney(amTip)}</b></div>
+            ${barAuto?`<div class="how-metric"><span>2–4 Bar Tip</span><b>${howMoney(tip24)}</b></div>`:""}
+            <div class="how-metric"><span>PM Bar Tip</span><b>${howMoney(pmTip)}</b></div>
+            <div class="how-metric"><span>Total Bar Tip Out</span><b>${howMoney(totalBarTip)}</b></div>
+          </div>
+        </div>${howNav()}`;
+    }
+  }
+
+  if(hourlyWizardStep===7){
+    const quickShowAM=["DOUBLE","LONG"].includes(hourlyWizardState.shift);
+    const serverMode=hourlyWizardState.position!=="Bartender";
+    const quickAm=serverMode && ["AM","DOUBLE"].includes(hourlyWizardState.shift);
+    const quickPm=serverMode && ["PM","DOUBLE","LONG"].includes(hourlyWizardState.shift);
+    const draftNow=(hourlyV1Mode&&hv1EditingEmployee)?hv1Draft(hv1EditingEmployee):null;
+    const amChecked=draftNow?.entered?.hAmBar
+      ? String(draftNow.values?.hAmBar||"no")==="yes"
+      : howVal("hAmBar")==="yes";
+    const pmChecked=draftNow?.entered?.hPmBar
+      ? String(draftNow.values?.hPmBar||"no")==="yes"
+      : howVal("hPmBar")==="yes";
+
+    body=`<h3 class="how-title">Employee Report — Quick Edit</h3>
+      <p class="how-sub">Edit the final numbers directly here. You do not need to go Back to Sales or Tips.</p>
+      <div class="how-card">
+        <div class="how-summary">
+          <div><small>Employee</small><b>${howVal("hEmployee")||"—"}</b></div>
+          <div><small>Shift</small><b>${hourlyWizardState.shift}</b></div>
+        </div>
+
+        <div class="how-quick-edit-grid">
+          ${howField("Grand Total ($)","howGrand",howVal("hGrandTotal"),"number","0.00")}
+          ${quickShowAM?howField(hourlyWizardState.shift==="LONG"?"Sales through 4 PM ($)":"Total AM ($)","howTotalAM",howVal("hTotalAM"),"number","0.00"):""}
+          ${howField("Paid Tip ($)","howPaid",howVal("hPaidTip"),"number","0.00")}
+          ${howField("Pay Card Tip Fee ($)","howCardFee",howVal("hCardFee"),"number","0.00")}
+          ${howField("Cash Tip ($)","howCash",howVal("hCashTip"),"number","0.00")}
+          ${howField("Meal ($)","howMeal",howVal("hMeal"),"number","0.00")}
+        </div>
+
+        ${serverMode?`<div class="how-quick-bar">
+          <div class="how-info"><b>BAR sync is automatic.</b><br>Check a period and the saved Grand Total is pushed to BAR Center. Editing BAR Center pushes the value back to this employee.</div>
+          ${quickAm?`<label class="check-card"><input id="howAmBar" type="checkbox" ${amChecked?"checked":""}><span><strong>AM BAR SALES</strong><span>Auto-sync to BAR AM</span></span></label>`:""}
+          ${quickPm?`<label class="check-card"><input id="howPmBar" type="checkbox" ${pmChecked?"checked":""}><span><strong>PM BAR SALES</strong><span>Auto-sync to BAR PM</span></span></label>`:""}
+        </div>`:""}
+
+        ${hourlyWizardState.position==="Bartender"
+          ? (()=>{const assigned=howAssignedBartenderReceipts();if(assigned)return howBartenderReceiptsHtml(assigned);const bt=howBartenderFormula();return `<div class="how-summary" style="margin-top:14px">
+              <div><small>Server Grand Total</small><b>${howMoney(bt.summary)}</b></div>
+              <div><small>Gross @ 0.6%</small><b>${howMoney(bt.gross)}</b></div>
+              <div><small>Less AM</small><b>${howMoney(bt.lessAM)}</b></div>
+              <div><small>Less 2 PM–4 PM</small><b>${howMoney(bt.less24)}</b></div>
+              <div><small>Bar Tip Out Received</small><b>${howMoney(bt.finalReceived)}</b></div>
+            </div>`;})()
+          : ""}
+
+        <div id="howAdjustmentReview" aria-live="polite"><p>Press Calculate to check the hourly minimum and adjustment.</p></div>
+        <div class="how-review-actions">
+          <button type="button" class="btn gold" id="howCalc">CALCULATE</button>
+          <button type="button" class="btn green" id="howFinal">SUBMIT FINAL & MONEY READY</button>
+        </div>
+      </div>${howNav("BACK","NEW ENTRY")}`;
+  }
+
+  mount.innerHTML=body;
+  bindHourlyWizard();
+  bindHourlyTimeMask();
+  bindHourlyMoneyOverwrite();
+
+  parkHourlyBartenderCalculator();
+  if(hourlyWizardStep===6 && hourlyWizardState.position==="Bartender") updateHowBartenderPreview();
+
+  if(hourlyWizardStep===4 || hourlyWizardStep===7) updateHowSalesPreview();
+  if(hourlyWizardStep===7) $("hourlyResult")?.classList.remove("hourlyLegacyHidden");
+  if(hourlyV1Mode && document.body.classList.contains("hourly-v1-editing")) setTimeout(hv1PatchWizard,0);
+}
+
+function updateHowSalesPreview(){
+  howSyncLongBusserForm();
+  const L=window.FredTipCalculatorLogic;
+  const shift=hourlyWizardState.shift;
+  const grandRaw=String($("howGrand")?.value??"").trim();
+  const amRaw=String($("howTotalAM")?.value??"").trim();
+  const grand=L.parseMoney(grandRaw,NaN);
+  const split=["DOUBLE","LONG"].includes(shift);
+  const amInput=split?L.parseMoney(amRaw,NaN):0;
+  const valid=grandRaw!=="" && Number.isFinite(grand) && grand>=0
+    && (!split || (amRaw!=="" && Number.isFinite(amInput) && amInput>=0 && amInput<=grand));
+  const rateEl=$("howPreviewBusserRate"),basisEl=$("howPreviewBusserBasis");
+  if(!valid){
+    if($("howPreviewAM"))$("howPreviewAM").textContent="—";
+    if($("howPreviewPM"))$("howPreviewPM").textContent="—";
+    if(rateEl)rateEl.textContent="—";
+    if(basisEl)basisEl.textContent="Enter valid sales totals. Total AM cannot exceed Grand Total.";
+    return;
+  }
+  const input={position:hourlyWizardState.position,shift,
+    busserAM:hourlyWizardState.busserAM,grandTotal:grand,totalAM:amInput};
+  const totals=L.deriveTotals(input),busser=L.calculateBusser(input);
+  if($("howPreviewAM"))$("howPreviewAM").textContent=howMoney(totals.totalAM);
+  if($("howPreviewPM"))$("howPreviewPM").textContent=howMoney(totals.totalPM);
+  const withoutAM=input.busserAM==="WITHOUT";
+  const noBusser=input.position==="Bartender" || (shift==="AM" && withoutAM);
+  const partial=split && withoutAM && !noBusser;
+  const label=$("howPreviewBusserLabel");
+  if(label)label.textContent=partial?"Busser Rate on Grand Total":"Busser Rate (%)";
+  // Use the same effective rate as the final report, including the no-busser sales portion.
+  if(rateEl)rateEl.textContent=Number(busser.rate).toFixed(2)+"%";
+  if(basisEl){
+    if(input.position==="Bartender")basisEl.textContent="Bartender: no busser tip out.";
+    else if(partial){
+      const early=shift==="LONG"?"BAR 2–4 sales":"AM sales";
+      const late=shift==="LONG"?"Sales after 4 PM":"PM sales";
+      basisEl.textContent=early+": 0.00%. "+late+": "+howMoney(totals.totalPM)+" × 1.50%. Busser Tip Out: "+howMoney(busser.tipOut)+".";
+    }else if(noBusser)basisEl.textContent="Without Busser AM: no busser tip out.";
+    else basisEl.textContent=shift==="LONG"?"Saturday / Sunday: Grand Total × 1.50%, including sales through 4 PM.":"1.50% of "+(shift==="AM"?"AM sales.":shift==="PM"?"PM sales.":"Grand Total.");
+  }
+
+}
+
+function captureHourlyWizard(){
+  if(hv1LoadingEmployee)return;
+  if(hourlyWizardStep===1){
+    const teamCard=hourlyV1Mode&&hv1EditingEmployee;
+    const date=teamCard?hv1DateValue():$("howDate")?.value||howVal("hDate");
+    const name=teamCard?hv1EditingEmployee:$("howEmployee")?.value||howVal("hEmployee");
+    if(name!==howVal("hEmployee") || date!==howVal("hDate")){
+      currentHourlyReportId=null;currentHourlySubmissionId=null;hourlyAdjustmentChoice=null;
+    }
+    howSetSilent("hDate",date);
+    howSetSilent("hEmployee",name);
+    howSetSilent("hPosition",hourlyWizardState.position);
+    let targetShift=hourlyWizardState.shift;
+    // LONG uses one clock pair and preserves separate AM/PM sales totals.
+    howSetSilent("hShift",targetShift);
+  }else if(hourlyWizardStep===2){
+    if(hourlyWizardState.shift==="DOUBLE"){
+      howSetSilent("hAmIn",$("howAmIn")?.value||""); howSetSilent("hAmOut",$("howAmOut")?.value||"");
+      howSetSilent("hPmIn",$("howPmIn")?.value||""); howSetSilent("hPmOut",$("howPmOut")?.value||"");
+    }else{
+      howSetSilent("hIn",$("howIn")?.value||""); howSetSilent("hOut",$("howOut")?.value||"");
+    }
+  }else if(hourlyWizardStep===3){
+    howSetSilent("hBusserAM",hourlyWizardState.busserAM);
+  }else if(hourlyWizardStep===4){
+    howSetSilent("hGrandTotal",$("howGrand")?.value||0);
+    if(["DOUBLE","LONG"].includes(hourlyWizardState.shift)) howSetSilent("hTotalAM",$("howTotalAM")?.value||0);
+    else howSetSilent("hTotalAM",0);
+  }else if(hourlyWizardStep===5){
+    howSetSilent("hPaidTip",$("howPaid")?.value||0); howSetSilent("hCardFee",$("howCardFee")?.value||0);
+    howSetSilent("hCashTip",$("howCash")?.value||0); howSetSilent("hMeal",$("howMeal")?.value||0);
+  }else if(hourlyWizardStep===6){
+    if(hourlyWizardState.position==="Bartender"){
+      syncHowBartenderToLegacy();
+    }else{
+      howSetSilent("hAmBar",$("howAmBar")?.checked?"yes":"no");
+      howSetSilent("hPmBar",$("howPmBar")?.checked?"yes":"no");
+    }
+  }else if(hourlyWizardStep===7){
+    if($("howGrand"))howSetSilent("hGrandTotal",$("howGrand").value||0);
+    if($("howTotalAM"))howSetSilent("hTotalAM",$("howTotalAM").value||0);
+    if($("howPaid"))howSetSilent("hPaidTip",$("howPaid").value||0);
+    if($("howCardFee"))howSetSilent("hCardFee",$("howCardFee").value||0);
+    if($("howCash"))howSetSilent("hCashTip",$("howCash").value||0);
+    if($("howMeal"))howSetSilent("hMeal",$("howMeal").value||0);
+    if(hourlyWizardState.position!=="Bartender"){
+      if($("howAmBar"))howSetSilent("hAmBar",$("howAmBar").checked?"yes":"no");
+      if($("howPmBar"))howSetSilent("hPmBar",$("howPmBar").checked?"yes":"no");
+    }
+  }
+}
+
+function bindHourlyWizard(){
+  $("hourlyOriginalWizard")?.querySelectorAll("[data-how-choice]").forEach(b=>b.onclick=(ev)=>{
+    ev.preventDefault();
+    ev.stopPropagation();
+    const key=b.dataset.howChoice,val=b.dataset.howValue;
+    hourlyWizardState[key]=val;
+    if(key==="position"){
+      howSetSilent("hPosition",val);
+      if(val==="Bartender"){
+        if(hourlyWizardState.shift==="AM") howBartenderState.checkpoint="AM";
+        if(hourlyWizardState.shift==="PM") howBartenderState.checkpoint="PM";
+      }
+    }else if(key==="shift"){
+      const targetShift=val;
+      howSetSilent("hShift",targetShift);
+      if(hourlyWizardState.position==="Bartender"){
+        if(val==="AM") howBartenderState.checkpoint="AM";
+        if(val==="PM") howBartenderState.checkpoint="PM";
+      }
+    }else if(key==="busserAM"){
+      howSetSilent("hBusserAM",val);
+    }
+    if(hourlyV1Mode&&hv1EditingEmployee){
+      try{hv1CapturePage(false)}catch(e){console.warn("V1 choice autosave:",e)}
+    }
+    renderHourlyWizard();
+  });
+  $("howGrand")?.addEventListener("input",updateHowSalesPreview);
+  $("howTotalAM")?.addEventListener("input",updateHowSalesPreview);
+
+  $("hourlyOriginalWizard")?.querySelectorAll("[data-how-bt-checkpoint]").forEach(btn=>btn.onclick=ev=>{
+    ev.preventDefault(); ev.stopPropagation();
+    captureHowBartenderDom();
+    howBartenderState.checkpoint=btn.dataset.howBtCheckpoint;
+    ensureHowBartenderPreviousDefaults();
+    renderHourlyWizard();
+  });
+  for(let i=1;i<=9;i++){
+    $(`howBtName${i}`)?.addEventListener("change",updateHowBartenderPreview);
+    $(`howBtGrand${i}`)?.addEventListener("input",updateHowBartenderPreview);
+  }
+  $("howBtPreviousAM")?.addEventListener("input",updateHowBartenderPreview);
+  $("howBtPrevious24")?.addEventListener("input",updateHowBartenderPreview);
+  $("howAmBar")?.addEventListener("change",()=>{howSetSilent("hAmBar",$("howAmBar").checked?"yes":"no");if(hourlyV1Mode&&hv1EditingEmployee)hv1CapturePage(false);renderHourlyWizard();});
+  $("howPmBar")?.addEventListener("change",()=>{howSetSilent("hPmBar",$("howPmBar").checked?"yes":"no");if(hourlyV1Mode&&hv1EditingEmployee)hv1CapturePage(false);renderHourlyWizard();});
+
+  if($("howBack")) $("howBack").onclick=()=>{
+    captureHourlyWizard();
+    if(hourlyV1Mode&&hv1EditingEmployee)hv1CapturePage(false);
+    if(hourlyWizardStep===1) return;
+    hourlyWizardStep=Math.max(1,hourlyWizardStep-1);
+    if(hourlyV1Mode&&hv1EditingEmployee){
+      const s=hv1Load(),d=s.drafts?.[hv1EditingEmployee];
+      if(d){d.page=hourlyWizardStep;d.savedAt=Date.now();s.drafts[hv1EditingEmployee]=d;hv1Save(s);}
+    }
+    renderHourlyWizard();
+  };
+  if($("howNext")) $("howNext").onclick=()=>{
+    try{
+      captureHourlyWizard();
+    }catch(e){
+      console.error("Hourly wizard next failed",e);
+      alert("Hourly Adjustment button error: "+(e.message||e));
+      return;
+    }
+    if(hourlyV1Mode&&hv1EditingEmployee)hv1CapturePage(false);
+    if(hourlyWizardStep===6 && hourlyWizardState.position==="Bartender" && !validateHowBartenderStep()){
+      return;
+    }
+    if(hourlyWizardStep===1 && !howVal("hEmployee")){
+      alert("Select an employee.");
+      return;
+    }
+    if(hourlyWizardStep===7){
+      hourlyWizardStep=1;
+      ["hIn","hOut","hAmIn","hAmOut","hPmIn","hPmOut"].forEach(id=>{if($(id))$(id).value="";});
+      ["hGrandTotal","hTotalAM","hPaidTip","hCardFee","hCashTip","hMeal"].forEach(id=>{if($(id))$(id).value="0";});
+      resetHowBartenderState();
+      clearHourlyBartenderCalculator();
+      if($("hourlyResult")) $("hourlyResult").classList.add("hidden");
+      syncWizardFromLegacy();
+      renderHourlyWizard();
+      return;
+    }
+    hourlyWizardStep=Math.min(7,hourlyWizardStep+1);
+    if(hourlyV1Mode&&hv1EditingEmployee){
+      const s=hv1Load(),d=s.drafts?.[hv1EditingEmployee];
+      if(d){d.page=hourlyWizardStep;d.savedAt=Date.now();s.drafts[hv1EditingEmployee]=d;hv1Save(s);}
+    }
+    renderHourlyWizard();
+  };
+  if($("howCalc")) $("howCalc").onclick=()=>{
+    captureHourlyWizard();
+    const r=window.calculateHourlyV01();
+    if(r){
+      $("hourlyResult")?.classList.remove("hidden","hourlyLegacyHidden");
+      $("hourlyResult")?.scrollIntoView({behavior:"smooth",block:"start"});
+    }
+  };
+  if($("howFinal")) $("howFinal").onclick=()=>{
+    captureHourlyWizard();
+    window.saveHourlyV01();
+  };
+}
+
+window.resetHourlyWizard=function(){
+  hourlyWizardStep=1;
+  syncWizardFromLegacy();
+  renderHourlyWizard();
+};
+
+setInterval(()=>{
+  const hourly=$("hourly");
+  if(hourly && !hourly.classList.contains("hidden") && $("hourlyOriginalWizard")){
+    hideLegacyHourlyInput();
+    ensureHourlyWizardInitialized();
+    if(!$("howBody")?.children.length) renderHourlyWizard();
+  }
+},700);
+
+let hourlyWizardInitialized=false;
+function ensureHourlyWizardInitialized(){
+  if(hourlyWizardInitialized)return;
+  syncWizardFromLegacy();
+  hourlyWizardInitialized=true;
+}
+setTimeout(()=>{ if($("hourlyOriginalWizard")){ensureHourlyWizardInitialized();renderHourlyWizard();} },900);
+// ===== END V13.4.3 ORIGINAL HOURLY WIZARD =====
+
+
+// V13.4.4: hourly wizard button/state fix.
+
+// V13.4.5: employee old Tip Report bottom bar disabled.
+
+// V13.4.6 root fix: removed invalid syncHourlyShiftUI calls that killed wizard clicks.
+
+// V13.4.7 employee old Tip Report controls permanently disabled.
+
+// V13.4.8: Hourly wizard choices update backing fields silently; legacy listeners cannot rebuild/reset wizard.
+
+// V13.4.9: time mask, Owner user edit/password, direct Employee Check Tip submit.
+
+// V13.5.0: original time mask, zero overwrite, full bartender formula/data entry.
+
+// V13.5.1 direct Bartender AM / 2 PM-4 PM / PM server Grand Total calculator.
+
+// V13.5.2: visible Bartender Step-6 state is authoritative during calculate/submit.
+
+// V13.8.24-P16 Calculate + fresh page fix.
+
+// V13.8.24-P16: Step-7 no longer erases Bartender Step-6 server totals.
+
+// V13.8.24-P16 Employee Clear All fix.
+
+// V13.8.24-P16 Daily Report tab + signature XLS.
+
+// V13.8.24-P16 dedicated Hourly Adjustment sub-app.
+
+// V13.8.24-P16 fresh page generated from current index.
+
+// V13.8.24-P16 Edit finalized Hourly report from Daily Report.
+
+// V13.8.24-P16 Daily Report + New Entry.
+
+setTimeout(loadStaffRememberPreference,0);
+
+// V13.8.24-P16 staff Remember Me with Firebase local/session persistence.
+
+// V13.8.24-P16 Main App button removed from Hourly workspace.
+
+// V13.8.24-P16 Daily Report delete row/delete all/PDF.
+
+setTimeout(loadHourlyRememberPreference,0);
+
+// V13.8.24-P16 Remember Me for dedicated Hourly login.
+
+// V13.8.24-P16 Daily Report server signature + SMS.
+
+// V13.8.24-P16 Employee phone directory for Daily Report SMS.
+
+// V13.8.24-P16 recovered employee phone directory + reliable SMS composer.
+
+// V13.8.24-P16 Add/Edit employee + phone directory.
+
+// V13.8.24-P16 Tip Calculation batch workspace.
+
+// V13.8.24-P16 login role selector responsive UI fix.
+
+// V13.8.24-P16 Delete Team.
+
+// V13.8.24-P16 Delete individual Tip Calculation team member.
+
+// V13.8.24-P16 Cloud-backed Tip Calculation drafts.
+
+// V13.8.24-P16 live bar calculation after partial Grand Total save.
+
+// V13.8.24-P16 Team BAR Center with AM / 2-4 / PM automation.
+
+// V13.8.24-P16 show password checkboxes.
+
+// V13.8.24-P16 reliable team-card and BAR server input interactions.
+
+// V13.8.24-P16 separate Team Board and employee editor views.
+
+// V13.8.24-P16 persist BAR state to hourlyV1Batches cloud document.
+
+// V13.8.24-P16 secure Clear All, Owner Undo and permanent deletion.
+
+// V13.8.24-P16 BAR source-of-truth + payout report + signed PDF/SMS.
+
+// V13.8.24-P16: no negative BAR fees; PM checkbox can be manually unchecked.
+
+// V13.8.24-P16: exact-recipient SMS, employee historical reports, finalized V1 edit-in-place.
+
+// V13.8.24-P16 Check Tip soft delete + Owner Undo / Permanent Delete.
+
+// V13.8.24-P16 employee soft-delete ownership uses Firebase UID.
+
+// V13.8.24-P16 finalized edit hydration, autosave, quick Team Board/BAR navigation.
+
+// V13.8.24-P16: direct final editing and two-way BAR/server sync.
+
+// V13.8.24-P16 larger UI, complete signed PDF/SMS, Daily Report Grand Total.
+
+// V13.8.24-P16 Grand Total = Total Before Meal + Cash Tip.
+
+// V13.8.24-P16 larger Daily Report; frozen Date + Employee columns.
+
+// V13.8.24-P16 simple Daily Report list, detail modal, Busser AM/PM split.
+
+// V13.8.24-P16 Daily Report stays in Tip Calculation; employee detail is a true modal; history retained.
+
+// V13.8.24-P16 Daily Report always visible in Tip Calculation.
+
+// V13.8.24-P16 restores full management tabs when logging in through Hourly V01.
+
+// V13.8.24-P16 professional non-overlapping PDF employee report layout.
+
+// V13.8.24-P16 removes Hourly V01 login and renames Hourly V1 to Tip Calculation.
+
+// V13.8.24-P16 clean role login buttons and simplified staff dashboard.
+
+// V13.8.24-P16 responsive all-device layout; owner credential UI does not expose plaintext Firebase passwords.
+
+// V13.8.24-P16 cashier role/UI removed.
+
+// V13.8.24-P16 stock-style Analytics chart page.
+
+// V13.8.24-P16 password-protected per-person delete + finalized report restore.
+
+// V13.8.24-P16 Future UI styling / mobile readability.
+
+// V13.8.24-P16 password-gated deletes + Owner Deleted/Undo recovery.
+
+// V13.8.24-P16 successful-login welcome voice + original WebAudio music sting.
+
+// V13.8.24-P16 primes audio/speech during actual login gesture.
+
+setTimeout(()=>{fzOpenGuestReportPortalFromUrl().catch(()=>{});},50);
+// V13.8.24-P16: Employee report-only experience + private no-signup portal.
+
+// V13.8.24-P16 adjustment examples:
+// Bartender 7.00 hours, Before Meal $20, Cash Tip $5 => minimum $49, adjustment $24,
+// employer Total Paid Out before Meal deduction = $44, final Grand Total received = $49.
+// Server 10.00 hours, minimum $72.50. If Before Meal + Cash Tip < $72.50,
+// adjustment fills the exact shortfall to $72.50.
+
+window.hv1EnterWorkspace=hv1Enter;
