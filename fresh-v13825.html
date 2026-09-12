@@ -1628,9 +1628,22 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 #fzP21AuthNote{margin-top:12px;font-size:12px;color:#607487;text-align:center}
 </style>
 <style>.how-team-back{display:block;width:100%;margin-top:12px;min-height:52px;font-size:16px;font-weight:800}</style>
+
+<style>
+#hostCashierTip .hc-employee-manager{margin:16px 0;padding:16px;border:1px solid #d7e4ed;border-radius:18px;background:#f6faff}
+#hostCashierTip .hc-employee-manager summary{width:fit-content;cursor:pointer}
+#hostCashierTip .hc-employee-form{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+#hostCashierTip .hc-employee-form label{flex:1 1 220px;display:grid;gap:6px;font-weight:700}
+#hostCashierTip .hc-employee-form input{width:100%;box-sizing:border-box}
+#hostCashierTip .hc-managed-employee{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid #d7e4ed}
+#hostCashierTip .hc-managed-employee b{overflow-wrap:anywhere}
+#hostCashierTip .hc-managed-employee .btn{flex-shrink:0}
+#hostCashierTip #hcEmployeeStatus{min-height:1.5em}
+</style>
+
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.35 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.36 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -2000,6 +2013,17 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
         <div><h3>1. Select Today’s Host / Cashier Team</h3><p>Choose each employee and shift. DOUBLE counts in both AM and PM.</p></div>
         <button class="btn green" id="hcCreateTeamBtn" type="button">Create / Update Team</button>
       </div>
+      <details class="hc-employee-manager">
+        <summary class="btn light">Manage Employees</summary>
+        <p>Add a Host / Cashier or remove someone from the employee list. Saved reports stay unchanged.</p>
+        <div class="hc-employee-form">
+          <label>Employee Name<input id="hcNewEmployeeName" type="text" maxlength="100" autocomplete="off" placeholder="Full name"/></label>
+          <label>Phone (optional)<input id="hcNewEmployeePhone" type="tel" maxlength="30" autocomplete="off"/></label>
+          <button class="btn green" id="hcAddEmployeeBtn" type="button">Add Employee</button>
+        </div>
+        <p id="hcEmployeeStatus" role="status" aria-live="polite"></p>
+        <div id="hcEmployeeList"></div>
+      </details>
       <div id="hcRoster" class="hc-roster"></div>
     </div>
 
@@ -2673,7 +2697,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 })();
 </script>
 <script src="hourly-logic-v13829.js?v=13829"></script>
-<script src="app-v13835.js?v=13835" type="module"></script>
+<script src="app-v13836.js?v=13836" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2847,7 +2871,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13835.js?v=13835',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13836.js?v=13836',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -2974,7 +2998,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13825.js?v=13825"></script>
+<script type="module" src="host-cashier-tip-v13836.js?v=13836"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
