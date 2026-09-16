@@ -1647,8 +1647,9 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 .owner-table-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
 .owner-table-toolbar h2{margin:0 0 8px}.owner-table-toolbar p{margin:0 0 12px}
 .owner-table-scroll{max-height:65vh;max-height:65dvh;overflow:auto;isolation:isolate;border:1px solid #c7d8e6;border-radius:14px;position:relative;-webkit-overflow-scrolling:touch;margin-top:12px}
-#ownerSalesTable .owner-entry-table{table-layout:fixed;width:2470px;border-collapse:separate;border-spacing:0;margin:0;color:#16334c;font-size:22px}
+#ownerSalesTable .owner-entry-table{table-layout:fixed;width:2520px;border-collapse:separate;border-spacing:0;margin:0;color:#16334c;font-size:22px}
 #ownerSalesTable .owner-entry-table th,#ownerSalesTable .owner-entry-table td{box-sizing:border-box;width:200px;padding:12px;border-right:1px solid #dae4ed;border-bottom:1px solid #dae4ed;vertical-align:middle;background:#fff;text-align:left}
+#ownerSalesTable .owner-entry-table tr>:nth-child(2){width:250px}
 #ownerSalesTable .owner-entry-table thead th{position:sticky;top:0;z-index:3;background:#173e58;color:white;font-size:20px;line-height:1.4;height:76px}
 #ownerSalesTable .owner-entry-table tr>:first-child{position:sticky;left:0;z-index:2;width:270px;min-width:270px;background:#edf5fb;box-shadow:3px 0 5px #173e581c;white-space:normal;overflow-wrap:anywhere}
 #ownerSalesTable .owner-entry-table thead th:first-child{z-index:4;background:#173e58;color:white}
@@ -1658,10 +1659,31 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 #ownerSalesTable .owner-entry-table small{display:block;margin-top:6px;font-size:16px;color:#647a8d}
 #ownerSalesTable .owner-entry-table input:disabled{background:#eef2f5;color:#627080}
 @media(max-width:600px){#ownerSalesTable .owner-table-card{padding:10px}.owner-table-scroll{max-height:62vh;max-height:62dvh}#ownerSalesTable .owner-entry-table tr>:first-child{width:180px;min-width:180px;font-size:20px}#ownerSalesTable .actions{display:flex;flex-wrap:wrap}#ownerSalesTable .actions button{flex:1 1 160px;font-size:18px;padding:12px}}
+
+.owner-cumulative-note{font-size:20px;line-height:1.5}
+/* Phone: labeled employee cards use the full available width. Desktop retains freeze panes. */
+@media(max-width:700px){
+ #ownerSalesTable .owner-table-card{padding:10px}
+ #ownerSalesTable .owner-table-scroll{max-height:70vh;max-height:70dvh;overflow:auto;overscroll-behavior:contain;border:0;border-radius:0}
+ #ownerSalesTable .owner-entry-table{display:block;width:100%;min-width:0;table-layout:auto}
+ #ownerSalesTable .owner-entry-table thead{display:none}
+ #ownerSalesTable .owner-entry-table tbody{display:block;width:100%}
+ #ownerSalesTable .owner-entry-table tr{display:block;width:100%;margin-bottom:24px;border:1px solid #c7d8e6;border-radius:12px}
+ #ownerSalesTable .owner-entry-table tr>th:first-child{position:sticky;top:0;left:auto;display:block;width:100%;min-width:0;z-index:2;padding:16px;background:#173e58;color:#fff;font-size:22px;box-shadow:0 3px 6px #173e5820;border-radius:10px 10px 0 0}
+ #ownerSalesTable .owner-entry-table tr>th:first-child small{color:#e4f1fa;font-size:18px}
+ #ownerSalesTable .owner-entry-table tr>td{display:block;width:100%;min-width:0;padding:12px 16px;border-right:0;text-align:left}
+ #ownerSalesTable .owner-entry-table td[data-label]::before{content:attr(data-label);display:block;font-size:20px;font-weight:700;line-height:1.4;margin-bottom:8px;color:#29465a}
+ #ownerSalesTable .owner-entry-table td.owner-table-check{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:64px}
+ #ownerSalesTable .owner-entry-table td.owner-table-check::before{margin-bottom:0}
+ #ownerSalesTable .owner-entry-table input:not([type=checkbox]),#ownerSalesTable .owner-entry-table select{font-size:24px;min-height:62px}
+ #ownerSalesTable .owner-entry-table small{font-size:18px}
+ #ownerSalesTable .actions{display:flex;flex-wrap:wrap}
+ #ownerSalesTable .actions button{flex:1 1 100%;font-size:20px;padding:14px}
+}
 </style>
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.39 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.41 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -1867,6 +1889,8 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <button class="shift" data-eshift="PM">PM</button>
 <button class="shift" data-eshift="DOUBLE">DOUBLE</button>
 <button class="shift" data-eshift="LONG">LONG</button>
+<button class="shift" data-eshift="10:45 - 14:00">10:45 - 14:00</button>
+<button class="shift" data-eshift="14:00 - 16:00">14:00 - 16:00</button>
 </div>
 <h3>Clock In / Out</h3>
 <div class="grid" id="singleClock">
@@ -1918,7 +1942,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <label><input id="eBarAM" type="checkbox"/> WITH BAR AM</label>
 </div>
 <div class="hidden" id="eBarPMWrap">
-<label><input id="eBarPM" type="checkbox"/> WITH BAR PM</label>
+<label><input id="eBarPM" type="checkbox"/> <span id="eBarPMLabel">WITH BAR PM</span></label>
 </div>
 <div style="height:12px"></div>
 <div class="notice good">Your submission is stored in the shared Firestore database and appears on Manager/Owner devices in realtime.</div>
@@ -2019,6 +2043,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div class="actions"><button class="btn green" type="button" onclick="ownerTableSave(false)">SAVE TABLE</button><button class="btn dark" type="button" onclick="ownerTableSave(true)">SAVE &amp; BACK TO EMPLOYEE BOARD</button><button class="btn light" type="button" onclick="ownerTableBack()">EMPLOYEE BOARD</button></div>
 <p class="notice" id="ownerTableStatus" role="status" aria-live="polite">Ready.</p>
 <p class="small">Checked BAR Sales = included. Unchecked = No Bar Sales. Save Table updates drafts; Submit Final &amp; Money Ready stays on Employee Board.</p>
+<p id="ownerTablePeriods" class="notice"></p><p class="owner-cumulative-note">Cumulative sales: Total 2–4 already includes Total AM. Grand Total already includes both. Enter each checkpoint total once.</p>
 <div class="owner-table-scroll" tabindex="0" role="region" aria-label="Employee input table. Scroll sideways for all fields; employee names and column headers stay visible.">
 <table class="owner-entry-table"><thead><tr><th scope="col">Employee</th><th scope="col">Shift</th><th scope="col">Grand Total ($)</th><th scope="col">BAR Sales PM</th><th scope="col">Total AM ($)</th><th scope="col">BAR Sales AM</th><th scope="col">Total 2–4 ($)</th><th scope="col">BAR Sales 2–4</th><th scope="col">Paid Tip ($)</th><th scope="col">Pay Card Tip Fee ($)</th><th scope="col">Cash Tip ($)</th><th scope="col">Meal ($)</th></tr></thead><tbody id="ownerTableBody"></tbody></table>
 </div></div></section>
@@ -2182,7 +2207,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div><label>Date</label><input id="hDate" type="date"/></div>
 <div><label>Employee</label><select id="hEmployee"></select></div>
 <div><label>Position</label><select id="hPosition"><option>Server</option><option>Bartender</option></select></div>
-<div><label>Shift</label><select id="hShift"><option>AM</option><option>PM</option><option>DOUBLE</option><option value="LONG">LONG</option></select></div>
+<div><label>Shift</label><select id="hShift"><option>AM</option><option>PM</option><option>DOUBLE</option><option value="LONG">LONG</option><option value="10:45 - 14:00">10:45 - 14:00</option><option value="14:00 - 16:00">14:00 - 16:00</option></select></div>
 <div><label>Busser AM</label><select id="hBusserAM"><option value="WITHOUT">WITHOUT BUSSER AM</option><option value="WITH">WITH BUSSER AM</option></select></div>
 <div><label>Meal ($)</label><input id="hMeal" step=".01" type="number" value="0"/></div>
 </div>
@@ -2686,7 +2711,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div><label>Employee Name</label><input id="mEmployee"/></div>
 <div><label>Date</label><input id="mDate" type="date"/></div>
 <div><label>Position</label><select id="mPosition"><option>Server</option><option>Bartender</option><option>Host</option></select></div>
-<div><label>Shift</label><select id="mShift"><option>AM</option><option>PM</option><option>DOUBLE</option><option>LONG</option></select></div>
+<div><label>Shift</label><select id="mShift"><option>AM</option><option>PM</option><option>DOUBLE</option><option>LONG</option><option value="10:45 - 14:00">10:45 - 14:00</option><option value="14:00 - 16:00">14:00 - 16:00</option></select></div>
 <div><label>Break</label><select id="mBreakMode"><option value="none">N/A</option><option value="without">Without Break</option><option value="with">With Break</option></select></div>
 <div><label>Clock</label><input id="mClock" placeholder="10:30–22:00"/></div>
 <div><label>Grand Total ($)</label><input id="mGrandTotal" step=".01" type="number"/></div>
@@ -2724,8 +2749,8 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
   };
 })();
 </script>
-<script src="hourly-logic-v13829.js?v=13829"></script>
-<script src="app-v13839.js?v=13839" type="module"></script>
+<script src="hourly-logic-v13840.js?v=13841"></script>
+<script src="app-v13841.js?v=13841" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2899,7 +2924,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13839.js?v=13839',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13841.js?v=13841',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -3026,7 +3051,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13837.js?v=13839"></script>
+<script type="module" src="host-cashier-tip-v13840.js?v=13841"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
