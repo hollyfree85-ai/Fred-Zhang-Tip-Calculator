@@ -1660,6 +1660,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 #ownerSalesTable .owner-entry-table input:disabled{background:#eef2f5;color:#627080}
 @media(max-width:600px){#ownerSalesTable .owner-table-card{padding:10px}.owner-table-scroll{max-height:62vh;max-height:62dvh}#ownerSalesTable .owner-entry-table tr>:first-child{width:180px;min-width:180px;font-size:20px}#ownerSalesTable .actions{display:flex;flex-wrap:wrap}#ownerSalesTable .actions button{flex:1 1 160px;font-size:18px;padding:12px}}
 
+#ownerSalesTable .owner-received{background:#e6f6ee;color:#096943;font-size:24px}
 .owner-cumulative-note{font-size:20px;line-height:1.5}
 /* Phone: labeled employee cards use the full available width. Desktop retains freeze panes. */
 @media(max-width:700px){
@@ -1683,7 +1684,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 </style>
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.41 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.42 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -2042,7 +2043,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div class="owner-table-toolbar"><div><h2>Employee Table</h2><p>Enter today’s sales, tips and meals. Save to Employee Board and BAR.</p></div><div><label for="ownerTableDate">Work Date</label><input id="ownerTableDate" type="date" onchange="ownerTableDateChanged()"></div></div>
 <div class="actions"><button class="btn green" type="button" onclick="ownerTableSave(false)">SAVE TABLE</button><button class="btn dark" type="button" onclick="ownerTableSave(true)">SAVE &amp; BACK TO EMPLOYEE BOARD</button><button class="btn light" type="button" onclick="ownerTableBack()">EMPLOYEE BOARD</button></div>
 <p class="notice" id="ownerTableStatus" role="status" aria-live="polite">Ready.</p>
-<p class="small">Checked BAR Sales = included. Unchecked = No Bar Sales. Save Table updates drafts; Submit Final &amp; Money Ready stays on Employee Board.</p>
+<p class="small">Servers: checked BAR Sales = included; unchecked = No Bar Sales. Bartenders receive BAR tip out automatically from their assigned periods; no checkbox needed. Save Table updates drafts; Submit Final &amp; Money Ready stays on Employee Board.</p>
 <p id="ownerTablePeriods" class="notice"></p><p class="owner-cumulative-note">Cumulative sales: Total 2–4 already includes Total AM. Grand Total already includes both. Enter each checkpoint total once.</p>
 <div class="owner-table-scroll" tabindex="0" role="region" aria-label="Employee input table. Scroll sideways for all fields; employee names and column headers stay visible.">
 <table class="owner-entry-table"><thead><tr><th scope="col">Employee</th><th scope="col">Shift</th><th scope="col">Grand Total ($)</th><th scope="col">BAR Sales PM</th><th scope="col">Total AM ($)</th><th scope="col">BAR Sales AM</th><th scope="col">Total 2–4 ($)</th><th scope="col">BAR Sales 2–4</th><th scope="col">Paid Tip ($)</th><th scope="col">Pay Card Tip Fee ($)</th><th scope="col">Cash Tip ($)</th><th scope="col">Meal ($)</th></tr></thead><tbody id="ownerTableBody"></tbody></table>
@@ -2749,8 +2750,8 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
   };
 })();
 </script>
-<script src="hourly-logic-v13840.js?v=13841"></script>
-<script src="app-v13841.js?v=13841" type="module"></script>
+<script src="hourly-logic-v13840.js?v=13842"></script>
+<script src="app-v13842.js?v=13842" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2924,7 +2925,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13841.js?v=13841',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13842.js?v=13842',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -3051,7 +3052,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13840.js?v=13841"></script>
+<script type="module" src="host-cashier-tip-v13840.js?v=13842"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
