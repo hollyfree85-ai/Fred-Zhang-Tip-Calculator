@@ -1645,59 +1645,44 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 #ownerSalesTable{width:100%;min-width:0}
 #ownerSalesTable .owner-table-card{min-width:0;max-width:100%;padding:18px}
 .owner-table-toolbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
-.owner-table-toolbar h2{margin:0 0 8px}.owner-table-toolbar p{margin:0 0 12px}
-.owner-table-scroll{max-height:65vh;max-height:65dvh;overflow:auto;isolation:isolate;border:1px solid #c7d8e6;border-radius:14px;position:relative;-webkit-overflow-scrolling:touch;margin-top:12px}
-#ownerSalesTable .owner-entry-table{table-layout:fixed;width:2520px;border-collapse:separate;border-spacing:0;margin:0;color:#16334c;font-size:22px}
-#ownerSalesTable .owner-entry-table th,#ownerSalesTable .owner-entry-table td{box-sizing:border-box;width:200px;padding:12px;border-right:1px solid #dae4ed;border-bottom:1px solid #dae4ed;vertical-align:middle;background:#fff;text-align:left}
-#ownerSalesTable .owner-entry-table tr>:nth-child(2){width:250px}
-#ownerSalesTable .owner-entry-table thead th{position:sticky;top:0;z-index:3;background:#173e58;color:white;font-size:20px;line-height:1.4;height:76px}
-#ownerSalesTable .owner-entry-table tr>:first-child{position:sticky;left:0;z-index:2;width:270px;min-width:270px;background:#edf5fb;box-shadow:3px 0 5px #173e581c;white-space:normal;overflow-wrap:anywhere}
+.owner-table-toolbar h2{margin:0 0 8px}
+.owner-group-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:16px 0}
+#ownerSalesTable .owner-group-buttons button{font-size:22px;min-height:68px;padding:12px}
+#ownerSalesTable .owner-sales-buttons{grid-template-columns:repeat(3,minmax(0,1fr))}
+#ownerSalesTable .owner-sales-buttons:empty{display:none}
+#ownerTableHelp{font-size:20px;line-height:1.5}
+.owner-table-scroll{max-height:65vh;max-height:65dvh;overflow:auto;isolation:isolate;border:1px solid #c7d8e6;border-radius:14px;position:relative;-webkit-overflow-scrolling:touch;margin:16px 0}
+#ownerSalesTable .owner-entry-table{table-layout:fixed;width:100%;border-collapse:separate;border-spacing:0;margin:0;color:#16334c;font-size:22px}
+#ownerSalesTable .owner-entry-table th,#ownerSalesTable .owner-entry-table td{box-sizing:border-box;padding:12px;border-right:1px solid #dae4ed;border-bottom:1px solid #dae4ed;vertical-align:middle;background:#fff;text-align:left}
+#ownerSalesTable .owner-entry-table thead th{position:sticky;top:0;z-index:3;background:#173e58;color:white;font-size:22px;line-height:1.4;height:72px}
+#ownerSalesTable .owner-entry-table tr>:first-child{position:sticky;left:0;z-index:2;width:36%;max-width:280px;background:#edf5fb;overflow-wrap:anywhere}
 #ownerSalesTable .owner-entry-table thead th:first-child{z-index:4;background:#173e58;color:white}
-#ownerSalesTable .owner-entry-table input:not([type=checkbox]),#ownerSalesTable .owner-entry-table select{width:100%;min-width:0;box-sizing:border-box;min-height:62px;padding:8px;font-size:24px;border:1px solid #c4d6e5;border-radius:9px;background:white;color:#162f46}
-#ownerSalesTable .owner-entry-table input[type=checkbox]{width:30px!important;height:30px!important;min-height:0;accent-color:#1689ad;cursor:pointer}
-#ownerSalesTable .owner-entry-table .owner-table-check{text-align:center}
-#ownerSalesTable .owner-entry-table small{display:block;margin-top:6px;font-size:16px;color:#647a8d}
+#ownerSalesTable .owner-entry-table input:not([type=checkbox]),#ownerSalesTable .owner-entry-table select{width:100%;min-width:0;box-sizing:border-box;min-height:62px;padding:10px;font-size:24px;border:1px solid #c4d6e5;border-radius:9px;background:white;color:#162f46}
+#ownerSalesTable .owner-entry-table input[type=checkbox]{width:30px!important;height:30px!important;min-height:0;flex:0 0 30px;accent-color:#1689ad;cursor:pointer;margin:0}
+#ownerSalesTable .owner-entry-table small{display:block;margin-top:6px;font-size:18px;color:#647a8d}
 #ownerSalesTable .owner-entry-table input:disabled{background:#eef2f5;color:#627080}
-@media(max-width:600px){#ownerSalesTable .owner-table-card{padding:10px}.owner-table-scroll{max-height:62vh;max-height:62dvh}#ownerSalesTable .owner-entry-table tr>:first-child{width:180px;min-width:180px;font-size:20px}#ownerSalesTable .actions{display:flex;flex-wrap:wrap}#ownerSalesTable .actions button{flex:1 1 160px;font-size:18px;padding:12px}}
-
-#ownerSalesTable .owner-received{background:#e6f6ee;color:#096943;font-size:24px}
-.owner-cumulative-note{font-size:20px;line-height:1.5}
-/* Phone: labeled employee cards use the full available width. Desktop retains freeze panes. */
+#ownerSalesTable .owner-inline-check{display:flex;align-items:center;gap:10px;font-size:20px;padding:12px 0}
+.owner-clock-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+#ownerSalesTable .owner-clock-grid label{font-size:20px;margin:0}
+#ownerSalesTable .owner-received{background:#e6f6ee;color:#096943;font-size:20px;margin-top:10px;padding:10px;border-radius:9px}
+#ownerSalesTable .actions{display:flex;gap:12px;flex-wrap:wrap}
+#ownerSalesTable .actions button{font-size:20px;min-height:60px}
 @media(max-width:700px){
- #ownerSalesTable .owner-table-card{padding:10px}
- #ownerSalesTable .owner-table-scroll{max-height:70vh;max-height:70dvh;overflow:auto;overscroll-behavior:contain;border:0;border-radius:0}
- #ownerSalesTable .owner-entry-table{display:block;width:100%;min-width:0;table-layout:auto}
- #ownerSalesTable .owner-entry-table thead{display:none}
- #ownerSalesTable .owner-entry-table tbody{display:block;width:100%}
- #ownerSalesTable .owner-entry-table tr{display:block;width:100%;margin-bottom:24px;border:1px solid #c7d8e6;border-radius:12px}
- #ownerSalesTable .owner-entry-table tr>th:first-child{position:sticky;top:0;left:auto;display:block;width:100%;min-width:0;z-index:2;padding:16px;background:#173e58;color:#fff;font-size:22px;box-shadow:0 3px 6px #173e5820;border-radius:10px 10px 0 0}
- #ownerSalesTable .owner-entry-table tr>th:first-child small{color:#e4f1fa;font-size:18px}
- #ownerSalesTable .owner-entry-table tr>td{display:block;width:100%;min-width:0;padding:12px 16px;border-right:0;text-align:left}
- #ownerSalesTable .owner-entry-table td[data-label]::before{content:attr(data-label);display:block;font-size:20px;font-weight:700;line-height:1.4;margin-bottom:8px;color:#29465a}
- #ownerSalesTable .owner-entry-table td.owner-table-check{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:64px}
- #ownerSalesTable .owner-entry-table td.owner-table-check::before{margin-bottom:0}
- #ownerSalesTable .owner-entry-table input:not([type=checkbox]),#ownerSalesTable .owner-entry-table select{font-size:24px;min-height:62px}
- #ownerSalesTable .owner-entry-table small{font-size:18px}
- #ownerSalesTable .actions{display:flex;flex-wrap:wrap}
- #ownerSalesTable .actions button{flex:1 1 100%;font-size:20px;padding:14px}
-}
-
-.owner-employee-picker,#ownerSalesTable .owner-mobile-save{display:none}
-@media(max-width:700px){
- #ownerSalesTable .owner-employee-picker{display:block;position:sticky;top:0;z-index:5;background:#edf5fb;padding:12px;border:1px solid #c7d8e6;border-radius:12px;margin:16px 0}
- #ownerSalesTable .owner-employee-picker label{font-size:22px;font-weight:800;display:block;margin-bottom:8px}
- #ownerSalesTable .owner-employee-picker select{font-size:24px;min-height:64px;width:100%;box-sizing:border-box;padding:12px;color:#16334c;background:white;border:1px solid #c7d8e6;border-radius:10px}
- #ownerSalesTable .owner-employee-picker p{font-size:18px;line-height:1.4;margin:8px 0 0}
- #ownerSalesTable .owner-entry-table tr.owner-employee-other{display:none}
- #ownerSalesTable .owner-entry-table tr.owner-employee-selected{display:block}
- #ownerSalesTable .owner-entry-table tr>th:first-child{position:static}
- #ownerSalesTable .owner-table-scroll{max-height:none;overflow:visible;isolation:auto}
- #ownerSalesTable .owner-mobile-save{display:flex}
+ #ownerSalesTable .owner-table-card{padding:10px!important}
+ #ownerSalesTable .owner-group-buttons{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ #ownerSalesTable .owner-group-buttons button{font-size:20px}
+ #ownerSalesTable .owner-sales-buttons{grid-template-columns:repeat(3,minmax(0,1fr))}
+ #ownerSalesTable .owner-sales-buttons button{font-size:18px;padding:8px}
+ #ownerSalesTable .owner-entry-table th,#ownerSalesTable .owner-entry-table td{padding:10px 8px}
+ #ownerSalesTable .owner-entry-table tr>:first-child{width:40%;font-size:20px}
+ #ownerSalesTable .owner-entry-table select{font-size:22px;padding:6px}
+ .owner-clock-grid{grid-template-columns:1fr}
+ #ownerSalesTable .actions button{flex:1 1 100%}
 }
 </style>
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.43 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.44 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -2051,17 +2036,15 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <button class="staff-menu-btn" data-stab="setup">Setup</button>
 
 </div>
-<section class="staffPanel hidden ownerOnly" id="ownerSalesTable">
-<div class="card owner-table-card">
-<div class="owner-table-toolbar"><div><h2>Employee Table</h2><p>Enter today’s sales, tips and meals. Save to Employee Board and BAR.</p></div><div><label for="ownerTableDate">Work Date</label><input id="ownerTableDate" type="date" onchange="ownerTableDateChanged()"></div></div>
+<section class="staffPanel hidden ownerOnly" id="ownerSalesTable"><div class="card owner-table-card">
+<div class="owner-table-toolbar"><div><h2>Employee Table</h2><p>Choose a section and fill it for the whole team.</p></div><div><label for="ownerTableDate">Work Date</label><input id="ownerTableDate" type="date" onchange="ownerTableDateChanged()"></div></div>
+<div class="owner-group-buttons" id="ownerTableGroups" aria-label="Input sections"></div>
+<div class="owner-group-buttons owner-sales-buttons" id="ownerTableSalesGroups" aria-label="Sales checkpoints"></div>
 <div class="actions"><button class="btn green" type="button" onclick="ownerTableSave(false)">SAVE TABLE</button><button class="btn dark" type="button" onclick="ownerTableSave(true)">SAVE &amp; BACK TO EMPLOYEE BOARD</button><button class="btn light" type="button" onclick="ownerTableBack()">EMPLOYEE BOARD</button></div>
-<p class="notice" id="ownerTableStatus" role="status" aria-live="polite">Ready.</p>
-<p class="small">Servers: checked BAR Sales = included; unchecked = No Bar Sales. Bartenders receive BAR tip out automatically from their assigned periods; no checkbox needed. Save Table updates drafts; Submit Final &amp; Money Ready stays on Employee Board.</p>
-<p id="ownerTablePeriods" class="notice"></p><p class="owner-cumulative-note">Cumulative sales: Total 2–4 already includes Total AM. Grand Total already includes both. Enter each checkpoint total once.</p>
-<div class="owner-employee-picker"><label for="ownerTableEmployee">Select Employee</label><select id="ownerTableEmployee" onchange="ownerTableSelectEmployee(this.value)"></select><p>Switch employees anytime. Save Table saves all your changes.</p></div>
-<div class="owner-table-scroll" tabindex="0" role="region" aria-label="Employee input table. Scroll sideways for all fields; employee names and column headers stay visible.">
-<table class="owner-entry-table"><thead><tr><th scope="col">Employee</th><th scope="col">Shift</th><th scope="col">Grand Total ($)</th><th scope="col">BAR Sales PM</th><th scope="col">Total AM ($)</th><th scope="col">BAR Sales AM</th><th scope="col">Total 2–4 ($)</th><th scope="col">BAR Sales 2–4</th><th scope="col">Paid Tip ($)</th><th scope="col">Pay Card Tip Fee ($)</th><th scope="col">Cash Tip ($)</th><th scope="col">Meal ($)</th></tr></thead><tbody id="ownerTableBody"></tbody></table>
-</div><div class="actions owner-mobile-save"><button class="btn green" type="button" onclick="ownerTableSave(false)">SAVE TABLE</button><button class="btn dark" type="button" onclick="ownerTableSave(true)">SAVE &amp; BACK TO EMPLOYEE BOARD</button></div></div></section>
+<p id="ownerTableStatus" class="notice" role="status" aria-live="polite">Ready.</p><p id="ownerTableHelp"></p><p id="ownerTablePeriods" class="notice hidden"></p>
+<div class="owner-table-scroll" tabindex="0" role="region" aria-label="Whole team input table; names and headers stay visible"><table class="owner-entry-table"><thead id="ownerTableHead"></thead><tbody id="ownerTableBody"></tbody></table></div>
+<div class="actions"><button class="btn green" type="button" onclick="ownerTableSave(false)">SAVE TABLE</button><button class="btn dark" type="button" onclick="ownerTableSave(true)">SAVE &amp; BACK TO EMPLOYEE BOARD</button></div>
+</div></section>
 <section class="staffPanel hidden" id="hostCashierTip">
   <div class="hc-shell">
     <div class="hc-hero">
@@ -2764,8 +2747,8 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
   };
 })();
 </script>
-<script src="hourly-logic-v13840.js?v=13843"></script>
-<script src="app-v13843.js?v=13843" type="module"></script>
+<script src="hourly-logic-v13840.js?v=13844"></script>
+<script src="app-v13844.js?v=13844" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2939,7 +2922,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13843.js?v=13843',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13844.js?v=13844',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -3066,7 +3049,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13840.js?v=13843"></script>
+<script type="module" src="host-cashier-tip-v13840.js?v=13844"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
