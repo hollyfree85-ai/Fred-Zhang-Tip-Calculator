@@ -1652,8 +1652,8 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 #ownerSalesTable .owner-sales-buttons:empty{display:none}
 #ownerTableHelp{font-size:20px;line-height:1.5}
 .owner-table-scroll{max-height:65vh;max-height:65dvh;overflow:auto;isolation:isolate;border:1px solid #c7d8e6;border-radius:14px;position:relative;-webkit-overflow-scrolling:touch;margin:16px 0}
-#ownerSalesTable .owner-entry-table{table-layout:fixed;width:100%;border-collapse:separate;border-spacing:0;margin:0;color:#16334c;font-size:22px}
-#ownerSalesTable .owner-entry-table th,#ownerSalesTable .owner-entry-table td{box-sizing:border-box;padding:12px;border-right:1px solid #dae4ed;border-bottom:1px solid #dae4ed;vertical-align:middle;background:#fff;text-align:left}
+#ownerSalesTable .owner-entry-table{table-layout:fixed;width:100%;min-width:0;max-width:100%;border-collapse:separate;border-spacing:0;margin:0;color:#16334c;font-size:22px}
+#ownerSalesTable .owner-entry-table th,#ownerSalesTable .owner-entry-table td{box-sizing:border-box;white-space:normal;overflow-wrap:anywhere;padding:12px;border-right:1px solid #dae4ed;border-bottom:1px solid #dae4ed;vertical-align:middle;background:#fff;text-align:left}
 #ownerSalesTable .owner-entry-table thead th{position:sticky;top:0;z-index:3;background:#173e58;color:white;font-size:22px;line-height:1.4;height:72px}
 #ownerSalesTable .owner-entry-table tr>:first-child{position:sticky;left:0;z-index:2;width:36%;max-width:280px;background:#edf5fb;overflow-wrap:anywhere}
 #ownerSalesTable .owner-entry-table thead th:first-child{z-index:4;background:#173e58;color:white}
@@ -1679,10 +1679,18 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
  .owner-clock-grid{grid-template-columns:1fr}
  #ownerSalesTable .actions button{flex:1 1 100%}
 }
+
+@media(max-width:700px){
+ #ownerSalesTable .owner-table-scroll{width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+ #ownerSalesTable .owner-entry-table th,#ownerSalesTable .owner-entry-table td{font-size:20px!important;white-space:normal;overflow-wrap:anywhere}
+ #ownerSalesTable .owner-entry-table input:not([type=checkbox]),#ownerSalesTable .owner-entry-table select{font-size:22px!important;min-height:56px!important}
+ #ownerSalesTable .owner-entry-table small{font-size:16px!important;white-space:normal}
+ #ownerSalesTable .owner-entry-table label{font-size:18px!important;white-space:normal}
+}
 </style>
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.44 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.45 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -2747,8 +2755,8 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
   };
 })();
 </script>
-<script src="hourly-logic-v13840.js?v=13844"></script>
-<script src="app-v13844.js?v=13844" type="module"></script>
+<script src="hourly-logic-v13840.js?v=13845"></script>
+<script src="app-v13845.js?v=13845" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2922,7 +2930,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13844.js?v=13844',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13845.js?v=13845',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -3049,7 +3057,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13840.js?v=13844"></script>
+<script type="module" src="host-cashier-tip-v13840.js?v=13845"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
