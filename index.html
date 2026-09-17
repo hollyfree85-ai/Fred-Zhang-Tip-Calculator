@@ -1687,10 +1687,24 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
  #ownerSalesTable .owner-entry-table small{font-size:16px!important;white-space:normal}
  #ownerSalesTable .owner-entry-table label{font-size:18px!important;white-space:normal}
 }
+
+/* Fixed tracks prevent table min-content and sticky cell widths covering inputs. */
+#ownerSalesTable .owner-table-scroll{width:100%;min-width:0;max-width:100%;box-sizing:border-box;overflow-x:hidden;overflow-y:auto}
+#ownerSalesTable table.owner-entry-table{display:block!important;width:100%!important;min-width:0!important;max-width:100%!important;box-sizing:border-box}
+#ownerSalesTable .owner-entry-table>thead,#ownerSalesTable .owner-entry-table>tbody{display:block;width:100%;min-width:0;max-width:100%}
+#ownerSalesTable .owner-entry-table>thead{position:sticky;top:0;z-index:4}
+#ownerSalesTable .owner-entry-table tr{display:grid!important;grid-template-columns:minmax(0,2fr) minmax(0,3fr);width:100%;min-width:0;max-width:100%}
+#ownerSalesTable .owner-entry-table tr>th,#ownerSalesTable .owner-entry-table tr>td{display:block!important;position:static!important;left:auto!important;top:auto!important;width:auto!important;min-width:0!important;max-width:none!important;box-sizing:border-box;white-space:normal!important;overflow-wrap:anywhere;align-content:center}
+#ownerSalesTable .owner-entry-table thead th{height:auto;min-height:64px;font-size:20px!important;display:flex!important;align-items:center}
+#ownerSalesTable .owner-entry-table tbody th{font-size:20px!important}
+#ownerSalesTable .owner-entry-table input:not([type=checkbox]),#ownerSalesTable .owner-entry-table select{width:100%!important;min-width:0!important;max-width:100%!important;font-size:22px!important;min-height:56px!important;color:#16334c!important;-webkit-text-fill-color:#16334c;opacity:1;padding:8px!important}
+#ownerSalesTable .owner-entry-table td[colspan]{grid-column:1/-1}
+#ownerSalesTable .owner-clock-grid{min-width:0}
+#ownerSalesTable .owner-clock-grid>label{min-width:0}
 </style>
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.45 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.47 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -2050,7 +2064,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div class="owner-group-buttons owner-sales-buttons" id="ownerTableSalesGroups" aria-label="Sales checkpoints"></div>
 <div class="actions"><button class="btn green" type="button" onclick="ownerTableSave(false)">SAVE TABLE</button><button class="btn dark" type="button" onclick="ownerTableSave(true)">SAVE &amp; BACK TO EMPLOYEE BOARD</button><button class="btn light" type="button" onclick="ownerTableBack()">EMPLOYEE BOARD</button></div>
 <p id="ownerTableStatus" class="notice" role="status" aria-live="polite">Ready.</p><p id="ownerTableHelp"></p><p id="ownerTablePeriods" class="notice hidden"></p>
-<div class="owner-table-scroll" tabindex="0" role="region" aria-label="Whole team input table; names and headers stay visible"><table class="owner-entry-table"><thead id="ownerTableHead"></thead><tbody id="ownerTableBody"></tbody></table></div>
+<div id="ownerTableScroll" class="owner-table-scroll" tabindex="0" role="region" aria-label="Whole team input table; names and headers stay visible"><table class="owner-entry-table"><thead id="ownerTableHead"></thead><tbody id="ownerTableBody"></tbody></table></div>
 <div class="actions"><button class="btn green" type="button" onclick="ownerTableSave(false)">SAVE TABLE</button><button class="btn dark" type="button" onclick="ownerTableSave(true)">SAVE &amp; BACK TO EMPLOYEE BOARD</button></div>
 </div></section>
 <section class="staffPanel hidden" id="hostCashierTip">
@@ -2755,8 +2769,8 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
   };
 })();
 </script>
-<script src="hourly-logic-v13840.js?v=13845"></script>
-<script src="app-v13845.js?v=13845" type="module"></script>
+<script src="hourly-logic-v13840.js?v=13847"></script>
+<script src="app-v13847.js?v=13847" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2930,7 +2944,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13845.js?v=13845',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13847.js?v=13847',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -3057,7 +3071,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13840.js?v=13845"></script>
+<script type="module" src="host-cashier-tip-v13840.js?v=13847"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
