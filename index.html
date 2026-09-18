@@ -1704,7 +1704,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 </style>
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.48 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.49 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -1734,6 +1734,9 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
     <div id="fzEmployeeIdentityWrap" style="margin-top:12px">
       <label>Employee Name</label>
       <select id="fzUnifiedEmployeeName"></select>
+      <button class="btn light" type="button" onclick="refreshEmployeeLoginOptions()" style="margin-top:10px">Refresh Employee Names</button>
+      <div class="small" id="employeeLoginRosterStatus" aria-live="polite"></div>
+      <details style="margin-top:10px"><summary>Enter username instead</summary><label for="employeeManualUsername">Account username (optional)</label><input id="employeeManualUsername" autocomplete="username" placeholder="Example: caitlinbar"/><div class="small">Leave blank to use the selected employee above.</div></details>
     </div>
 
     <div id="fzStaffIdentityWrap" class="hidden" style="margin-top:12px">
@@ -2400,6 +2403,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <button class="btn light" onclick="refreshPhoneDirectoryUi()" type="button">Refresh Phones</button>
 <button class="btn light" onclick="downloadSmallReportXls()" type="button">Download XLS</button>
 <button class="btn light" onclick="downloadSmallReportPdf()" type="button">Download All PDF</button>
+<details style="width:100%;margin:10px 0"><summary style="font-size:22px;font-weight:800">Download PDF per Employee</summary><div style="margin-top:12px"><label for="employeePdfName">Choose employee / server</label><select id="employeePdfName" onfocus="refreshEmployeePdfOptions()"><option value="">Select employee</option></select><div class="small">Uses the Date filter below. Leave Date blank for all loaded dates. Separate Bar and Server accounts stay separate.</div><button class="btn green" type="button" onclick="downloadSelectedEmployeePdf()" style="margin-top:12px">Download Selected Employee PDF</button></div></details>
 <button class="btn light" onclick="shareSmallReportXls('whatsapp')" type="button">WhatsApp</button>
 <button class="btn light" onclick="shareSmallReportXls('email')" type="button">Email</button>
 <button class="btn red" onclick="deleteAllSmallReportRows()" type="button">Delete All</button>
@@ -2700,7 +2704,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <input autocomplete="new-password" id="editUserNewPassword" placeholder="Enter new password / PIN" type="password"/>
 <label class="show-password-row"><input onchange="togglePasswordVisibility('editUserNewPassword',this.checked)" type="checkbox"/><span>Show password</span></label>
 </div>
-<button class="btn gold" onclick="ownerResetSelectedUserPassword()" style="margin-top:10px" type="button">SET NEW PASSWORD / PIN</button>
+<button id="ownerResetCredentialBtn" class="btn gold" onclick="ownerResetSelectedUserPassword()" style="margin-top:10px" type="button">SET NEW PASSWORD / PIN</button>
 </div>
 <div class="actions" style="margin-top:14px">
 <button class="btn light" onclick="closeEditUser()" type="button">Cancel</button>
@@ -2769,8 +2773,8 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
   };
 })();
 </script>
-<script src="hourly-logic-v13840.js?v=13848"></script>
-<script src="app-v13848.js?v=13848" type="module"></script>
+<script src="hourly-logic-v13840.js?v=13849"></script>
+<script src="app-v13849.js?v=13849" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2864,7 +2868,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
     try{
       let ok=false;
       if(role==="employee"){
-        const name=String($("fzUnifiedEmployeeName")?.value||"").trim();
+        const name=String($("employeeManualUsername")?.value||$("fzUnifiedEmployeeName")?.value||"").trim();
         if(!name||!secret){if($("loginMessage"))$("loginMessage").textContent="Select your employee name and enter your PIN.";return}
         ok=await employeeAttempt(name,secret);
       }else{
@@ -2944,7 +2948,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13848.js?v=13848',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13849.js?v=13849',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -3071,7 +3075,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13840.js?v=13848"></script>
+<script type="module" src="host-cashier-tip-v13840.js?v=13849"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
