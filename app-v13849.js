@@ -9939,7 +9939,7 @@ window.printMonthlyReport=function(){
 };
 function initMonthlyReportUi(){
   if(monthlyReportUiReady||$("monthlyReport"))return;
-  const menu=document.querySelector(".staff-menu-buttons"),staffArea=$("staffArea");
+  const menu=document.querySelector(".staff-menu-buttons"),staffArea=$("staffArea")||$("staffApp");
   if(!menu||!staffArea)return;
   const btn=document.createElement("button");
   btn.type="button";btn.className="staff-menu-btn";btn.dataset.stab="monthlyReport";btn.innerHTML="<span>Monthly Report</span>";
