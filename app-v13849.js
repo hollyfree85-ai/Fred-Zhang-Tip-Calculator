@@ -6128,11 +6128,13 @@ function buildSmallReportThermalHtml(r){
     .signature{width:100%;height:164px;display:flex;align-items:center;justify-content:center;overflow:hidden}
     .signature svg{display:block;width:500px!important;height:160px!important;max-width:100%}
     .signed{text-align:center;font-size:18px;font-weight:900;margin-top:2px}
+    .receipt-note{text-align:center;font-size:18px;font-weight:800;line-height:1.3;margin:12px 8px 0}
     @media print{
       html,body{width:80mm;max-width:80mm}
       body{padding:3mm 3mm 5mm;font-size:14pt}
       .title{font-size:20pt}.sub{font-size:12pt}.row{font-size:14pt;padding:1.2mm 0}
       .total{font-size:18pt}.signature-title{font-size:13pt}.signed{font-size:11pt}
+      .receipt-note{font-size:11pt;margin-top:2.5mm}
       .signature{height:23mm}.signature svg{width:68mm!important;height:22mm!important}
     }
   </style></head><body>
@@ -6147,6 +6149,7 @@ function buildSmallReportThermalHtml(r){
     <div class="signature">${signature}</div>
     <div class="signed">SIGNED</div>
     <div class="rule"></div>
+    <div class="receipt-note"><b>DISCLAIMER:</b><br>This receipt only shows the Paid Out calculation received by the employee. For the complete original detailed report before tip payout, please print it directly from the POS using your own account.</div>
   </body></html>`;
 }
 function openSmallReportSystemThermalPrint(r){
