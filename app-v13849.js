@@ -9982,3 +9982,206 @@ function initMonthlyReportUi(){
 }
 initMonthlyReportUi();
 // V13.8.49 ADD-ONLY — Monthly / Period Report with Busser AM / PM split.
+
+// V13.8.49 ADD-ONLY — Monthly / Period Report SIMPLE SUMMARY + direct PDF/XLS.
+// Scope: Monthly Report only. Existing Daily Report, payout formulas, thermal print,
+// PassPRNT callback/session handling, Firebase writes, and all unrelated features remain unchanged.
+(function(){
+  const oldRender=window.renderMonthlyReport;
+
+  monthlyReportHeaderHtml=function(){
+    return `<tr><th>Name</th><th>Total Hours</th><th>Paid Tip</th><th>Cash Tip</th><th>Paid Tip Before Meal</th>
+      <th>Busser Tip Out AM</th><th>Busser Tip Out PM</th><th>Bar Tip Out</th><th>Bar Tip Out Received</th><th>Sales</th><th>Hourly Adjustment</th></tr>`;
+  };
+
+  monthlyReportTableRowsHtml=function(rows){
+    return rows.map(r=>`<tr>
+      <td class="fz-monthly-name"><b>${esc(r.employee)}</b></td>
+      <td>${r.hours.toFixed(2)}</td>
+      <td>${monthlyReportMoney(r.paidTip)}</td>
+      <td>${monthlyReportMoney(r.cashTip)}</td>
+      <td>${monthlyReportMoney(monthlyReportRound(r.paidTip+r.cashTip))}</td>
+      <td>${monthlyReportMoney(r.busserAM)}</td>
+      <td>${monthlyReportMoney(r.busserPM)}</td>
+      <td>${monthlyReportMoney(r.barTipOut)}</td>
+      <td>${monthlyReportMoney(r.barTipReceived)}</td>
+      <td>${monthlyReportMoney(r.grandTotal)}</td>
+      <td>${monthlyReportMoney(r.adjustment)}</td>
+    </tr>`).join("");
+  };
+
+  monthlyReportTotalRowHtml=function(t){
+    return `<tr class="fz-monthly-total"><td><b>TOTAL</b></td>
+      <td>${t.hours.toFixed(2)}</td>
+      <td>${monthlyReportMoney(t.paidTip)}</td>
+      <td>${monthlyReportMoney(t.cashTip)}</td>
+      <td>${monthlyReportMoney(monthlyReportRound(t.paidTip+t.cashTip))}</td>
+      <td>${monthlyReportMoney(t.busserAM)}</td>
+      <td>${monthlyReportMoney(t.busserPM)}</td>
+      <td>${monthlyReportMoney(t.barTipOut)}</td>
+      <td>${monthlyReportMoney(t.barTipReceived)}</td>
+      <td>${monthlyReportMoney(t.grandTotal)}</td>
+      <td>${monthlyReportMoney(t.adjustment)}</td></tr>`;
+  };
+
+  monthlyReportExportTable=function(rows){
+    const totals=monthlyReportTotals(rows);
+    return `<table border="1" cellspacing="0" cellpadding="6"><thead>${monthlyReportHeaderHtml()}</thead><tbody>${monthlyReportTableRowsHtml(rows)}</tbody><tfoot>${monthlyReportTotalRowHtml(totals)}</tfoot></table>`;
+  };
+
+  window.renderMonthlyReport=function(){
+    if(!monthlyReportUiReady)return;
+    monthlyReportPopulateEmployee();
+    const {from,to}=monthlyReportRange();
+    const host=$("monthlyReportBody"),status=$("monthlyReportStatus");
+    if(!host)return;
+    if(from&&to&&from>to){
+      if(status)status.innerHTML='<div class="notice danger"><b>Start Date cannot be after End Date.</b></div>';
+      host.innerHTML="";return;
+    }
+    const rows=monthlyReportSummaries();
+    const rawCount=monthlyReportFilteredReports().length;
+    if(status)status.innerHTML=`<div class="notice good"><b>${esc(monthlyReportPeriodLabel())}</b> • ${rows.length} employee${rows.length===1?"":"s"} • ${rawCount} finalized report${rawCount===1?"":"s"}</div>`;
+    if(!rows.length){
+      host.innerHTML='<div class="notice">No finalized reports found for this period.</div>';
+      return;
+    }
+    const totals=monthlyReportTotals(rows);
+    host.innerHTML=`<div class="fz-monthly-table-wrap"><table class="fz-monthly-table"><thead>${monthlyReportHeaderHtml()}</thead><tbody>${monthlyReportTableRowsHtml(rows)}</tbody><tfoot>${monthlyReportTotalRowHtml(totals)}</tfoot></table></div>
+      <div class="small fz-monthly-simple-note"><b>Paid Tip Before Meal</b> = Paid Tip + Cash Tip. <b>Sales</b> = Grand Total sales for the selected period. All employees are summarized into one report/file when All Employees is selected.</div>`;
+  };
+
+  function monthlyPdfText(font,size,x,y,value){
+    return `BT /${font} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${pdfEscape(value)}) Tj ET\n`;
+  }
+  function monthlyPdfCellText(font,size,x,y,w,value,align){
+    let s=String(value??"");
+    // Width approximation for standard Helvetica. Truncate only when necessary.
+    const maxChars=Math.max(3,Math.floor((w-8)/(size*0.52)));
+    if(s.length>maxChars)s=s.slice(0,Math.max(1,maxChars-1))+"…";
+    s=s.normalize("NFKD").replace(/[^\x20-\x7E]/g," ");
+    const approx=s.length*size*0.52;
+    let tx=x+4;
+    if(align==="right")tx=Math.max(x+4,x+w-4-approx);
+    else if(align==="center")tx=Math.max(x+4,x+(w-approx)/2);
+    return monthlyPdfText(font,size,tx,y,s);
+  }
+  function monthlyPdfRect(x,y,w,h,fill){
+    let c="";
+    if(fill)c+=`${fill} rg ${x} ${y} ${w} ${h} re f\n0 0 0 rg\n`;
+    c+=`0.55 G 0.5 w ${x} ${y} ${w} ${h} re S\n0 G\n`;
+    return c;
+  }
+  function monthlyReportPdfBlob(rows){
+    const totals=monthlyReportTotals(rows);
+    const exportRows=rows.map(r=>({
+      name:r.employee,hours:r.hours,paidTip:r.paidTip,cashTip:r.cashTip,paidBefore:monthlyReportRound(r.paidTip+r.cashTip),
+      busserAM:r.busserAM,busserPM:r.busserPM,barOut:r.barTipOut,barReceived:r.barTipReceived,sales:r.grandTotal,adjustment:r.adjustment
+    }));
+    exportRows.push({
+      name:"TOTAL",hours:totals.hours,paidTip:totals.paidTip,cashTip:totals.cashTip,paidBefore:monthlyReportRound(totals.paidTip+totals.cashTip),
+      busserAM:totals.busserAM,busserPM:totals.busserPM,barOut:totals.barTipOut,barReceived:totals.barTipReceived,sales:totals.grandTotal,adjustment:totals.adjustment,total:true
+    });
+
+    const columns=[
+      {key:"name",label1:"Name",label2:"",w:126,align:"left"},
+      {key:"hours",label1:"Total",label2:"Hours",w:48,align:"right",hours:true},
+      {key:"paidTip",label1:"Paid",label2:"Tip",w:56,align:"right"},
+      {key:"cashTip",label1:"Cash",label2:"Tip",w:56,align:"right"},
+      {key:"paidBefore",label1:"Paid Tip",label2:"Before Meal",w:68,align:"right"},
+      {key:"busserAM",label1:"Busser",label2:"AM",w:56,align:"right"},
+      {key:"busserPM",label1:"Busser",label2:"PM",w:56,align:"right"},
+      {key:"barOut",label1:"Bar Tip",label2:"Out",w:56,align:"right"},
+      {key:"barReceived",label1:"Bar Tip Out",label2:"Received",w:70,align:"right"},
+      {key:"sales",label1:"Sales",label2:"",w:64,align:"right"},
+      {key:"adjustment",label1:"Hourly",label2:"Adjustment",w:68,align:"right"}
+    ];
+    const x0=34,headerH=32,rowH=22,topY=525,bottomY=42;
+    const rowsPerPage=Math.max(1,Math.floor((topY-headerH-bottomY)/rowH));
+    const pageGroups=[];
+    for(let i=0;i<exportRows.length;i+=rowsPerPage)pageGroups.push(exportRows.slice(i,i+rowsPerPage));
+
+    const objects=[];const kids=[];const pageCount=pageGroups.length;
+    const font1=3+pageCount*2,font2=font1+1;
+    objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
+    pageGroups.forEach((group,pageIndex)=>{
+      const pageObj=3+pageIndex*2,contentObj=pageObj+1;kids.push(`${pageObj} 0 R`);
+      let c="";
+      c+=monthlyPdfText("F2",15,34,584,"Fred Zhang Tip Calculator - Monthly / Period Report");
+      c+=monthlyPdfText("F1",8.5,34,568,monthlyReportPeriodLabel());
+      c+=monthlyPdfText("F1",7.5,650,568,`Page ${pageIndex+1} of ${pageCount}`);
+      let x=x0;
+      for(const col of columns){
+        c+=monthlyPdfRect(x,topY-headerH,col.w,headerH,"0.90 0.94 0.98");
+        c+=monthlyPdfCellText("F2",6.6,x,topY-12,col.w,col.label1,"center");
+        if(col.label2)c+=monthlyPdfCellText("F2",6.6,x,topY-23,col.w,col.label2,"center");
+        x+=col.w;
+      }
+      let y=topY-headerH-rowH;
+      for(const row of group){
+        x=x0;
+        for(const col of columns){
+          c+=monthlyPdfRect(x,y,col.w,rowH,row.total?"0.94 0.96 0.98":null);
+          let value=row[col.key];
+          if(col.hours)value=monthlyReportNum(value).toFixed(2);
+          else if(col.key!=="name")value=pdfMoney(value).replace("$ ","$");
+          c+=monthlyPdfCellText(row.total?"F2":"F1",6.6,x,y+7,col.w,value,col.align);
+          x+=col.w;
+        }
+        y-=rowH;
+      }
+      c+=monthlyPdfText("F1",7.4,34,24,"Paid Tip Before Meal = Paid Tip + Cash Tip. Sales = Grand Total sales.");
+      objects[pageObj]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> >> /Contents ${contentObj} 0 R >>`;
+      objects[contentObj]=`<< /Length ${c.length} >>\nstream\n${c}\nendstream`;
+    });
+    objects[2]=`<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${pageCount} >>`;
+    objects[font1]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+    objects[font2]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+    const maxObj=font2;let pdf="%PDF-1.4\n";const offsets=[0];
+    for(let i=1;i<=maxObj;i++){offsets[i]=pdf.length;pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;}
+    const xref=pdf.length;pdf+=`xref\n0 ${maxObj+1}\n0000000000 65535 f \n`;
+    for(let i=1;i<=maxObj;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
+    pdf+=`trailer\n<< /Size ${maxObj+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+    return new Blob([pdf],{type:"application/pdf"});
+  }
+
+  window.downloadMonthlyReportPdf=function(){
+    if(!["manager","owner"].includes(currentProfile?.role||""))return;
+    const rows=monthlyReportSummaries();
+    if(!rows.length){alert("No Monthly Report data for this period.");return;}
+    const range=monthlyReportRange(),safeFrom=range.from||"all",safeTo=range.to||"all";
+    downloadBlob(monthlyReportPdfBlob(rows),`Fred_Zhang_Monthly_Report_${safeFrom}_to_${safeTo}.pdf`);
+  };
+
+  // Replace old render listeners with the simplified renderer. Menu click uses window.renderMonthlyReport dynamically.
+  const apply=$("monthlyReportApply"),from=$("monthlyReportFrom"),to=$("monthlyReportTo"),employee=$("monthlyReportEmployee");
+  if(oldRender){
+    apply?.removeEventListener("click",oldRender);
+    from?.removeEventListener("change",oldRender);
+    to?.removeEventListener("change",oldRender);
+    employee?.removeEventListener("change",oldRender);
+  }
+  apply?.addEventListener("click",window.renderMonthlyReport);
+  from?.addEventListener("change",window.renderMonthlyReport);
+  to?.addEventListener("change",window.renderMonthlyReport);
+  employee?.addEventListener("change",window.renderMonthlyReport);
+
+  const section=$("monthlyReport");
+  if(section){
+    section.querySelector(".fz-monthly-kpis")?.remove();
+    const headText=section.querySelector(".fz-monthly-head p");
+    if(headText)headText.textContent="Choose any date range. All finalized Daily Reports are combined and summarized by employee in one simple report.";
+    const actions=section.querySelector(".fz-monthly-head .actions");
+    if(actions){
+      const printBtn=[...actions.querySelectorAll("button")].find(b=>String(b.getAttribute("onclick")||"").includes("printMonthlyReport"));
+      if(printBtn){printBtn.textContent="DOWNLOAD PDF";printBtn.className="btn dark";printBtn.setAttribute("onclick","downloadMonthlyReportPdf()");}
+    }
+  }
+  const style=document.createElement("style");style.id="fzMonthlySimpleSummaryStyles";style.textContent=`
+    #monthlyReport .fz-monthly-table{min-width:1450px!important}
+    #monthlyReport .fz-monthly-table th,#monthlyReport .fz-monthly-table td{padding:11px 10px!important}
+    #monthlyReport .fz-monthly-table th:first-child,#monthlyReport .fz-monthly-table td:first-child{min-width:180px!important}
+    #monthlyReport .fz-monthly-simple-note{margin-top:10px;color:#64748b;line-height:1.45}
+  `;if(document.head)document.head.appendChild(style);
+})();
+// V13.8.49 ADD-ONLY — Monthly Simple Summary / Download PDF + XLS.
