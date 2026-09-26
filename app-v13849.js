@@ -17,9 +17,61 @@ import { PUSH_VAPID_PUBLIC_KEY } from "./push-config.js";
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
 
+// V13.8.49 THERMAL PRINT RETURN BRIDGE — one-time only.
+// PassPRNT returns to the web app by opening the callback URL again. The normal
+// V11.1 shared-device policy intentionally uses in-memory auth, which would make
+// that callback look like a logout. For a signed thermal print only, preserve the
+// already-authenticated Manager/Owner just long enough to survive that callback,
+// then immediately migrate the restored account back to in-memory persistence.
+const PASS_PRNT_RETURN_PARAM="fzPassPrntReturn";
+const PASS_PRNT_BRIDGE_KEY="fzPassPrntSessionBridgeV1";
+function readPassPrntReturnBridge(){
+  try{
+    const url=new URL(window.location.href);
+    // Some PassPRNT versions preserve our callback query and append their result;
+    // others may return only passprnt_code/passprnt_message. Accept either shape.
+    const isCallback=url.searchParams.get(PASS_PRNT_RETURN_PARAM)==="1" || url.searchParams.has("passprnt_code");
+    if(!isCallback)return null;
+    const raw=localStorage.getItem(PASS_PRNT_BRIDGE_KEY);
+    if(!raw)return null;
+    const data=JSON.parse(raw);
+    if(!data || !data.expiresAt || Number(data.expiresAt)<Date.now()){
+      localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);
+      return null;
+    }
+    return data;
+  }catch(e){
+    return null;
+  }
+}
+function cleanPassPrntCallbackUrl(){
+  try{
+    const url=new URL(window.location.href);
+    url.searchParams.delete(PASS_PRNT_RETURN_PARAM);
+    url.searchParams.delete("passprnt_code");
+    url.searchParams.delete("passprnt_message");
+    history.replaceState(history.state,"",url.pathname+url.search+url.hash);
+  }catch(e){}
+}
+const passPrntReturnBridge=readPassPrntReturnBridge();
+
 // V11.1 shared-link security: Owner, Manager, and Employee sessions live only in this tab.
 const authSecurityReady=(async()=>{
   try{
+    if(passPrntReturnBridge){
+      // The PRINT action temporarily persisted the currently signed-in user.
+      // Wait for Firebase to hydrate it, then immediately bring it back to memory-only.
+      await setPersistence(auth,browserLocalPersistence);
+      if(typeof auth.authStateReady==="function")await auth.authStateReady();
+      if(auth.currentUser && !auth.currentUser.isAnonymous){
+        await setPersistence(auth,inMemoryPersistence);
+        localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);
+        cleanPassPrntCallbackUrl();
+        return;
+      }
+      localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);
+      cleanPassPrntCallbackUrl();
+    }
     await setPersistence(auth,inMemoryPersistence);
     // Remove any account session left behind by older versions before this page is usable.
     if(auth.currentUser && !auth.currentUser.isAnonymous){
@@ -207,6 +259,10 @@ function employeeAuthPassword(pin){
 function loginMsg(m){ $("loginMessage").textContent = m || ""; }
 
 let fzLoginRole="employee";
+// Restore only the role that initiated the one-time PassPRNT callback.
+if(passPrntReturnBridge?.role && ["manager","owner"].includes(String(passPrntReturnBridge.role))){
+  fzLoginRole=String(passPrntReturnBridge.role);
+}
 let hostCashierRequested=false;
 window.setLoginMode = function(mode,roleHint=""){
   fzLoginRole=mode==="staff"?(roleHint||"manager"):mode;
@@ -709,7 +765,7 @@ window.loginEmployee = async function(){
 
 
 
-let hourlyV1Requested=false;
+let hourlyV1Requested=!!passPrntReturnBridge?.dailyReport;
 let hourlyV1Mode=false;
 let hv1EditingEmployee="";
 let hv1LoadingEmployee=false;
@@ -2898,7 +2954,8 @@ onAuthStateChanged(auth, async user=>{
 
     showApp();
     // V13.8.24-P16: every successful authenticated login gets a short music sting + voice welcome.
-    setTimeout(()=>window.playSuccessfulLoginWelcome?.(),80);
+    // A PassPRNT callback is not a new login, so do not replay the welcome.
+    if(!passPrntReturnBridge)setTimeout(()=>window.playSuccessfulLoginWelcome?.(),80);
 
     if(hostCashierRequested){
       hourlyWorkspaceRequested=false;
@@ -2923,6 +2980,9 @@ onAuthStateChanged(auth, async user=>{
       setTimeout(()=>openStaffTab("hourly"),80);
     }else{
       applyHourlyWorkspaceMode(false);
+    }
+    if(passPrntReturnBridge?.dailyReport){
+      restoreSmallReportAfterPassPrnt(passPrntReturnBridge);
     }
   }catch(e){
     console.error("Profile load:",e);
@@ -6035,7 +6095,10 @@ function thermalReceiptSafe(v){
 }
 function buildSmallReportThermalHtml(r){
   const bartender=String(r.position||"").toLowerCase()==="bartender";
-  const signature=smallReportSignatureSvg(r.pickupSignature,420,135);
+  // PassPRNT rasterizes HTML. Use a 576px document to match the TSP100IIIBI
+  // 72mm / 576-dot printable width so the receipt fills the paper instead of
+  // being scaled down from Android's default wide WebView viewport.
+  const signature=smallReportSignatureSvg(r.pickupSignature,500,160);
   const rows=[
     ["Name",r.employee||""],
     ["Shift",r.shift||""],
@@ -6049,22 +6112,29 @@ function buildSmallReportThermalHtml(r){
   if(bartender)rows.push(["Bar Tip Out Received",thermalReceiptMoney(r.bartenderBarTipReceived)]);
   rows.push(["Meal",thermalReceiptMoney(r.meal)]);
   const rowHtml=rows.map(([label,value])=>`<div class="row"><span>${thermalReceiptSafe(label)}</span><b>${thermalReceiptSafe(value)}</b></div>`).join("");
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="format-detection" content="telephone=no"><title>Daily Tip Report</title><style>
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=576,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="format-detection" content="telephone=no"><title>Daily Tip Report</title><style>
     @page{size:80mm auto;margin:0}
     *{box-sizing:border-box}
-    html,body{margin:0;padding:0;background:#fff;color:#000}
-    body{width:72mm;margin:0 auto;padding:3mm 2mm 5mm;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.25}
-    .title{text-align:center;font-weight:900;font-size:16px;letter-spacing:.2px;margin:0 0 2px}
-    .sub{text-align:center;font-weight:700;font-size:11px;margin:0 0 7px}
-    .rule{border-top:1.5px dashed #000;margin:5px 0}
-    .row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:2px 0}
-    .row span{flex:1 1 auto}.row b{flex:0 0 auto;text-align:right;max-width:38mm;word-break:break-word}
-    .total{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;font-weight:900;font-size:15px;padding:5px 0}
-    .signature-title{text-align:center;font-weight:900;margin:7px 0 2px}
-    .signature{width:100%;height:24mm;display:flex;align-items:center;justify-content:center;overflow:hidden}
-    .signature svg{display:block;width:62mm!important;height:20mm!important;max-width:100%}
-    .signed{text-align:center;font-size:10px;font-weight:700;margin-top:1px}
-    @media print{html,body{width:72mm}.no-print{display:none!important}}
+    html,body{margin:0;padding:0;background:#fff;color:#000;width:576px;max-width:576px;overflow:hidden}
+    body{padding:20px 24px 32px;font-family:Arial,Helvetica,sans-serif;font-size:24px;font-weight:500;line-height:1.32}
+    .title{text-align:center;font-weight:900;font-size:34px;line-height:1.08;letter-spacing:.3px;margin:0 0 5px}
+    .sub{text-align:center;font-weight:700;font-size:20px;line-height:1.15;margin:0 0 14px}
+    .rule{border-top:3px dashed #000;margin:10px 0}
+    .row{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding:5px 0;font-size:24px}
+    .row span{flex:1 1 auto;min-width:0}.row b{flex:0 0 auto;text-align:right;max-width:285px;word-break:break-word;font-weight:900}
+    .total{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;font-weight:900;font-size:31px;line-height:1.1;padding:10px 0}
+    .total span{white-space:nowrap}.total b{text-align:right}
+    .signature-title{text-align:center;font-weight:900;font-size:22px;margin:14px 0 2px}
+    .signature{width:100%;height:164px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .signature svg{display:block;width:500px!important;height:160px!important;max-width:100%}
+    .signed{text-align:center;font-size:18px;font-weight:900;margin-top:2px}
+    @media print{
+      html,body{width:80mm;max-width:80mm}
+      body{padding:3mm 3mm 5mm;font-size:14pt}
+      .title{font-size:20pt}.sub{font-size:12pt}.row{font-size:14pt;padding:1.2mm 0}
+      .total{font-size:18pt}.signature-title{font-size:13pt}.signed{font-size:11pt}
+      .signature{height:23mm}.signature svg{width:68mm!important;height:22mm!important}
+    }
   </style></head><body>
     <div class="title">DAILY TIP REPORT</div>
     <div class="sub">Fred Zhang Tip Calculator</div>
@@ -6089,12 +6159,34 @@ function openSmallReportSystemThermalPrint(r){
   if(w.document.readyState==="complete")setTimeout(run,120);else w.addEventListener("load",()=>setTimeout(run,120),{once:true});
   return true;
 }
+async function prepareSmallReportPassPrntReturn(r){
+  const bridge={
+    expiresAt:Date.now()+5*60*1000,
+    role:String(currentProfile?.role||""),
+    reportId:String(r?.id||""),
+    date:String(r?.date||""),
+    employee:String(r?.employee||""),
+    dailyReport:true
+  };
+  localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(bridge));
+  // Persist only for the few seconds while Android hands the page to PassPRNT.
+  // The callback startup immediately migrates this same user back to memory-only.
+  await setPersistence(auth,browserLocalPersistence);
+  return bridge;
+}
+async function cancelSmallReportPassPrntReturn(){
+  try{localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);}catch(e){}
+  try{await setPersistence(auth,inMemoryPersistence);}catch(e){}
+}
 function openSmallReportStarPassPrnt(r){
   const html=buildSmallReportThermalHtml(r);
   // Star PassPRNT official URL bridge. TSP100IIIBI Bluetooth uses 576-dot / 72mm print width.
-  const back=window.location.href;
+  const backUrl=new URL(window.location.href);
+  backUrl.searchParams.set(PASS_PRNT_RETURN_PARAM,"1");
+  backUrl.searchParams.delete("passprnt_code");
+  backUrl.searchParams.delete("passprnt_message");
   const uri="starpassprnt://v1/print/nopreview?"
-    +"back="+encodeURIComponent(back)
+    +"back="+encodeURIComponent(backUrl.href)
     +"&size=576"
     +"&cut=partial"
     +"&popup=enable"
@@ -6112,7 +6204,7 @@ function openSmallReportStarPassPrnt(r){
     return false;
   }
 }
-window.printSmallReportThermal=function(reportId){
+window.printSmallReportThermal=async function(reportId){
   if(!["manager","owner"].includes(currentProfile?.role||""))return;
   const r=latestHourlyReports.find(x=>x.id===reportId);
   if(!r){alert("Report not found.");return;}
@@ -6121,13 +6213,47 @@ window.printSmallReportThermal=function(reportId){
     return;
   }
   // On Android use Star's supported PassPRNT bridge for the paired TSP100IIIBI.
-  // Other platforms keep a standard 80mm browser-print fallback.
+  // Preserve only this authenticated Manager/Owner for the PassPRNT callback,
+  // then restore the exact Daily Report without forcing another login.
   if(/Android/i.test(navigator.userAgent||"")){
-    if(!openSmallReportStarPassPrnt(r))openSmallReportSystemThermalPrint(r);
+    try{
+      await prepareSmallReportPassPrntReturn(r);
+      if(!openSmallReportStarPassPrnt(r)){
+        await cancelSmallReportPassPrntReturn();
+        openSmallReportSystemThermalPrint(r);
+      }
+    }catch(e){
+      console.error("PassPRNT return bridge:",e);
+      await cancelSmallReportPassPrntReturn();
+      openSmallReportSystemThermalPrint(r);
+    }
     return;
   }
   openSmallReportSystemThermalPrint(r);
 };
+
+function restoreSmallReportAfterPassPrnt(state){
+  if(!state?.dailyReport || !["manager","owner"].includes(currentProfile?.role||""))return;
+  const reportId=String(state.reportId||"");
+  const date=String(state.date||"");
+  let tries=0;
+  const reopen=()=>{
+    tries++;
+    try{
+      // Existing V1 Daily Report UI only — no report calculation/rendering changes.
+      if(typeof window.hv1OpenSmallReport==="function")window.hv1OpenSmallReport();
+      if(date && $("smallReportDate"))$("smallReportDate").value=date;
+      renderSmallReport();
+      const report=latestHourlyReports.find(x=>x.id===reportId);
+      if(report){
+        window.openSmallReportDetail(reportId);
+        return;
+      }
+    }catch(e){console.warn("PassPRNT Daily Report restore:",e);}
+    if(tries<24)setTimeout(reopen,250);
+  };
+  setTimeout(reopen,450);
+}
 
 function smallReportFilteredRows(){
   const date=$("smallReportDate")?.value||"";
