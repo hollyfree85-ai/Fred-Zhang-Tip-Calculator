@@ -10073,75 +10073,96 @@ initMonthlyReportUi();
     return c;
   }
   function monthlyReportPdfBlob(rows){
+    // Monthly PDF is intentionally a one-page professional summary.
+    // - One selected employee: one-page summary for that employee.
+    // - All Employees: one-page grand-total summary for the selected period.
+    // XLS remains the detailed per-employee export.
     const totals=monthlyReportTotals(rows);
-    const exportRows=rows.map(r=>({
-      name:r.employee,hours:r.hours,paidTip:r.paidTip,cashTip:r.cashTip,paidBefore:monthlyReportRound(r.paidTip+r.cashTip),
-      busserAM:r.busserAM,busserPM:r.busserPM,barOut:r.barTipOut,barReceived:r.barTipReceived,sales:r.grandTotal,adjustment:r.adjustment
-    }));
-    exportRows.push({
-      name:"TOTAL",hours:totals.hours,paidTip:totals.paidTip,cashTip:totals.cashTip,paidBefore:monthlyReportRound(totals.paidTip+totals.cashTip),
-      busserAM:totals.busserAM,busserPM:totals.busserPM,barOut:totals.barTipOut,barReceived:totals.barTipReceived,sales:totals.grandTotal,adjustment:totals.adjustment,total:true
-    });
+    const selectedEmployee=String($("monthlyReportEmployee")?.value||"").trim();
+    const isAll=!selectedEmployee;
+    const source=isAll?totals:(rows.find(r=>String(r.employee||"")===selectedEmployee)||rows[0]||totals);
+    const summary={
+      name:isAll?"ALL EMPLOYEES":String(source.employee||selectedEmployee||"Employee"),
+      hours:monthlyReportNum(source.hours),
+      paidTip:monthlyReportNum(source.paidTip),
+      cashTip:monthlyReportNum(source.cashTip),
+      paidBefore:monthlyReportRound(monthlyReportNum(source.paidTip)+monthlyReportNum(source.cashTip)),
+      busserAM:monthlyReportNum(source.busserAM),
+      busserPM:monthlyReportNum(source.busserPM),
+      barOut:monthlyReportNum(source.barTipOut),
+      barReceived:monthlyReportNum(source.barTipReceived),
+      sales:monthlyReportNum(source.grandTotal),
+      adjustment:monthlyReportNum(source.adjustment)
+    };
 
-    const columns=[
-      {key:"name",label1:"Name",label2:"",w:126,align:"left"},
-      {key:"hours",label1:"Total",label2:"Hours",w:48,align:"right",hours:true},
-      {key:"paidTip",label1:"Paid",label2:"Tip",w:56,align:"right"},
-      {key:"cashTip",label1:"Cash",label2:"Tip",w:56,align:"right"},
-      {key:"paidBefore",label1:"Paid Tip",label2:"Before Meal",w:68,align:"right"},
-      {key:"busserAM",label1:"Busser",label2:"AM",w:56,align:"right"},
-      {key:"busserPM",label1:"Busser",label2:"PM",w:56,align:"right"},
-      {key:"barOut",label1:"Bar Tip",label2:"Out",w:56,align:"right"},
-      {key:"barReceived",label1:"Bar Tip Out",label2:"Received",w:70,align:"right"},
-      {key:"sales",label1:"Sales",label2:"",w:64,align:"right"},
-      {key:"adjustment",label1:"Hourly",label2:"Adjustment",w:68,align:"right"}
-    ];
-    const x0=34,headerH=32,rowH=22,topY=525,bottomY=42;
-    const rowsPerPage=Math.max(1,Math.floor((topY-headerH-bottomY)/rowH));
-    const pageGroups=[];
-    for(let i=0;i<exportRows.length;i+=rowsPerPage)pageGroups.push(exportRows.slice(i,i+rowsPerPage));
-
-    const objects=[];const kids=[];const pageCount=pageGroups.length;
-    const font1=3+pageCount*2,font2=font1+1;
-    objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
-    pageGroups.forEach((group,pageIndex)=>{
-      const pageObj=3+pageIndex*2,contentObj=pageObj+1;kids.push(`${pageObj} 0 R`);
+    const card=(x,y,w,h,label,value,emphasis=false)=>{
       let c="";
-      c+=monthlyPdfText("F2",15,34,584,"Fred Zhang Tip Calculator - Monthly / Period Report");
-      c+=monthlyPdfText("F1",8.5,34,568,monthlyReportPeriodLabel());
-      c+=monthlyPdfText("F1",7.5,650,568,`Page ${pageIndex+1} of ${pageCount}`);
-      let x=x0;
-      for(const col of columns){
-        c+=monthlyPdfRect(x,topY-headerH,col.w,headerH,"0.90 0.94 0.98");
-        c+=monthlyPdfCellText("F2",6.6,x,topY-12,col.w,col.label1,"center");
-        if(col.label2)c+=monthlyPdfCellText("F2",6.6,x,topY-23,col.w,col.label2,"center");
-        x+=col.w;
-      }
-      let y=topY-headerH-rowH;
-      for(const row of group){
-        x=x0;
-        for(const col of columns){
-          c+=monthlyPdfRect(x,y,col.w,rowH,row.total?"0.94 0.96 0.98":null);
-          let value=row[col.key];
-          if(col.hours)value=monthlyReportNum(value).toFixed(2);
-          else if(col.key!=="name")value=pdfMoney(value).replace("$ ","$");
-          c+=monthlyPdfCellText(row.total?"F2":"F1",6.6,x,y+7,col.w,value,col.align);
-          x+=col.w;
-        }
-        y-=rowH;
-      }
-      c+=monthlyPdfText("F1",7.4,34,24,"Paid Tip Before Meal = Paid Tip + Cash Tip. Sales = Grand Total sales.");
-      objects[pageObj]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Resources << /Font << /F1 ${font1} 0 R /F2 ${font2} 0 R >> >> /Contents ${contentObj} 0 R >>`;
-      objects[contentObj]=`<< /Length ${c.length} >>\nstream\n${c}\nendstream`;
-    });
-    objects[2]=`<< /Type /Pages /Kids [${kids.join(" ")}] /Count ${pageCount} >>`;
-    objects[font1]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-    objects[font2]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
-    const maxObj=font2;let pdf="%PDF-1.4\n";const offsets=[0];
-    for(let i=1;i<=maxObj;i++){offsets[i]=pdf.length;pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;}
-    const xref=pdf.length;pdf+=`xref\n0 ${maxObj+1}\n0000000000 65535 f \n`;
-    for(let i=1;i<=maxObj;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
-    pdf+=`trailer\n<< /Size ${maxObj+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+      const fill=emphasis?"0.96 0.98 1":"0.985 0.992 1";
+      c+=`${fill} rg ${x} ${y} ${w} ${h} re f\n`;
+      c+=`0.78 0.84 0.90 RG 0.8 w ${x} ${y} ${w} ${h} re S\n0 G\n`;
+      c+=`0.12 0.48 0.70 rg ${x} ${y} 4 ${h} re f\n0 0 0 rg\n`;
+      c+=monthlyPdfCellText("F2",8.4,x+14,y+h-19,w-24,label,"left");
+      c+=monthlyPdfCellText("F2",18,x+14,y+18,w-24,value,"left");
+      return c;
+    };
+
+    const left=[
+      ["Total Hours",summary.hours.toFixed(2),false],
+      ["Paid Tip",pdfMoney(summary.paidTip).replace("$ ","$"),false],
+      ["Cash Tip",pdfMoney(summary.cashTip).replace("$ ","$"),false],
+      ["Paid Tip Before Meal",pdfMoney(summary.paidBefore).replace("$ ","$"),true],
+      ["Sales",pdfMoney(summary.sales).replace("$ ","$"),true]
+    ];
+    const right=[
+      ["Busser Tip Out AM",pdfMoney(summary.busserAM).replace("$ ","$"),false],
+      ["Busser Tip Out PM",pdfMoney(summary.busserPM).replace("$ ","$"),false],
+      ["Bar Tip Out",pdfMoney(summary.barOut).replace("$ ","$"),false],
+      ["Bar Tip Out Received",pdfMoney(summary.barReceived).replace("$ ","$"),false],
+      ["Hourly Adjustment",pdfMoney(summary.adjustment).replace("$ ","$"),false]
+    ];
+
+    let c="";
+    // Header
+    c+="0.055 0.14 0.25 rg 28 686 556 78 re f\n";
+    c+="0.95 0.68 0.13 rg 28 680 556 5 re f\n";
+    c+="0.95 0.68 0.13 rg\n"+monthlyPdfText("F2",9,46,744,"MONTHLY / PERIOD REPORT")+"1 1 1 rg\n";
+    c+=monthlyPdfText("F2",20,46,718,"Fred Zhang Tip Calculator");
+    c+=monthlyPdfText("F1",9.2,46,699,`Period: ${monthlyReportPeriodLabel()}`);
+    c+="0 0 0 rg\n";
+
+    // Name / scope strip
+    c+="0.94 0.97 1 rg 34 642 544 26 re f\n";
+    c+="0.76 0.84 0.91 RG 0.8 w 34 642 544 26 re S\n0 G\n";
+    c+=monthlyPdfCellText("F2",11,46,650,520,isAll?"SUMMARY: ALL EMPLOYEES":`EMPLOYEE: ${summary.name}`,"left");
+
+    const xL=34,xR=314,w=264,h=68,gap=10,top=626;
+    for(let i=0;i<5;i++){
+      const y=top-h-i*(h+gap);
+      c+=card(xL,y,w,h,left[i][0],left[i][1],left[i][2]);
+      c+=card(xR,y,w,h,right[i][0],right[i][1],right[i][2]);
+    }
+
+    // Footer note
+    c+="0.975 0.98 0.985 rg 34 116 544 76 re f\n";
+    c+="0.82 0.85 0.89 RG 0.7 w 34 116 544 76 re S\n0 G\n";
+    c+=monthlyPdfText("F2",8.6,48,171,"REPORT NOTES");
+    c+=monthlyPdfText("F1",8,48,153,"Paid Tip Before Meal = Paid Tip + Cash Tip.");
+    c+=monthlyPdfText("F1",8,48,138,"Sales = Grand Total sales for the selected period.");
+    c+=monthlyPdfText("F1",8,48,123,isAll?"All figures above are grand totals for all employees in this period.":"All figures above are totals for the selected employee in this period.");
+    c+=monthlyPdfText("F1",7.2,34,88,"Generated from finalized Tip Calculation reports.");
+
+    const objects=[];
+    objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
+    objects[2]="<< /Type /Pages /Kids [3 0 R] /Count 1 >>";
+    objects[3]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>";
+    objects[4]=`<< /Length ${c.length} >>\nstream\n${c}\nendstream`;
+    objects[5]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
+    objects[6]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
+    let pdf="%PDF-1.4\n";const offsets=[0];
+    for(let i=1;i<=6;i++){offsets[i]=pdf.length;pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;}
+    const xref=pdf.length;pdf+=`xref\n0 7\n0000000000 65535 f \n`;
+    for(let i=1;i<=6;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
+    pdf+=`trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
     return new Blob([pdf],{type:"application/pdf"});
   }
 
