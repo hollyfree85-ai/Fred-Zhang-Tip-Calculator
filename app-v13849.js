@@ -27,20 +27,22 @@ const PASS_PRNT_RETURN_PARAM="fzPassPrntReturn";
 const PASS_PRNT_BRIDGE_KEY="fzPassPrntSessionBridgeV1";
 function readPassPrntReturnBridge(){
   try{
-    const url=new URL(window.location.href);
-    // Some PassPRNT versions preserve our callback query and append their result;
-    // others may return only passprnt_code/passprnt_message. Accept either shape.
-    const isCallback=url.searchParams.get(PASS_PRNT_RETURN_PARAM)==="1" || url.searchParams.has("passprnt_code");
-    if(!isCallback)return null;
     const raw=localStorage.getItem(PASS_PRNT_BRIDGE_KEY);
     if(!raw)return null;
     const data=JSON.parse(raw);
-    if(!data || !data.expiresAt || Number(data.expiresAt)<Date.now()){
+    const expiresAt=Number(data?.expiresAt||0);
+    const role=String(data?.role||"");
+    // IMPORTANT: do not depend on the callback query string. Android/PassPRNT
+    // may reopen the same HTTPS page with the result query rewritten, duplicated,
+    // or omitted by the browser/PWA hand-off. The short-lived local bridge itself
+    // is the reliable signal that THIS reload immediately follows a signed print.
+    if(!data?.dailyReport || !["manager","owner"].includes(role) || !expiresAt || expiresAt<Date.now()){
       localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);
       return null;
     }
     return data;
   }catch(e){
+    try{localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);}catch(_){}
     return null;
   }
 }
@@ -59,18 +61,31 @@ const passPrntReturnBridge=readPassPrntReturnBridge();
 const authSecurityReady=(async()=>{
   try{
     if(passPrntReturnBridge){
-      // The PRINT action temporarily persisted the currently signed-in user.
-      // Wait for Firebase to hydrate it, then immediately bring it back to memory-only.
+      // The PRINT action temporarily persists the current Manager/Owner in
+      // browserLocalPersistence. On return from PassPRNT, let Firebase fully
+      // hydrate that exact user BEFORE moving the session back to memory-only.
+      // This avoids the Android race where the callback page used to see null
+      // for a moment, clear the bridge, and show the login screen.
       await setPersistence(auth,browserLocalPersistence);
       if(typeof auth.authStateReady==="function")await auth.authStateReady();
+      if(!auth.currentUser){
+        await new Promise(resolve=>{
+          let finished=false;
+          let stop=()=>{};
+          const timer=setTimeout(()=>{if(finished)return;finished=true;try{stop()}catch(_){};resolve();},2500);
+          stop=onAuthStateChanged(auth,u=>{if(finished||!u)return;finished=true;clearTimeout(timer);try{stop()}catch(_){};resolve();});
+        });
+      }
       if(auth.currentUser && !auth.currentUser.isAnonymous){
         await setPersistence(auth,inMemoryPersistence);
         localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);
         cleanPassPrntCallbackUrl();
         return;
       }
-      localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);
+      // Do not deliberately sign out here. If hydration is unusually slow,
+      // leave the short-lived bridge intact so the next immediate reload can retry.
       cleanPassPrntCallbackUrl();
+      return;
     }
     await setPersistence(auth,inMemoryPersistence);
     // Remove any account session left behind by older versions before this page is usable.
@@ -6164,6 +6179,7 @@ function openSmallReportSystemThermalPrint(r){
 }
 async function prepareSmallReportPassPrntReturn(r){
   const bridge={
+    startedAt:Date.now(),
     expiresAt:Date.now()+5*60*1000,
     role:String(currentProfile?.role||""),
     reportId:String(r?.id||""),
