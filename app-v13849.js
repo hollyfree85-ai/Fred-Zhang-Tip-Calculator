@@ -27,15 +27,25 @@ const PASS_PRNT_RETURN_PARAM="fzPassPrntReturn";
 const PASS_PRNT_BRIDGE_KEY="fzPassPrntSessionBridgeV1";
 function readPassPrntReturnBridge(){
   try{
+    const url=new URL(window.location.href);
+    let data=null;
     const raw=localStorage.getItem(PASS_PRNT_BRIDGE_KEY);
-    if(!raw)return null;
-    const data=JSON.parse(raw);
+    if(raw){
+      try{data=JSON.parse(raw);}catch(_){data=null;}
+    }
+    // Fallback to the callback URL itself. This matters on Android when PassPRNT
+    // reopens the PWA/browser in a fresh activity before localStorage is visible.
+    if(!data && url.searchParams.get(PASS_PRNT_RETURN_PARAM)==="1"){
+      data={
+        dailyReport:true,
+        role:String(url.searchParams.get("fzPrntRole")||""),
+        reportId:String(url.searchParams.get("fzPrntReport")||""),
+        date:String(url.searchParams.get("fzPrntDate")||""),
+        expiresAt:Number(url.searchParams.get("fzPrntExpires")||0)
+      };
+    }
     const expiresAt=Number(data?.expiresAt||0);
     const role=String(data?.role||"");
-    // IMPORTANT: do not depend on the callback query string. Android/PassPRNT
-    // may reopen the same HTTPS page with the result query rewritten, duplicated,
-    // or omitted by the browser/PWA hand-off. The short-lived local bridge itself
-    // is the reliable signal that THIS reload immediately follows a signed print.
     if(!data?.dailyReport || !["manager","owner"].includes(role) || !expiresAt || expiresAt<Date.now()){
       localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);
       return null;
@@ -50,6 +60,10 @@ function cleanPassPrntCallbackUrl(){
   try{
     const url=new URL(window.location.href);
     url.searchParams.delete(PASS_PRNT_RETURN_PARAM);
+    url.searchParams.delete("fzPrntRole");
+    url.searchParams.delete("fzPrntReport");
+    url.searchParams.delete("fzPrntDate");
+    url.searchParams.delete("fzPrntExpires");
     url.searchParams.delete("passprnt_code");
     url.searchParams.delete("passprnt_message");
     history.replaceState(history.state,"",url.pathname+url.search+url.hash);
@@ -72,13 +86,17 @@ const authSecurityReady=(async()=>{
         await new Promise(resolve=>{
           let finished=false;
           let stop=()=>{};
-          const timer=setTimeout(()=>{if(finished)return;finished=true;try{stop()}catch(_){};resolve();},2500);
+          const timer=setTimeout(()=>{if(finished)return;finished=true;try{stop()}catch(_){};resolve();},8000);
           stop=onAuthStateChanged(auth,u=>{if(finished||!u)return;finished=true;clearTimeout(timer);try{stop()}catch(_){};resolve();});
         });
       }
       if(auth.currentUser && !auth.currentUser.isAnonymous){
-        await setPersistence(auth,inMemoryPersistence);
-        localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);
+        // IMPORTANT: keep LOCAL persistence until the callback page has fully
+        // processed onAuthStateChanged + loaded the Manager/Owner profile.
+        // Moving back to memory persistence here is too early on Android and can
+        // race the first auth callback, making the UI fall back to LOGIN even
+        // though the print succeeded. The callback handler below migrates back
+        // to memory-only only AFTER the app/report is visibly restored.
         cleanPassPrntCallbackUrl();
         return;
       }
@@ -2921,6 +2939,12 @@ function showApp(){
 }
 onAuthStateChanged(auth, async user=>{
   await authSecurityReady;
+  // PassPRNT can fire the listener once with the pre-hydration null value.
+  // After authSecurityReady finishes, always prefer the CURRENT hydrated user
+  // for this one-time print return instead of treating that stale null as logout.
+  if(passPrntReturnBridge && auth.currentUser && !auth.currentUser.isAnonymous){
+    user=auth.currentUser;
+  }
   // If this callback came from a stale persisted session that was just cleared, ignore it.
   if(user && !auth.currentUser) return;
   clearListeners();
@@ -2998,6 +3022,18 @@ onAuthStateChanged(auth, async user=>{
     }
     if(passPrntReturnBridge?.dailyReport){
       restoreSmallReportAfterPassPrnt(passPrntReturnBridge);
+      // Only after the authenticated app is back on screen do we restore the
+      // original shared-device memory-only policy. This keeps the user logged in
+      // through the PassPRNT callback without changing normal login/logout flow.
+      setTimeout(async()=>{
+        try{
+          if(auth.currentUser && !auth.currentUser.isAnonymous){
+            await setPersistence(auth,inMemoryPersistence);
+          }
+        }catch(e){console.warn("PassPRNT persistence cleanup:",e);}
+        try{localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);}catch(e){}
+        cleanPassPrntCallbackUrl();
+      },5000);
     }
   }catch(e){
     console.error("Profile load:",e);
@@ -6143,13 +6179,13 @@ function buildSmallReportThermalHtml(r){
     .signature{width:100%;height:164px;display:flex;align-items:center;justify-content:center;overflow:hidden}
     .signature svg{display:block;width:500px!important;height:160px!important;max-width:100%}
     .signed{text-align:center;font-size:18px;font-weight:900;margin-top:2px}
-    .receipt-note{text-align:center;font-size:18px;font-weight:800;line-height:1.3;margin:12px 8px 0}
+    .receipt-note{text-align:center;font-size:24px;font-weight:900;line-height:1.38;margin:16px 6px 0}
     @media print{
       html,body{width:80mm;max-width:80mm}
       body{padding:3mm 3mm 5mm;font-size:14pt}
       .title{font-size:20pt}.sub{font-size:12pt}.row{font-size:14pt;padding:1.2mm 0}
       .total{font-size:18pt}.signature-title{font-size:13pt}.signed{font-size:11pt}
-      .receipt-note{font-size:11pt;margin-top:2.5mm}
+      .receipt-note{font-size:14pt;line-height:1.38;margin-top:3mm}
       .signature{height:23mm}.signature svg{width:68mm!important;height:22mm!important}
     }
   </style></head><body>
@@ -6202,6 +6238,10 @@ function openSmallReportStarPassPrnt(r){
   // Star PassPRNT official URL bridge. TSP100IIIBI Bluetooth uses 576-dot / 72mm print width.
   const backUrl=new URL(window.location.href);
   backUrl.searchParams.set(PASS_PRNT_RETURN_PARAM,"1");
+  backUrl.searchParams.set("fzPrntRole",String(currentProfile?.role||""));
+  backUrl.searchParams.set("fzPrntReport",String(r?.id||""));
+  backUrl.searchParams.set("fzPrntDate",String(r?.date||""));
+  backUrl.searchParams.set("fzPrntExpires",String(Date.now()+5*60*1000));
   backUrl.searchParams.delete("passprnt_code");
   backUrl.searchParams.delete("passprnt_message");
   const uri="starpassprnt://v1/print/nopreview?"
