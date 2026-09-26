@@ -9950,7 +9950,7 @@ function initMonthlyReportUi(){
   section.className="staffPanel hidden";section.id="monthlyReport";
   section.innerHTML=`<div class="card fz-monthly-card">
     <div class="fz-monthly-head"><div><div class="fz-monthly-kicker">EMPLOYEE PERIOD SUMMARY</div><h2>Monthly / Period Report</h2><p>Choose any date range. Finalized reports are summarized by employee — not shown one Daily Report at a time.</p></div>
-      <div class="actions"><button class="btn light" type="button" onclick="monthlyReportSetThisMonth()">THIS MONTH</button><button class="btn light" type="button" onclick="downloadMonthlyReportXls()">DOWNLOAD XLS</button><button class="btn dark" type="button" onclick="printMonthlyReport()">PRINT / PDF</button></div></div>
+      <div class="actions"><button class="btn light" type="button" onclick="monthlyReportSetThisMonth()">THIS MONTH</button><button class="btn light" type="button" onclick="downloadMonthlyReportXls()">DOWNLOAD XLS</button><button class="btn dark" type="button" onclick="downloadMonthlyReportPdf()">DOWNLOAD PDF</button></div></div>
     <div class="fz-monthly-filters"><div><label>Start Date</label><input id="monthlyReportFrom" type="date"></div><div><label>End Date</label><input id="monthlyReportTo" type="date"></div><div><label>Employee</label><select id="monthlyReportEmployee"><option value="">All Employees</option></select></div><button class="btn green" id="monthlyReportApply" type="button">APPLY</button></div>
     <div id="monthlyReportStatus"></div>
     <div class="fz-monthly-kpis"><div><span>Employees</span><b id="monthlyKpiEmployees">0</b></div><div><span>Employee Work Days</span><b id="monthlyKpiDays">0</b></div><div><span>Total Hours</span><b id="monthlyKpiHours">0</b></div><div><span>Net to Employees</span><b id="monthlyKpiNet">$0.00</b></div></div>
@@ -10185,3 +10185,55 @@ initMonthlyReportUi();
   `;if(document.head)document.head.appendChild(style);
 })();
 // V13.8.49 ADD-ONLY — Monthly Simple Summary / Download PDF + XLS.
+
+
+// V13.8.49 ADD-ONLY — Monthly Report large Home card opener.
+// Scope: navigation/UI only. Monthly calculations, Daily Report, thermal print,
+// Firebase writes, formulas, and all unrelated functions remain unchanged.
+(function(){
+  window.fzOpenMonthlyReport=function(){
+    const role=String(window.__getCurrentRole?.()||"").toLowerCase();
+    if(!["manager","owner"].includes(role))return;
+
+    // Ensure the add-only Monthly Report UI exists even if its first init ran
+    // before the Manager / Owner workspace was ready.
+    try{ initMonthlyReportUi(); }catch(e){ console.warn("Monthly Report init:",e); }
+
+    const section=$("monthlyReport");
+    if(!section){
+      alert("Monthly Report is still loading. Please try again.");
+      return;
+    }
+
+    // If the section had to be created late, normalize its controls to the
+    // current Simple Summary build (direct PDF + XLS downloads).
+    section.querySelector(".fz-monthly-kpis")?.remove();
+    const headText=section.querySelector(".fz-monthly-head p");
+    if(headText)headText.textContent="Choose any date range. All finalized Daily Reports are combined and summarized by employee in one simple report.";
+    const actions=section.querySelector(".fz-monthly-head .actions");
+    if(actions){
+      const xls=[...actions.querySelectorAll("button")].find(b=>String(b.getAttribute("onclick")||"").includes("downloadMonthlyReportXls"));
+      if(xls){xls.textContent="DOWNLOAD XLS";xls.className="btn light";}
+      const pdf=[...actions.querySelectorAll("button")].find(b=>/printMonthlyReport|downloadMonthlyReportPdf/.test(String(b.getAttribute("onclick")||"")));
+      if(pdf){pdf.textContent="DOWNLOAD PDF";pdf.className="btn dark";pdf.setAttribute("onclick","downloadMonthlyReportPdf()");}
+    }
+
+    $("fzRoleHome")?.classList.add("hidden");
+    document.body.classList.remove("hourly-v1-mode","hourly-v1-editing","hourly-v1-small-report","hourly-workspace-mode","small-report-fullscreen");
+    document.documentElement.classList.remove("small-report-fullscreen");
+    $("hourlyV1Workspace")?.classList.add("hidden");
+    $("hostCashierTip")?.classList.add("hidden");
+    $("employeeApp")?.classList.add("hidden");
+    $("staffApp")?.classList.remove("hidden");
+
+    document.querySelectorAll(".staffPanel").forEach(x=>x.classList.add("hidden"));
+    section.classList.remove("hidden");
+    document.querySelectorAll("[data-stab]").forEach(x=>x.classList.remove("on"));
+    document.querySelector('[data-stab="monthlyReport"]')?.classList.add("on");
+
+    try{ monthlyReportPopulateEmployee(); }catch(e){}
+    try{ window.renderMonthlyReport?.(); }catch(e){ console.warn("Monthly Report render:",e); }
+    window.scrollTo({top:0,left:0,behavior:"instant"});
+  };
+})();
+// V13.8.49 ADD-ONLY — Monthly Report Home card.
