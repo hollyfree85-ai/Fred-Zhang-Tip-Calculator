@@ -6003,6 +6003,132 @@ function smallReportSignatureHtml(r){
   return `<div class="small-report-signature">${svg}</div>`;
 }
 
+
+// V13.8.49 ADD-ONLY — signed Daily Report thermal receipt printing.
+// This does not alter Daily Report calculations, report rendering, signature storage,
+// BAR logic, Hourly Adjustment, Host/Cashier, exports, or any existing workflow.
+function smallReportHasPickupSignature(r){
+  return Array.isArray(r?.pickupSignature?.strokes) && r.pickupSignature.strokes.length>0;
+}
+function thermalReportPaidOut(r){
+  const paidTip=Number(r?.paidTip||0);
+  const meal=Number(r?.meal||0);
+  const bartender=String(r?.position||"").toLowerCase()==="bartender";
+  const barTipOut=Number(r?.barTipOut||0);
+  const barTipReceived=Number(r?.bartenderBarTipReceived||0);
+  // Requested thermal receipt formula only:
+  // Server = Paid Tip - Bar Tip Out - Meal
+  // Bartender = Paid Tip + Bar Tip Out Received - Meal
+  return howRoundCent(bartender
+    ? paidTip + barTipReceived - meal
+    : paidTip - barTipOut - meal);
+}
+function thermalReceiptMoney(v){
+  return Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
+}
+function thermalReceiptSafe(v){
+  return String(v??"")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
+function buildSmallReportThermalHtml(r){
+  const bartender=String(r.position||"").toLowerCase()==="bartender";
+  const signature=smallReportSignatureSvg(r.pickupSignature,420,135);
+  const rows=[
+    ["Name",r.employee||""],
+    ["Shift",r.shift||""],
+    ["Grand Total",thermalReceiptMoney(r.grandTotal)],
+    ["Paid Tip",thermalReceiptMoney(r.paidTip)],
+    ["Card Fee",thermalReceiptMoney(r.payCardTipFee??r.cardFee)],
+    ["Busser Tip Out (%)",`${Number(r.busserRate||0).toFixed(3)}%`],
+    ["Busser Tip Out ($)",thermalReceiptMoney(r.busserTipOut)],
+    ["Bar Tip Out",thermalReceiptMoney(r.barTipOut)]
+  ];
+  if(bartender)rows.push(["Bar Tip Out Received",thermalReceiptMoney(r.bartenderBarTipReceived)]);
+  rows.push(["Meal",thermalReceiptMoney(r.meal)]);
+  const rowHtml=rows.map(([label,value])=>`<div class="row"><span>${thermalReceiptSafe(label)}</span><b>${thermalReceiptSafe(value)}</b></div>`).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="format-detection" content="telephone=no"><title>Daily Tip Report</title><style>
+    @page{size:80mm auto;margin:0}
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:#fff;color:#000}
+    body{width:72mm;margin:0 auto;padding:3mm 2mm 5mm;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.25}
+    .title{text-align:center;font-weight:900;font-size:16px;letter-spacing:.2px;margin:0 0 2px}
+    .sub{text-align:center;font-weight:700;font-size:11px;margin:0 0 7px}
+    .rule{border-top:1.5px dashed #000;margin:5px 0}
+    .row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:2px 0}
+    .row span{flex:1 1 auto}.row b{flex:0 0 auto;text-align:right;max-width:38mm;word-break:break-word}
+    .total{display:flex;justify-content:space-between;align-items:flex-end;gap:8px;font-weight:900;font-size:15px;padding:5px 0}
+    .signature-title{text-align:center;font-weight:900;margin:7px 0 2px}
+    .signature{width:100%;height:24mm;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .signature svg{display:block;width:62mm!important;height:20mm!important;max-width:100%}
+    .signed{text-align:center;font-size:10px;font-weight:700;margin-top:1px}
+    @media print{html,body{width:72mm}.no-print{display:none!important}}
+  </style></head><body>
+    <div class="title">DAILY TIP REPORT</div>
+    <div class="sub">Fred Zhang Tip Calculator</div>
+    <div class="rule"></div>
+    ${rowHtml}
+    <div class="rule"></div>
+    <div class="total"><span>TOTAL PAID OUT</span><b>${thermalReceiptSafe(thermalReceiptMoney(thermalReportPaidOut(r)))}</b></div>
+    <div class="rule"></div>
+    <div class="signature-title">EMPLOYEE SIGNATURE</div>
+    <div class="signature">${signature}</div>
+    <div class="signed">SIGNED</div>
+    <div class="rule"></div>
+  </body></html>`;
+}
+function openSmallReportSystemThermalPrint(r){
+  const w=window.open("","_blank","width=430,height=760");
+  if(!w){alert("Print window was blocked. Allow pop-ups for this app and tap PRINT again.");return false;}
+  w.document.open();
+  w.document.write(buildSmallReportThermalHtml(r));
+  w.document.close();
+  const run=()=>{try{w.focus();w.print();}catch(e){console.error("Thermal print:",e);}};
+  if(w.document.readyState==="complete")setTimeout(run,120);else w.addEventListener("load",()=>setTimeout(run,120),{once:true});
+  return true;
+}
+function openSmallReportStarPassPrnt(r){
+  const html=buildSmallReportThermalHtml(r);
+  // Star PassPRNT official URL bridge. TSP100IIIBI Bluetooth uses 576-dot / 72mm print width.
+  const back=window.location.href;
+  const uri="starpassprnt://v1/print/nopreview?"
+    +"back="+encodeURIComponent(back)
+    +"&size=576"
+    +"&cut=partial"
+    +"&popup=enable"
+    +"&html="+encodeURIComponent(html);
+  try{
+    const a=document.createElement("a");
+    a.href=uri;
+    a.style.display="none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return true;
+  }catch(e){
+    console.warn("Star PassPRNT launch:",e);
+    return false;
+  }
+}
+window.printSmallReportThermal=function(reportId){
+  if(!["manager","owner"].includes(currentProfile?.role||""))return;
+  const r=latestHourlyReports.find(x=>x.id===reportId);
+  if(!r){alert("Report not found.");return;}
+  if(!smallReportHasPickupSignature(r)){
+    alert(`Please collect ${r.employee||"employee"}'s signature first. PRINT is available only after the employee has signed.`);
+    return;
+  }
+  // On Android use Star's supported PassPRNT bridge for the paired TSP100IIIBI.
+  // Other platforms keep a standard 80mm browser-print fallback.
+  if(/Android/i.test(navigator.userAgent||"")){
+    if(!openSmallReportStarPassPrnt(r))openSmallReportSystemThermalPrint(r);
+    return;
+  }
+  openSmallReportSystemThermalPrint(r);
+};
+
 function smallReportFilteredRows(){
   const date=$("smallReportDate")?.value||"";
   const employee=$("smallReportEmployee")?.value||"";
@@ -6396,6 +6522,7 @@ window.openSmallReportDetail=function(reportId){
   $("smallReportDetailSignature").innerHTML=smallReportSignatureHtml(r);
   $("smallReportDetailActions").innerHTML=`
     <button class="btn green" type="button" onclick="signSmallReportFromDetail('${r.id}')">${Array.isArray(r.pickupSignature?.strokes)&&r.pickupSignature.strokes.length?"RE-SIGN":"SIGN"}</button>
+    ${smallReportHasPickupSignature(r)?`<button class="btn dark" type="button" onclick="printSmallReportThermal('${r.id}')">PRINT</button>`:""}
     <button class="btn gold" type="button" onclick="editSmallReportFromDetail('${r.id}')">EDIT</button>
     <button class="btn red" type="button" onclick="deleteSmallReportFromDetail('${r.id}')">DELETE</button>`;
   const modal=$("smallReportDetailModal");
