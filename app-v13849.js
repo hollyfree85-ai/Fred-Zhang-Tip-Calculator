@@ -2973,7 +2973,13 @@ onAuthStateChanged(auth, async user=>{
       loginMsg("This account is disabled.");
       await signOut(auth); return;
     }
-    const selected=fzLoginRole;
+    // PassPRNT callback must validate against the role that actually launched PRINT.
+    // The unified login UI resets its selector to Employee on DOMContentLoaded; using
+    // that temporary/default UI value here would incorrectly sign out a restored
+    // Manager/Owner immediately after returning from Star PassPRNT.
+    const selected=passPrntReturnBridge?.dailyReport
+      ? String(passPrntReturnBridge.role||fzLoginRole)
+      : fzLoginRole;
     const role=String(profile.role||"");
     if((["manager","owner","employee","cashier"].includes(selected) && role!==selected) || (selected==="hostcashier" && !["manager","owner"].includes(role))){
       await signOut(auth);
@@ -6179,13 +6185,13 @@ function buildSmallReportThermalHtml(r){
     .signature{width:100%;height:164px;display:flex;align-items:center;justify-content:center;overflow:hidden}
     .signature svg{display:block;width:500px!important;height:160px!important;max-width:100%}
     .signed{text-align:center;font-size:18px;font-weight:900;margin-top:2px}
-    .receipt-note{text-align:center;font-size:24px;font-weight:900;line-height:1.38;margin:16px 6px 0}
+    .receipt-note{text-align:center;font-size:28px;font-weight:900;line-height:1.38;margin:18px 6px 0}
     @media print{
       html,body{width:80mm;max-width:80mm}
       body{padding:3mm 3mm 5mm;font-size:14pt}
       .title{font-size:20pt}.sub{font-size:12pt}.row{font-size:14pt;padding:1.2mm 0}
       .total{font-size:18pt}.signature-title{font-size:13pt}.signed{font-size:11pt}
-      .receipt-note{font-size:14pt;line-height:1.38;margin-top:3mm}
+      .receipt-note{font-size:16pt;line-height:1.38;margin-top:3.5mm}
       .signature{height:23mm}.signature svg{width:68mm!important;height:22mm!important}
     }
   </style></head><body>
