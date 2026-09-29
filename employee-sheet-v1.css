@@ -248,3 +248,36 @@ body.es-active{overflow:hidden!important}
  #employeeSheet.es-compact #esQuickColumns,#employeeSheet.es-compact #esReadBadge{min-height:38px;height:38px}
  #employeeSheet.es-compact .es-extra-controls{top:50px;max-height:calc(100% - 90px)}
 }
+
+
+/* ES1.3 laptop / desktop: scroll the whole Employee Sheet page, not a short
+   inner table box. No breakpoint changes to the phone's compact/touch layout. */
+#employeeSheet.es-compact.es-desktop-page{
+ display:block;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding:8px;
+ scroll-padding-top:78px;scroll-padding-bottom:54px;scroll-padding-left:calc(var(--es-name-w) + 8px);
+ overflow-anchor:none;--es-page-width:calc(100vw - 34px)
+}
+#employeeSheet.es-compact.es-desktop-page>.es-header,
+#employeeSheet.es-compact.es-desktop-page>.es-toolbar,
+#employeeSheet.es-compact.es-desktop-page>.es-footer{
+ position:sticky;left:0;width:var(--es-page-width);max-width:none
+}
+#employeeSheet.es-compact.es-desktop-page>.es-header{margin:0 0 8px;z-index:2}
+#employeeSheet.es-compact.es-desktop-page>.es-toolbar{margin:0 0 7px;z-index:2}
+#employeeSheet.es-compact.es-desktop-page>.es-grid{
+ overflow:visible!important;overscroll-behavior:auto;touch-action:auto;
+ width:max-content;max-width:none;height:auto;max-height:none;min-height:0;
+ flex:none;margin:0;scrollbar-gutter:auto
+}
+#employeeSheet.es-compact.es-desktop-page .es-table thead th{top:-8px}
+#employeeSheet.es-compact.es-desktop-page .es-table .es-name{left:-8px}
+#employeeSheet.es-compact.es-desktop-page>.es-footer{
+ bottom:0;z-index:12;min-height:46px;margin:4px 0 0;padding:3px 4px;
+ background:#eaf2f7;border-top:1px solid #b7d0df;box-shadow:0 -3px 9px #15354a14
+}
+#employeeSheet.es-compact.es-desktop-page .es-extra-controls{
+ position:fixed;top:65px;right:24px;width:min(670px,calc(100vw - 48px));max-height:calc(100dvh - 120px)
+}
+#employeeSheet.es-compact.es-desktop-page .es-quick-notice{
+ position:fixed;bottom:62px;left:12px;right:30px
+}

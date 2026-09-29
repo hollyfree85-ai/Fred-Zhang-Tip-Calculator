@@ -3880,7 +3880,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es13",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10265,7 +10265,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.2';
+const ES_BUILD='ES1.3';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10615,7 +10615,7 @@ function esInit(){
     if(e.target.dataset?.esRoute && esSession?.ready&&!esSession.busy){esSession.routing[e.target.dataset.esRoute]=e.target.value;esRecalculate();esRenderRouting();esRenderRows();esPersistLocal();}
   });
   el.addEventListener('click',e=>{
-    const jump=e.target.closest('[data-es-jump]');if(jump){const target=el.querySelector('thead [data-es-group="'+jump.dataset.esJump+'"]');if(target)$('esGrid').scrollTo({left:Math.max(0,target.offsetLeft-el.querySelector('thead .es-name').offsetWidth),behavior:'smooth'});return;}
+    const jump=e.target.closest('[data-es-jump]');if(jump){const target=el.querySelector('thead [data-es-group="'+jump.dataset.esJump+'"]');if(target)esSheetScrollPort().scrollTo({left:Math.max(0,target.offsetLeft-el.querySelector('thead .es-name').offsetWidth),behavior:'smooth'});return;}
     const button=e.target.closest('[data-es-action]');if(!button||esSession?.busy)return;
     const name=esSession.rows[+button.dataset.esRow]?.name;
     if(button.dataset.esAction==='save')window.employeeSheetSave(name);
@@ -10629,9 +10629,14 @@ function esInit(){
   });
   $('esGrid').addEventListener('focusin',e=>{
     if(!e.target.dataset?.esField)return;
-    const grid=$('esGrid'),box=grid.getBoundingClientRect(),input=e.target.getBoundingClientRect(),frozen=el.querySelector('thead .es-name').offsetWidth;
+    const grid=esSheetScrollPort(),box=grid.getBoundingClientRect(),input=e.target.getBoundingClientRect(),frozen=el.querySelector('thead .es-name').offsetWidth;
     if(input.left<box.left+frozen)grid.scrollLeft-=box.left+frozen-input.left+8;
-    else if(input.right>box.right)grid.scrollLeft+=input.right-box.right+8;
+    else if(input.right>box.left+grid.clientWidth)grid.scrollLeft+=input.right-box.left-grid.clientWidth+8;
+    if(el.classList.contains('es-desktop-page')){
+      const header=el.querySelector('thead')?.offsetHeight||68,footer=el.querySelector('.es-footer')?.offsetHeight||42;
+      if(input.top<box.top+header+8)grid.scrollTop-=box.top+header+8-input.top;
+      else if(input.bottom>box.top+grid.clientHeight-footer-8)grid.scrollTop+=input.bottom-(box.top+grid.clientHeight-footer-8);
+    }
   });
   esInitSignature();
 }
@@ -11197,7 +11202,7 @@ function esFastQueueRead(c){
     const out=apply(c);esFastCacheSave(c);return out;
   };
   esRenderRows=function(...args){
-    const g=$('esGrid');let left=g?.scrollLeft||0,top=g?.scrollTop||0,anchor=null;
+    const g=esSheetScrollPort();let left=g?.scrollLeft||0,top=g?.scrollTop||0,anchor=null;
     if(g&&top>0){
       const edge=g.getBoundingClientRect().top+(g.querySelector('thead')?.offsetHeight||0);
       for(const tr of g.querySelectorAll('tbody tr[data-es-index]:not([hidden])')){
@@ -11338,6 +11343,8 @@ function esInstallAxisLock(){
   }
   grid.addEventListener('touchstart',e=>{
     stopCoast();
+    // Fine-pointer desktop uses the whole page scrollport; phones keep ES1.2 axis lock.
+    if($('employeeSheet')?.classList.contains('es-desktop-page')){esPan=null;esTouchUntil=0;return;}
     if(e.touches.length!==1){finish(true);esPan=null;esTouchUntil=0;return;}
     suppressClickUntil=0; // A new intentional tap must not be blocked by the prior swipe.
     const t=e.touches[0],active=document.activeElement;
@@ -11368,3 +11375,58 @@ function esInstallAxisLock(){
   grid.addEventListener('click',e=>{if(performance.now()<suppressClickUntil){e.preventDefault();e.stopImmediatePropagation();}},{capture:true});
   window.addEventListener('pagehide',()=>{stopCoast();esPan=null;esTouchUntil=0;clearTimeout(settleTimer);});
 }
+
+
+/* ES1.3 — desktop page scrolling, scoped to Employee Sheet only.
+ * A single native two-axis page scrollport keeps CSS sticky name/header cells
+ * in the same scroll ancestor. No duplicate headers or transform-based rows.
+ * Coarse-pointer phones/tablets retain the ES1.2 bounded grid + touch lock.
+ */
+function esSheetScrollPort(){
+  const area=$('employeeSheet');
+  return area?.classList.contains('es-desktop-page')?area:$('esGrid');
+}
+function esInstallDesktopPage(){
+  const area=$('employeeSheet'),grid=$('esGrid');
+  if(!area||!grid||area.dataset.esDesktopInstalled)return;
+  area.dataset.esDesktopInstalled='1';
+  const media=window.matchMedia('(min-width: 1024px) and (hover: hover) and (pointer: fine)');
+  function sizeControls(){
+    if(!area.classList.contains('es-desktop-page')||!area.clientWidth)return;
+    const css=getComputedStyle(area);
+    const width=area.clientWidth-parseFloat(css.paddingLeft)-parseFloat(css.paddingRight);
+    const value=Math.max(0,width)+'px';
+    if(area.style.getPropertyValue('--es-page-width')!==value)area.style.setProperty('--es-page-width',value);
+  }
+  function changeMode(){
+    const prior=esSheetScrollPort(),left=prior?.scrollLeft||0,top=prior?.scrollTop||0;
+    const wasDesktop=area.classList.contains('es-desktop-page'),desktop=media.matches;
+    let anchor=null;
+    if(prior&&top>0){
+      const edge=prior.getBoundingClientRect().top+(grid.querySelector('thead')?.offsetHeight||0);
+      for(const row of grid.querySelectorAll('tbody tr[data-es-index]:not([hidden])')){
+        const box=row.getBoundingClientRect();
+        if(box.bottom>edge){anchor={name:row.querySelector('.es-name>b')?.textContent,offset:box.top-prior.getBoundingClientRect().top};break;}
+      }
+    }
+    area.classList.toggle('es-desktop-page',desktop);
+    sizeControls();
+    if(wasDesktop!==desktop){
+      cancelAnimationFrame(esPanFrame);esPanFrame=0;esPan=null;esTouchUntil=0;
+      prior.scrollLeft=0;prior.scrollTop=0;
+      const next=esSheetScrollPort();next.scrollLeft=left;next.scrollTop=top;
+      if(anchor){
+        const row=[...grid.querySelectorAll('tbody tr[data-es-index]:not([hidden])')].find(r=>r.querySelector('.es-name>b')?.textContent===anchor.name);
+        if(row)next.scrollTop+=row.getBoundingClientRect().top-next.getBoundingClientRect().top-anchor.offset;
+      }
+    }
+  }
+  media.addEventListener('change',changeMode);
+  window.addEventListener('resize',sizeControls,{passive:true});
+  if(typeof ResizeObserver==='function')new ResizeObserver(sizeControls).observe(area);
+  changeMode();
+}
+(function(){
+  const init=esInit;
+  esInit=function(...args){const result=init(...args);esInstallDesktopPage();return result;};
+})();
