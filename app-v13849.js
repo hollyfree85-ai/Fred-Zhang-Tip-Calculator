@@ -3880,7 +3880,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es13",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es14",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10133,6 +10133,7 @@ initMonthlyReportUi();
     // Name / scope strip
     c+="0.94 0.97 1 rg 34 642 544 26 re f\n";
     c+="0.76 0.84 0.91 RG 0.8 w 34 642 544 26 re S\n0 G\n";
+    c+="0.055 0.14 0.25 rg\n"; // ES1.4: restore readable text after pale strip fill.
     c+=monthlyPdfCellText("F2",11,46,650,520,isAll?"SUMMARY: ALL EMPLOYEES":`EMPLOYEE: ${summary.name}`,"left");
 
     const xL=34,xR=314,w=264,h=68,gap=10,top=626;
@@ -10145,6 +10146,7 @@ initMonthlyReportUi();
     // Footer note
     c+="0.975 0.98 0.985 rg 34 116 544 76 re f\n";
     c+="0.82 0.85 0.89 RG 0.7 w 34 116 544 76 re S\n0 G\n";
+    c+="0.055 0.14 0.25 rg\n"; // ES1.4: footer text must not inherit its near-white background.
     c+=monthlyPdfText("F2",8.6,48,171,"REPORT NOTES");
     c+=monthlyPdfText("F1",8,48,153,"Paid Tip Before Meal = Paid Tip + Cash Tip.");
     c+=monthlyPdfText("F1",8,48,138,"Sales = Grand Total sales for the selected period.");
@@ -10265,7 +10267,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.3';
+const ES_BUILD='ES1.4';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10353,7 +10355,7 @@ function esValidateSales(row,route,complete=false){
   for(const field of ES_MONEY){
     if(field==='totalAM'&&!mask.totalAM || field==='total24'&&!mask.total24)continue;
     const raw=String(row[field]??'').trim();
-    if(raw && (!/^\d+(?:\.\d{0,2})?$/.test(raw)||!Number.isFinite(Number(raw))))errors.push(field+' must be 0 or more, with at most 2 decimals.');
+    if(raw && (!/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(raw)||!Number.isFinite(Number(raw))))errors.push(field+' must be 0 or more, with at most 2 decimals.');
   }
   if(row.role==='Server'){
     let previous=0;
@@ -10472,8 +10474,14 @@ function esCalculate(row,batch,oldReport=null){
 }
 function esFingerprint(r){
   if(!r)return '';
+  // ES1.4: compare financial values, not object-key order or Firestore metadata.
+  const shift=String(r.shift||'').toUpperCase(),h={...r,...(r.hours||{})};
+  const keys=shift==='DOUBLE'?['hourInAM','hourOutAM','hourInPM','hourOutPM']:['hourIn','hourOut'];
+  const clocks=keys.map(k=>esNormalizeClock(String(h[k]||'').trim()));
+  const mins=window.FredTipCalculatorLogic.calculateTotalMinutes(shift,Object.fromEntries(keys.map((k,i)=>[k,clocks[i]])));
   const money=['grandTotal','totalAM','totalPM','paidTip','payCardTipFee','cashTip','meal','busserTipOut','busserTipOutAM','busserTipOutPM','barTipOut','bartenderBarTipReceived','totalPaidOut','adjustmentSalaryHourly'];
-  return JSON.stringify({employee:esKey(r.employee),date:r.date,position:r.position,shift:r.shift,hours:r.hours||{hourIn:r.hourIn||'',hourOut:r.hourOut||'',hourInAM:r.hourInAM||'',hourOutAM:r.hourOutAM||'',hourInPM:r.hourInPM||'',hourOutPM:r.hourOutPM||''},minutes:r.totalMinutesWork,...Object.fromEntries(money.map(k=>[k,howRoundCent(Number(r[k]||0))])),receipts:bartenderReceiptPeriods(r)});
+  const receipts=bartenderReceiptPeriods(r).map(p=>({checkpoint:p.checkpoint,amount:howRoundCent(Number(p.amount)||0)})).sort((a,b)=>String(a.checkpoint).localeCompare(String(b.checkpoint)));
+  return JSON.stringify({employee:esKey(r.employee),date:r.date,position:String(r.position||'Server').toLowerCase(),shift,clocks,minutes:mins??r.totalMinutesWork??null,...Object.fromEntries(money.map(k=>[k,howRoundCent(Number(k==='payCardTipFee'?(r[k]??r.cardFee):k==='paidTip'?(r[k]??r.paidTips):r[k])||0)])),receipts});
 }
 function esCompareValue(a,b){return String(a??'')===String(b??'');}
 function esMergeRows(baseRows,editedRows,remoteRows,dirty){
@@ -10646,6 +10654,7 @@ function esChange(input,final){
   if(f==='role'&&esFixedRole(row.name))return;
   const before=esClone(row);let value=input.type==='checkbox'?input.checked:input.value;
   if(f.startsWith('clock')){value=esNormalizeClock(value);if(input.value!==value)input.value=value;}
+  if(final&&ES_MONEY.includes(f)&&es14MoneyValid(value)&&String(value).trim()!==''){value=es14MoneyText(value);input.value=value;}
   row[f]=value;
   if(f==='shift'){
     const old=before.shift;
@@ -10822,9 +10831,9 @@ function esInitSignature(){
     const sign=esSignature;
     const payload=esSerializeSignature(sign.strokes);
     esSetBusy(true);$('esSignStatus').textContent='Saving report and signature…';
-    try{await esCommit(sign.name,payload,sign.fingerprint);esSignature=null;$('esSignatureModal').classList.add('hidden');esStatus(sign.name+' saved · signature is attached to Daily Report.');}
-    catch(e){$('esSignStatus').textContent=e.message||String(e);}
-    finally{esSetBusy(false);esRenderRows();esRenderRouting();}
+    try{await esCommit(sign.name,payload,sign.fingerprint);esSignature=null;$('esSignatureModal').classList.add('hidden');esStatus(sign.name+' saved and signed · Final Report updated.');}
+    catch(e){es14HandleError(e);$('esSignStatus').textContent=e.message||String(e);if(e.esAmountsChanged)$('esSignReview')?.classList.remove('hidden');}
+    finally{esSetBusy(false);esRenderRows();esRenderRouting();if(!esSignature)es14RestoreScroll(sign.scroll,sign.name);}
   });
   $('esSignatureModal').addEventListener('keydown',e=>{
     if(e.key==='Escape'){e.preventDefault();close();}
@@ -10836,7 +10845,7 @@ window.employeeSheetSign=function(name){
   if(!esAllowed()||esSession?.busy)return;
   const row=esSession.rows.find(r=>r.name===name);if(!row)return;
   const errors=esValidateSales(row,esSession.routing,true);if(errors.length){esStatus(name+': '+errors.join(' '),true);return;}
-  const r=esSession.results[name];esSignature={name,fingerprint:esFingerprint(r),strokes:[],current:null};
+  const r=esSession.results[name];esSignature={name,fingerprint:esFingerprint(r),strokes:[],current:null,scroll:es14CaptureScroll()};
   $('esSignatureTitle').textContent=name+' — Employee Signature';
   $('esSignSummary').textContent=esSession.date+' · '+row.shift+' · Paid Tip Out '+esMoney(r.totalPaidOut);
   $('esSignStatus').textContent='Save signature updates this Daily Report. Any later change to the amounts requires a new signature.';
@@ -10873,7 +10882,7 @@ window.employeeSheetPrint=async function(name){
       popup.document.open();popup.document.write(html);popup.document.close();
       setTimeout(()=>{try{popup.focus();popup.print();}catch(e){}},250);esStatus('Receipt opened for printing.');
     }
-  }catch(e){if(popup)popup.close();esStatus(e.message||String(e),true);if(android)await cancelSmallReportPassPrntReturn();}
+  }catch(e){if(popup)popup.close();es14HandleError(e);if(android)await cancelSmallReportPassPrntReturn();}
   finally{esSetBusy(false);esRenderRows();esRenderRouting();}
 };
 // Additive return route only. Existing Daily Report printing keeps its old route.
@@ -11430,3 +11439,523 @@ function esInstallDesktopPage(){
   const init=esInit;
   esInit=function(...args){const result=init(...args);esInstallDesktopPage();return result;};
 })();
+
+/* ES1.4 — per-field live sync + isolated final Save/Sign.
+ * Shared drafts auto-sync. A Daily Report is finalized ONLY by Save/Sign/Print.
+ * Original esBuildBatch/esCalculate and all payroll engines are reused verbatim.
+ * Transactions read before writing and never erase another employee's input.
+ */
+const ES14_DEBOUNCE_MS=650;
+function es14MoneyValid(v){const t=String(v??'').trim();return t===''||(/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(t)&&Number.isFinite(Number(t)));}
+function es14MoneyText(v){const t=String(v??'').trim();return t===''?'':es14MoneyValid(t)?String(Number(t)):t;}
+function es14Same(field,a,b){return ES_MONEY.includes(field)?es14MoneyText(a)===es14MoneyText(b):field.startsWith('clock')?esNormalizeClock(a)===esNormalizeClock(b):String(a??'')===String(b??'');}
+function es14CleanRow(row){const r=esClone(row);for(const f of ES_MONEY)if(es14MoneyValid(r[f]))r[f]=es14MoneyText(r[f]);return r;}
+function es14Conflict(name,field,base,local,remote){return {name,field,base:base??'',local:local??'',remote:remote??''};}
+function es14ConflictError(conflicts){const e=new Error('Another device edited the same field. Tap Review changes to choose the value; other employees can still be saved.');e.esConflicts=conflicts;return e;}
+function es14UniqueConflicts(items){return [...new Map(items.map(x=>[x.name+'\u0000'+x.field,x])).values()];}
+function es14RecordConflicts(s,conflicts){s.conflicts=es14UniqueConflicts(conflicts);es14ConflictUI();}
+function es14HasEligible(s){return !!s&&esHasEdits(s)&&s.esReadEnabled;}
+function es14AllowedSession(s){return !!s&&esAllowed()&&currentUser.uid===s.uid;}
+function es14IsOnline(){return typeof navigator==='undefined'||navigator.onLine!==false;}
+function es14CaptureScroll(){const port=esSheetScrollPort();return {left:port?.scrollLeft||0,top:port?.scrollTop||0};}
+function es14RestoreScroll(pos,name){
+  if(!pos)return;const apply=()=>{const p=esSheetScrollPort();if(p){p.scrollLeft=pos.left;p.scrollTop=pos.top;}const index=esSession?.rows.findIndex(r=>r.name===name);if(index>=0)$('esRows')?.querySelector(`[data-es-row="${index}"][data-es-action="sign"]`)?.focus({preventScroll:true});if(p){p.scrollLeft=pos.left;p.scrollTop=pos.top;}};
+  apply();requestAnimationFrame(apply);
+}
+function es14ReportRow(r,fallback){
+  if(r.employeeSheetRow&&r.employeeSheetFingerprint===esFingerprint(r))return {...esClone(r.employeeSheetRow),name:r.employee};
+  const row={...esClone(fallback||esDefaults(r.employee,r.date)),name:r.employee},h={...r,...r.hours};
+  row.shift=String(r.shift||row.shift||'').toUpperCase();row.role=String(r.position||row.role).toLowerCase()==='bartender'?'Bartender':'Server';
+  row.clockIn=esNormalizeClock(h[row.shift==='DOUBLE'?'hourInAM':'hourIn']||'');row.clockOut=esNormalizeClock(h[row.shift==='DOUBLE'?'hourOutAM':'hourOut']||'');
+  if(row.shift==='DOUBLE'){row.clockIn2=esNormalizeClock(h.hourInPM||'');row.clockOut2=esNormalizeClock(h.hourOutPM||'');}
+  for(const [f,k]of [['grand','grandTotal'],['paid','paidTip'],['cardFee','payCardTipFee'],['cash','cashTip'],['meal','meal']])if(r[k]!==undefined)row[f]=String(r[k]);
+  if(r.payCardTipFee===undefined&&r.cardFee!==undefined)row.cardFee=String(r.cardFee);
+  row.adjustmentDecision=r.adjustmentDecision||'';
+  if(['DOUBLE','LONG'].includes(row.shift))row[row.role==='Server'&&row.shift==='LONG'?'total24':'totalAM']=String(r.totalAM??0);
+  if(r.barBreakdown){row.totalAM=String(r.barBreakdown.amGrandTotal??row.totalAM);row.total24=String(r.barBreakdown.grandTotal24??row.total24);}
+  if(['AM',SHIFT_EARLY].includes(row.shift)&&!r.barBreakdown)row.totalAM=String(r.grandTotal??0);
+  if(row.shift===SHIFT_MIDDLE)row.total24=String(r.grandTotal??0);
+  return es14CleanRow(row);
+}
+function es14FreshReports(reports,s){
+  return reports.map(r=>{const prior=s?.reports?.find(x=>x.id===r.id);return prior&&Number(prior.employeeSheetRevision||0)>Number(r.employeeSheetRevision||0)?esClone(prior):r;});
+}
+function es14Remote(raw,reports,date,s){
+  const batch=esPrepareBatch(raw,reports,date),rows=esRowsFromBatch(batch,reports,date),conflicts=[];
+  // Reconcile edits made through the original Daily Report editor. A newer
+  // signature/timestamp alone is not a financial change and never blocks Save.
+  for(const row of rows){
+    const d=batch.drafts[row.name],r=esFindReport(reports,row.name);if(!d||!r)continue;
+    // Batch and report listeners can arrive in either order. An older report
+    // cannot reverse a newer atomic Save already acknowledged by the batch.
+    if(Number(r.employeeSheetRevision||0)<Number(d.employeeSheetReportRevision||0))continue;
+    const previous=s?.reports?.find(x=>x.id===r.id);
+    // Keep the initial legacy financial baseline across subsequent snapshots.
+    // Otherwise a reports-listener update could briefly show a newer report and
+    // then revert it when the independent batch listener emits again.
+    if(s&&!d.employeeSheetFinalRow){s.reportBases ||= {};s.reportBases[r.id] ||= {row:es14ReportRow(previous||r,row),fingerprint:esFingerprint(previous||r)};}
+    const legacy=s?.reportBases?.[r.id];
+    const reference=d.employeeSheetFinalRow||legacy?.row||(previous?es14ReportRow(previous,row):null);
+    const fp=d.employeeSheetFinalFingerprint||legacy?.fingerprint||(previous?esFingerprint(previous):'');
+    if(!reference||!fp||esFingerprint(r)===fp)continue;
+    const updated=es14ReportRow(r,reference);
+    for(const field of ES_FIELDS)if(!es14Same(field,updated[field],reference[field])){
+      if(es14Same(field,row[field],reference[field])||es14Same(field,row[field],updated[field]))row[field]=updated[field];
+      else conflicts.push({...es14Conflict(row.name,field,reference[field],row[field],updated[field]),origin:'report',reportId:r.id,reportFingerprint:esFingerprint(r)});
+    }
+  }
+  return {batch,rows,conflicts,routing:esRouting(rows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,batch.bar[cp].bartender||''])))};
+}
+function es14Patch(baseRows,editedRows,remoteRows,dirty,route,skipInvalid=true){
+  const rows=esClone(remoteRows),applied={},conflicts=[],skipped=[];
+  for(const edited of editedRows){
+    const changes=dirty[edited.name];if(!changes)continue;
+    const base=baseRows.find(r=>r.name===edited.name);let target=rows.find(r=>r.name===edited.name);
+    if(!target){
+      if(changes.__new){target=esDefaults(edited.name,'');rows.push(target);applied[edited.name]={__new:true};}
+      else{conflicts.push(es14Conflict(edited.name,'__removed','present','keep row','removed'));continue;}
+    }
+    const salesErrors=esValidateSales({...edited,paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);
+    for(const field of ES_FIELDS){
+      if(!changes[field]&&!changes.__new)continue;
+      const value=ES_MONEY.includes(field)&&es14MoneyValid(edited[field])?es14MoneyText(edited[field]):edited[field];
+      if(skipInvalid&&((ES_MONEY.includes(field)&&!es14MoneyValid(value))||(['totalAM','total24','grand'].includes(field)&&salesErrors.length))){skipped.push({name:edited.name,field});continue;}
+      const original=base?.[field]??esDefaults(edited.name,'')[field];
+      if(!es14Same(field,target[field],original)&&!es14Same(field,target[field],value)){
+        // An existing concurrently-added row is not reset to new-row defaults.
+        if(changes.__new&&!base&&!changes[field])continue;
+        conflicts.push(es14Conflict(edited.name,field,original,value,target[field]));continue;
+      }
+      if(!es14Same(field,target[field],value)){target[field]=value;(applied[edited.name] ||= {})[field]=true;}
+    }
+  }
+  return {rows,applied,conflicts,skipped};
+}
+function es14MergeRoute(base,local,remote){
+  const route={...remote},conflicts=[];
+  for(const cp of ES_PERIODS)if((local?.[cp]||'')!==(base?.[cp]||'')){
+    if((remote[cp]||'')!==(base?.[cp]||'')&&(remote[cp]||'')!==(local[cp]||''))conflicts.push(es14Conflict('BAR routing',cp,base?.[cp],local?.[cp],remote[cp]));
+    else route[cp]=local[cp]||'';
+  }
+  return {route,conflicts};
+}
+function es14Rebase(s,raw,reports,ack=null){
+  if(!es14AllowedSession(s))return;
+  reports=es14FreshReports(reports,s);
+  const remote=es14Remote(raw,reports,s.date,s),old=s.rows||[],base=s.baseRows||[],dirty=s.dirty||{};
+  // Only the sent values are acknowledged. Keystrokes entered while the request
+  // was in flight remain dirty, with the acknowledged value as their new base.
+  if(ack)for(const [name,fields]of Object.entries(ack.fields||{})){
+    const sent=ack.rows.find(r=>r.name===name);if(!sent)continue;
+    let b=base.find(r=>r.name===name);if(!b){b=esClone(sent);base.push(b);}
+    for(const f of ES_FIELDS)if(fields[f]||fields.__new)b[f]=sent[f];
+    if(dirty[name]?.__new)delete dirty[name].__new;
+  }
+  if(ack?.routing)for(const cp of ES_PERIODS)if((s.routing[cp]||'')===(ack.routing[cp]||''))s.baseRouting[cp]=ack.routing[cp]||'';
+  const rows=remote.rows.map(esClone),nextBase=remote.rows.map(esClone),nextDirty={},conflicts=[...remote.conflicts];
+  for(const local of old){
+    const changes=dirty[local.name];if(!changes)continue;
+    let target=rows.find(r=>r.name===local.name),original=base.find(r=>r.name===local.name),b=nextBase.find(r=>r.name===local.name);
+    if(!target){rows.push(esClone(local));nextDirty[local.name]={...changes};if(original){nextBase.push(esClone(original));conflicts.push(es14Conflict(local.name,'__removed','present','keep row','removed'));}continue;}
+    for(const f of ES_FIELDS)if(changes[f]||changes.__new){
+      if(es14Same(f,local[f],target[f]))continue;
+      const prior=original?.[f]??esDefaults(local.name,s.date)[f];
+      if(!es14Same(f,target[f],prior))conflicts.push(es14Conflict(local.name,f,prior,local[f],target[f]));
+      target[f]=local[f];b[f]=prior;(nextDirty[local.name] ||= {})[f]=true;
+    }
+  }
+  const route=es14MergeRoute(s.baseRouting,s.routing,remote.routing),baseRoute={...remote.routing};
+  for(const c of route.conflicts){route.route[c.field]=s.routing[c.field];baseRoute[c.field]=s.baseRouting[c.field];}
+  Object.assign(s,{baseBatch:remote.batch,rawBase:esClone(raw),rows,baseRows:nextBase,dirty:nextDirty,reports:esClone(reports),routing:esRouting(rows,route.route),baseRouting:baseRoute});
+  es14RecordConflicts(s,[...conflicts,...route.conflicts]);
+  esRecalculate();es14Paint();if($('esBarRoutes'))esRenderRouting();esPersistLocal();
+}
+function es14Paint(force=false){
+  const s=esSession;if(!s?.ready||!$('esRows'))return;
+  if(esPan||performance.now()<esTouchUntil){if(esReadCurrent(esRead))esRead.pending=true;return;}
+  const trs=[...$('esRows').querySelectorAll('tr[data-es-index]')];
+  const shape=JSON.stringify(s.rows.map(r=>[r.name,r.shift,r.role]))+JSON.stringify(s.routing);
+  const focus=document.activeElement,editing=!!focus?.matches?.('#esRows input,#esRows select');
+  if(force||!editing&&(s.paintShape!==shape||trs.length!==s.rows.length)){esRenderRows();s.paintShape=shape;es14ConflictUI();return;}
+  for(const tr of trs){
+    const name=tr.querySelector('.es-name>b')?.textContent,row=s.rows.find(r=>r.name===name);if(!row)continue;
+    for(const input of tr.querySelectorAll('[data-es-field]')){
+      const f=input.dataset.esField;if(input===focus&&(s.dirty[row.name]?.[f]||s.dirty[row.name]?.__new))continue;
+      if(input.type==='checkbox')input.checked=!!row[f]&&!!esBarMask(row,s.routing)[f];
+      else if(!input.disabled)input.value=String(row[f]??'');
+    }
+  }
+  esUpdateComputed();es14ConflictUI();
+}
+function es14AcceptCommit(s,batch,reports,ack){
+  if(esSession!==s||!es14AllowedSession(s))return;
+  s.hadCloud=true;es14Rebase(s,batch,reports,ack);
+  try{localStorage.setItem(HV1_STORAGE_PREFIX+s.date,JSON.stringify(batch));}catch(e){}
+  const c=esReadCurrent(esRead)?esRead:null;
+  if(c){
+    c.batch={value:{exists:true,data:esClone(batch)},server:true,error:null,origin:'transaction',contentKey:JSON.stringify({exists:true,data:batch})};
+    c.reports={value:esClone(reports),server:true,error:null,origin:'transaction',contentKey:JSON.stringify(reports)};
+    c.pending=false;esSetReadStatus(c);esFastCacheSave(c);
+  }
+}
+function es14DraftSnapshot(s){return esClone({date:s.date,uid:s.uid,rows:s.rows,baseRows:s.baseRows,dirty:s.dirty,routing:s.routing,baseRouting:s.baseRouting,baseBatch:s.baseBatch,reports:s.reports,hadCloud:s.hadCloud});}
+async function es14PublishDraft(s){
+  const draft=es14DraftSnapshot(s),ref=doc(db,'hourlyV1Batches',s.date);
+  const out=await runTransaction(db,async tx=>{
+    const snap=await tx.get(ref);if(!es14AllowedSession(s))throw new Error('Login changed. No draft was shared.');
+    if(!snap.exists()&&draft.hadCloud)throw new Error('This work date was removed. Your device draft is kept.');
+    const raw=snap.exists()?snap.data():draft.baseBatch;
+    const remote=es14Remote(raw,draft.reports,draft.date,s);
+    const routes=es14MergeRoute(draft.baseRouting,draft.routing,remote.routing);
+    const merge=es14Patch(draft.baseRows,draft.rows,remote.rows,draft.dirty,routes.route,true);
+    const routing=esRouting(merge.rows,routes.route),routeChanged=ES_PERIODS.some(cp=>(routing[cp]||'')!==(remote.routing[cp]||''));
+    const changed=Object.keys(merge.applied).length>0||routeChanged||!snap.exists()&&merge.rows.length>0;
+    const batch=changed?esBuildBatch(remote.batch,merge.rows,draft.date,routing):remote.batch;
+    if(changed){
+      for(const name of Object.keys(merge.applied))if(batch.drafts[name])batch.drafts[name].savedAt=Date.now();
+      batch.employeeSheetRevision=Number(raw.employeeSheetRevision||0)+1;
+      tx.set(ref,{...raw,date:draft.date,team:batch.team,drafts:batch.drafts,bar:batch.bar,barManual:batch.barManual||{},employeeSheetRevision:batch.employeeSheetRevision,updatedAt:serverTimestamp(),updatedByUid:s.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});
+    }
+    return {batch,routing,changed,fields:merge.applied,rows:merge.rows,conflicts:[...remote.conflicts,...merge.conflicts,...routes.conflicts],skipped:merge.skipped};
+  });
+  if(esSession===s){
+    es14AcceptCommit(s,out.batch,s.reports,{rows:out.rows,fields:out.fields,routing:out.routing});
+    es14RecordConflicts(s,[...(s.conflicts||[]),...out.conflicts]);s.autoError='';s.autoRetries=0;
+  }
+  return out;
+}
+function es14HasPublishable(s){
+  const conflicts=s.conflicts||[];
+  for(const row of s.rows){const changes=s.dirty[row.name];if(!changes)continue;
+    if(changes.__new&&!s.baseRows.some(r=>r.name===row.name))return true;
+    const salesErrors=esValidateSales({...row,paid:'0',cardFee:'0',cash:'0',meal:'0'},s.routing,false);
+    for(const f of ES_FIELDS)if(changes[f]&&!conflicts.some(c=>c.name===row.name&&c.field===f)&&(!ES_MONEY.includes(f)||es14MoneyValid(row[f]))&&(!['grand','totalAM','total24'].includes(f)||!salesErrors.length))return true;
+  }
+  return ES_PERIODS.some(cp=>(s.routing[cp]||'')!==(s.baseRouting[cp]||'')&&!conflicts.some(c=>c.name==='BAR routing'&&c.field===cp));
+}
+function es14Schedule(s=esSession,delay=ES14_DEBOUNCE_MS){
+  if(!s)return;clearTimeout(s.autoTimer);
+  if(!es14HasEligible(s)||!es14HasPublishable(s)||!s.cloudReady||s.busy||s.autoPromise||esSignature||!es14IsOnline())return;
+  s.autoTimer=setTimeout(()=>{s.autoTimer=0;void es14AutoFlush(s);},delay);
+}
+async function es14AutoFlush(s=esSession){
+  if(s?.autoPromise){await s.autoPromise;return;}
+  if(!es14AllowedSession(s)||!s.ready||!s.cloudReady||!esHasEdits(s)||!es14IsOnline())return;
+  clearTimeout(s.autoTimer);s.autoWriting=true;esCompactReadBadge();
+  s.autoPromise=es14PublishDraft(s).catch(e=>{if(esSession===s){s.autoError=e.message||String(e);s.autoRetries=(s.autoRetries||0)+1;es14HandleError(e);}return null;});
+  try{await s.autoPromise;}finally{
+    s.autoPromise=null;s.autoWriting=false;esCompactReadBadge();if(esReadCurrent(esRead)&&esRead.pending)esFastQueueRead(esRead);
+    if(esSession===s&&!s.autoError&&es14HasPublishable(s))es14Schedule(s);
+    // Invalid/incomplete cells and real conflicts wait for a user change. Network
+    // failures retry with bounded backoff; no busy loop or repeated finalization.
+    if(esSession===s&&s.autoError&&s.autoRetries<4&&!/permission|removed|Login/i.test(s.autoError))es14Schedule(s,Math.min(2000*2**s.autoRetries,15000));
+  }
+}
+function es14HandleError(e){
+  if(e.esConflicts&&esSession)es14RecordConflicts(esSession,[...(esSession.conflicts||[]),...e.esConflicts]);
+  esStatus(e.message||String(e),true);
+}
+window.employeeSheetSyncDraft=async function(){
+  const s=esSession;if(!es14AllowedSession(s)||s.busy)return false;
+  if(!s.cloudReady){esStatus('Checking cloud. Your input stays on this device until the connection is ready.',true);return false;}
+  await es14AutoFlush(s);return !s.autoError&&!(s.conflicts||[]).length;
+};
+// Independent reads keep running after save; do not reset the whole page to
+// "loading" after every transaction. Field-level rebasing updates other devices.
+esApplyRead=function(c){
+  if(!esReadCurrent(c))return;const s=c.session;esSetReadStatus(c);
+  if(s.busy||s.autoWriting||esPan||performance.now()<esTouchUntil){c.pending=true;return;}
+  const value=c.batch.value,raw=value?.exists?value.data:value&&c.batch.server?{team:[],drafts:{}}:s.rawBase||{};
+  const reports=es14FreshReports((c.reports.value||s.reports||[]).filter(r=>r.date===s.date),s);
+  if(value&&!value.exists&&c.batch.server&&!s.hadCloud){for(const row of s.rows)if(!(raw.team||[]).includes(row.name)&&!reports.some(r=>esKey(r.employee)===esKey(row.name)))s.dirty[row.name] ||= {__new:true};}
+  try{
+    es14Rebase(s,raw,reports);s.hadCloud=!!s.hadCloud||!!value?.exists;c.pending=false;
+    latestHourlyReports=[...reports,...latestHourlyReports.filter(r=>r.date!==s.date)];
+    if(s.cloudReady&&!c.initialReady){c.initialReady=true;esStatus('Shared sheet loaded. Edits sync automatically. Save writes the selected Final Report.');}
+    esFastCacheSave(c);es14Schedule(s);frRenderIfOpen();
+  }catch(e){esRejectRead(c,'batch',e);}
+};
+// Post-commit semantic overlay prevents an old read from reversing an acknowledged
+// draft revision while the other listener catches up.
+(function(){const accept=esAcceptRead;esAcceptRead=function(c,kind,value,server=true,origin='sdk'){
+  if(kind==='batch'&&value?.exists&&c.batch?.value?.exists&&Number(value.data?.employeeSheetRevision||0)<Number(c.batch.value.data?.employeeSheetRevision||0))return;
+  return accept(c,kind,value,server,origin);
+};})();
+
+esCommit=async function(name,signature=null,expectedSignatureFingerprint=''){
+  const session=esSession;
+  if(!es14AllowedSession(session)||!session.ready)throw new Error('Manager / Owner session required.');
+  if(session.esReadEnabled&&!session.cloudReady)throw new Error('Cloud connection is not ready yet. Your input and signature are kept.');
+  if(!es14IsOnline())throw new Error('Offline. Your input and signature are kept; reconnect before saving the Final Report.');
+  // Publish valid independent edits without letting an unrelated incomplete fee
+  // reject the chosen employee. Auto-sync never creates hourlyReports.
+  if(session.esReadEnabled)await es14AutoFlush(session);
+  const selected=session.rows.find(r=>r.name===name);if(!selected)throw new Error('Employee row not found.');
+  const errors=esValidateSales(selected,session.routing,true);if(errors.length)throw new Error(name+': '+errors.join(' '));
+  const conflicts=(session.conflicts||[]).filter(c=>c.name===name||c.name==='BAR routing');if(conflicts.length)throw es14ConflictError(conflicts);
+  const duplicate=session.reports.filter(r=>esKey(r.employee)===esKey(name));
+  if(duplicate.length>1&&!session.baseBatch.drafts?.[name]?.hourlyReportId)throw new Error('Multiple reports exist for this work account. Open the intended report in Final Report.');
+  const s=es14DraftSnapshot(session),ref=doc(db,'hourlyV1Batches',s.date),newRef=doc(collection(db,'hourlyReports'));
+  const result=await runTransaction(db,async tx=>{
+    const snap=await tx.get(ref);if(!es14AllowedSession(session))throw new Error('Login changed. Nothing was saved.');
+    if(!snap.exists()&&s.hadCloud)throw new Error('This work date was removed. Your draft is kept.');
+    const raw=snap.exists()?snap.data():s.baseBatch;
+    const linked=raw.drafts?.[name]?.hourlyReportId||esFindReport(s.reports,name)?.id||'';
+    const reportRef=linked?doc(db,'hourlyReports',linked):newRef,reportSnap=linked?await tx.get(reportRef):null;
+    const before=reportSnap?.exists()?reportSnap.data():null;
+    if(before&&!hourlyReportBelongsTo(before,name,s.date))throw new Error('Saved report belongs to a different employee/date. Nothing was overwritten.');
+    const reports=before?[{...before,id:reportRef.id},...s.reports.filter(r=>r.id!==reportRef.id)]:s.reports;
+    const remote=es14Remote(raw,reports,s.date,session),routes=es14MergeRoute(s.baseRouting,s.routing,remote.routing);
+    const onlyDirty=s.dirty[name]?{[name]:s.dirty[name]}:{};
+    const merge=es14Patch(s.baseRows,s.rows,remote.rows,onlyDirty,routes.route,false);
+    const conflicts=[...remote.conflicts.filter(c=>c.name===name),...merge.conflicts,...routes.conflicts];if(conflicts.length)throw es14ConflictError(conflicts);
+    const route=esRouting(merge.rows,routes.route),batch=esBuildBatch(remote.batch,merge.rows,s.date,route),row=merge.rows.find(r=>r.name===name);
+    if(!row)throw new Error('Employee no longer exists on this work date.');
+    const problems=esValidateSales(row,route,true);if(problems.length)throw new Error(name+': '+problems.join(' '));
+    // Only sales are dependencies of BAR Received, never another worker's tips,
+    // fees, meals or unfinished clocks. A server's own fees are row-isolated.
+    if(row.role==='Bartender')for(const server of merge.rows)if(server.role==='Server'){
+      const affected=ES_PERIODS.some(cp=>route[cp]===name&&!hv1BarExcluded(cp,batch,server.name));if(!affected)continue;
+      const p=esValidateSales({...server,paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);if(p.length)throw new Error(server.name+' sales need review before calculating this bartender: '+p.join(' '));
+    }
+    const calculated=esCalculate(row,batch,before);
+    if(signature&&expectedSignatureFingerprint!==esFingerprint(calculated)){
+      const e=new Error('Amounts changed while signing. Tap Review latest amount, then sign the updated report. Your other input is kept.');e.esAmountsChanged=true;throw e;
+    }
+    const sourceId=before?.sourceSubmissionId||batch.drafts[name].sourceSubmissionId||'',subRef=sourceId?doc(db,'submissions',sourceId):null,subSnap=subRef?await tx.get(subRef):null;
+    const source=subSnap?.exists()?subSnap.data():null,validSource=hourlyReportBelongsTo(source,name,s.date)?sourceId:'';
+    const sigPatch=esSignaturePatch(before,calculated,signature),savedRow=es14CleanRow(row),fingerprint=esFingerprint(calculated);
+    const payload={...calculated,...sigPatch,sourceSubmissionId:validSource,status:'money_ready',employeeKey:fzEmployeeIdentityKey(name),reportIdentityVersion:'13.8.28',employeeSheetBuild:ES_BUILD,employeeSheetRevision:Number(raw.employeeSheetRevision||0)+1,employeeSheetRow:savedRow,employeeSheetFingerprint:fingerprint,updatedAt:serverTimestamp(),updatedBy:currentProfile.displayName||currentProfile.username||''};
+    if(validSource&&source.employeeUid)payload.employeeUid=source.employeeUid;
+    if(before)tx.update(reportRef,payload);else tx.set(reportRef,{...payload,createdAt:serverTimestamp(),createdByUid:s.uid,createdBy:currentProfile.displayName||currentProfile.username||''});
+    if(validSource)tx.update(subRef,{status:'money_ready',hourlyStatus:'finalized',hourlyReportId:reportRef.id,finalReport:{...calculated},...(signature?{pickupSignature:signature,signatureStatus:'SIGNED'}:sigPatch.pickupSignature===null?{pickupSignature:null,signatureStatus:'PENDING'}:{}),updatedAt:serverTimestamp()});
+    Object.assign(batch.drafts[name],{hourlyReportId:reportRef.id,sourceSubmissionId:validSource,finalized:true,finalizedAt:Date.now(),savedAt:Date.now(),employeeSheetFinalRow:savedRow,employeeSheetFinalFingerprint:fingerprint,employeeSheetReportRevision:Number(raw.employeeSheetRevision||0)+1});
+    batch.employeeSheetRevision=Number(raw.employeeSheetRevision||0)+1;
+    tx.set(ref,{...raw,date:s.date,team:batch.team,drafts:batch.drafts,bar:batch.bar,barManual:batch.barManual||{},employeeSheetRevision:batch.employeeSheetRevision,updatedAt:serverTimestamp(),updatedByUid:s.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});
+    return {batch,report:{...(before||{}),...payload,id:reportRef.id},before,route,rows:merge.rows,fields:{[name]:Object.fromEntries(ES_FIELDS.map(f=>[f,true]))}};
+  });
+  if(esSession===session&&es14AllowedSession(session)){
+    const reports=[result.report,...session.reports.filter(r=>r.id!==result.report.id)];
+    es14AcceptCommit(session,result.batch,reports,{rows:result.rows,fields:result.fields,routing:result.route});
+    latestHourlyReports=[result.report,...latestHourlyReports.filter(r=>r.id!==result.report.id)];
+    frRenderIfOpen();
+  }
+  // Logging must not keep the signature modal open after the report transaction
+  // has succeeded. It is deliberately not on the user's critical save path.
+  Promise.resolve().then(()=>writeAudit(signature?'employee_sheet_sign':'employee_sheet_save',result.report.id,name,{date:s.date,before:result.before||null,after:result.report,signatureReplaced:!!result.before?.pickupSignature})).catch(e=>console.warn('Employee Sheet audit:',e));
+  return result;
+};
+window.employeeSheetSave=async function(name){
+  if(!esAllowed()||esSession?.busy)return false;const scroll=es14CaptureScroll();
+  esSetBusy(true);esStatus('Saving '+name+' to Final Report…');
+  try{await esCommit(name);esStatus(name+' saved · Final Report updated.');return true;}
+  catch(e){es14HandleError(e);return false;}
+  finally{esSetBusy(false);esRenderRows();esRenderRouting();const p=esSheetScrollPort();if(p){p.scrollLeft=scroll.left;p.scrollTop=scroll.top;}es14ConflictUI();}
+};
+function es14ConflictUI(){
+  const s=esSession;if(!s||!$('esRows'))return;
+  for(const tr of $('esRows').querySelectorAll('tr[data-es-index]')){
+    const row=s.rows[Number(tr.dataset.esIndex)];if(!row)continue;const list=(s.conflicts||[]).filter(c=>c.name===row.name),msg=tr.querySelector('.es-row-message');
+    if(msg){msg.replaceChildren();if(list.length){const b=document.createElement('button');b.type='button';b.className='es-review-change';b.textContent='Review changes';b.onclick=()=>es14OpenConflicts(row.name);msg.appendChild(b);}}
+  }
+  const all=$('esReviewChanges');if(all){all.classList.toggle('hidden',!(s.conflicts||[]).length);all.textContent='Review '+(s.conflicts||[]).length+' changed field(s)';}
+  const sign=$('esSignConflicts');if(sign)sign.classList.toggle('hidden',!(s.conflicts||[]).some(c=>c.name===esSignature?.name||c.name==='BAR routing'));
+}
+function es14OpenConflicts(name=''){
+  const s=esSession,list=(s?.conflicts||[]).filter(c=>!name||c.name===name||c.name==='BAR routing');if(!list.length)return;
+  const host=$('esConflictBody');host.replaceChildren();
+  for(const c of list){
+    const el=document.createElement('div');el.className='es-conflict-item';
+    const title=document.createElement('b');title.textContent=c.name+' · '+(ES_COLUMNS.find(x=>x[0]===c.field)?.[1]||c.field);el.appendChild(title);
+    const info=document.createElement('p');info.textContent='This device: '+String(c.local)+'   |   Latest shared: '+String(c.remote);el.appendChild(info);
+    for(const [choice,label]of [['remote','Use latest'],['local','Keep this device']]){
+      const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=async()=>{try{await es14Resolve(c,choice);el.remove();if(!host.children.length)$('esConflictModal').classList.add('hidden');}catch(e){es14HandleError(e);}};el.appendChild(b);
+    }host.appendChild(el);
+  }
+  $('esConflictModal').classList.remove('hidden');
+}
+async function es14Resolve(c,choice){
+  const s=esSession;if(!s||s.busy)return;
+  if(c.origin==='report'){
+    esSetBusy(true);
+    try{await es14ResolveReport(s,c,choice);es14Schedule(s);return;}
+    finally{esSetBusy(false);es14Paint(true);}
+  }
+  if(c.name==='BAR routing'){s.baseRouting[c.field]=c.remote;s.routing[c.field]=choice==='remote'?c.remote:c.local;}
+  else{
+    const row=s.rows.find(r=>r.name===c.name);let base=s.baseRows.find(r=>r.name===c.name);if(!row)return;
+    if(c.field==='__removed'){
+      if(choice==='remote'){s.rows=s.rows.filter(r=>r.name!==c.name);delete s.dirty[c.name];s.baseRows=s.baseRows.filter(r=>r.name!==c.name);}
+      else{s.dirty[c.name]={__new:true};s.baseRows=s.baseRows.filter(r=>r.name!==c.name);}
+    }else{
+      if(!base){base=esDefaults(c.name,s.date);s.baseRows.push(base);}base[c.field]=c.remote;
+      row[c.field]=choice==='remote'?c.remote:c.local;
+      if(choice==='remote'){if(s.dirty[c.name]){delete s.dirty[c.name][c.field];if(!Object.keys(s.dirty[c.name]).length)delete s.dirty[c.name];}}
+      else(s.dirty[c.name] ||= {})[c.field]=true;
+      // Store this explicit comparison as the new baseline of a legacy report.
+      // The next transaction re-checks remote again; a further edit still conflicts.
+    }
+  }
+  es14RecordConflicts(s,(s.conflicts||[]).filter(x=>x.name!==c.name||x.field!==c.field));
+  esRecalculate();es14Paint(true);esRenderRouting();esPersistLocal();es14Schedule(s);
+}
+async function es14ResolveReport(s,c,choice){
+  if(!es14AllowedSession(s)||!es14IsOnline())throw new Error('Reconnect before resolving shared changes. Your input is kept.');
+  if(s.autoPromise)await s.autoPromise;
+  const ref=doc(db,'hourlyV1Batches',s.date),reportRef=doc(db,'hourlyReports',c.reportId);
+  const chosen=choice==='remote'?c.remote:c.local;
+  const out=await runTransaction(db,async tx=>{
+    const bs=await tx.get(ref),rs=await tx.get(reportRef);
+    if(!es14AllowedSession(s)||!bs.exists()||!rs.exists())throw new Error('This record changed. Review the latest shared values.');
+    const report={...rs.data(),id:reportRef.id},raw=bs.data();
+    if(!hourlyReportBelongsTo(report,c.name,s.date)||esFingerprint(report)!==c.reportFingerprint)throw new Error('The report changed again. Review the latest values; nothing was overwritten.');
+    const reports=[report,...s.reports.filter(r=>r.id!==report.id)],remote=es14Remote(raw,reports,s.date,s);
+    const row=remote.rows.find(r=>r.name===c.name),current=remote.conflicts.find(x=>x.name===c.name&&x.field===c.field&&x.origin==='report');
+    if(!row||!current||!es14Same(c.field,current.local,c.local)||!es14Same(c.field,current.remote,c.remote))throw new Error('The shared field changed again. Review the latest values; nothing was overwritten.');
+    row[c.field]=chosen;
+    const batch=esBuildBatch(remote.batch,remote.rows,s.date,remote.routing),d=batch.drafts[c.name];
+    const baseline=d.employeeSheetFinalRow||s.reportBases?.[report.id]?.row||es14ReportRow(report,row);
+    d.employeeSheetFinalRow={...esClone(baseline),[c.field]:c.remote};
+    d.employeeSheetFinalFingerprint ||= s.reportBases?.[report.id]?.fingerprint||c.reportFingerprint;
+    batch.employeeSheetRevision=Number(raw.employeeSheetRevision||0)+1;
+    tx.set(ref,{...raw,date:s.date,team:batch.team,drafts:batch.drafts,bar:batch.bar,barManual:batch.barManual||{},employeeSheetRevision:batch.employeeSheetRevision,updatedAt:serverTimestamp(),updatedByUid:s.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});
+    return {batch,reports,row:esClone(row),routing:remote.routing};
+  });
+  if(esSession===s&&es14AllowedSession(s)){
+    const local=s.rows.find(r=>r.name===c.name);
+    if(local&&es14Same(c.field,local[c.field],c.local))local[c.field]=chosen;
+    es14AcceptCommit(s,out.batch,out.reports,{rows:[out.row],fields:{[c.name]:{[c.field]:true}},routing:out.routing});
+    es14RecordConflicts(s,(s.conflicts||[]).filter(x=>x.name!==c.name||x.field!==c.field));
+  }
+}
+function es14Install(){
+  if(!$('employeeSheet')||$('esConflictModal'))return;
+  const modal=document.createElement('div');modal.id='esConflictModal';modal.className='es-modal hidden';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-label','Review changed fields');
+  modal.innerHTML='<div class="es-sign-card"><h3>Review changes</h3><p>Only the fields changed on both devices need a choice. Other employees are not blocked.</p><div id="esConflictBody"></div><button type="button" id="esConflictClose">Back to sheet</button></div>';
+  $('employeeSheet').appendChild(modal);$('esConflictClose').onclick=()=>modal.classList.add('hidden');
+  const review=document.createElement('button');review.id='esReviewChanges';review.type='button';review.className='hidden';review.onclick=()=>es14OpenConflicts();$('esToolActions').appendChild(review);
+  const final=document.createElement('button');final.id='esOpenFinal';final.type='button';final.textContent='Final Report';final.onclick=()=>window.fzOpenFinalReport('daily',esSession?.date);$('esToolActions').appendChild(final);
+  const signReview=document.createElement('button');signReview.id='esSignReview';signReview.type='button';signReview.className='hidden';signReview.textContent='Review latest amount & re-sign';signReview.onclick=async()=>{
+    if(!esSignature||esSession?.busy)return;const name=esSignature.name;esSignature=null;
+    if(esReadCurrent(esRead))esApplyRead(esRead);esRecalculate();window.employeeSheetSign(name);signReview.classList.add('hidden');
+  };$('esSignStatus').insertAdjacentElement('afterend',signReview);
+  const signConflict=document.createElement('button');signConflict.id='esSignConflicts';signConflict.type='button';signConflict.className='hidden';signConflict.textContent='Review changes';signConflict.onclick=()=>es14OpenConflicts(esSignature?.name);signReview.insertAdjacentElement('afterend',signConflict);
+  esEnsureSyncUI();
+  $('esSyncDraft').textContent='Sync now';$('esSyncDraft').title='Changes sync automatically. Retry now if connection was interrupted.';
+  $('employeeSheet').addEventListener('focusout',()=>setTimeout(()=>{es14Paint();es14Schedule();},60));
+}
+(function(){
+  const init=esInit,persist=esPersistLocal,badge=esCompactReadBadge,stop=esStopRead,setRead=esSetReadStatus,sign=window.employeeSheetSign;
+  esInit=function(...a){const out=init(...a);es14Install();return out;};
+  esPersistLocal=function(...a){const out=persist(...a);es14Schedule();return out;};
+  esStopRead=function(){
+    const s=esRead?.session||esSession;if(s){clearTimeout(s.autoTimer);if(!s.busy&&s.cloudReady&&es14AllowedSession(s)&&es14HasPublishable(s))void es14AutoFlush(s);}
+    stop();
+  };
+  esSetReadStatus=function(c){setRead(c);esCompactReadBadge();if(c.session.cloudReady)es14Schedule(c.session);};
+  esCompactReadBadge=function(){badge();const s=esSession,b=$('esReadBadge');if(!s||!b)return;const conflicts=(s.conflicts||[]).length;
+    const text=!es14IsOnline()?'Offline · device draft':s.autoWriting?'Syncing…':conflicts?'Review changes':s.autoError?'Retry sync':s.cloudReady?(esHasEdits(s)?'Pending edits':'Auto-sync · Live'):'Checking…';
+    b.textContent=ES_BUILD+' · '+text;b.dataset.state=conflicts||s.autoError?'error':s.autoWriting?'draft':s.cloudReady?'ready':'waiting';
+    const cloud=$('esCloudStatus');if(cloud&&s.cloudReady)cloud.textContent='Edits auto-sync. Save / Sign updates Final Report.';
+  };
+  window.employeeSheetSign=function(name){sign(name);$('esSignReview')?.classList.add('hidden');es14ConflictUI();};
+})();
+window.addEventListener('online',()=>es14Schedule(esSession,100));
+window.addEventListener('offline',()=>esCompactReadBadge());
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&esAllowed()&&document.body.classList.contains('es-active')){if(!esRead)esStartRead(esSession);else if(esReadCurrent(esRead))esFastQueueRead(esRead);es14Schedule(esSession,100);}});
+
+/* Final Report — one Manager/Owner page, original Daily/Monthly renderers and
+ * PDF/XLS math reused. The two original DOM trees are moved, never duplicated.
+ */
+let frState={open:false,mode:'daily',rows:[],key:'',verified:false,unsub:null,token:0,rendering:false};
+function frAllowed(){return esAllowed();}
+function frStop(){if(frState.unsub)frState.unsub();frState.unsub=null;frState.verified=false;++frState.token;}
+function frExit(){frState.open=false;frStop();$('finalReportHub')?.classList.add('hidden');document.body.classList.remove('fz-final-report');}
+function frRange(){return frState.mode==='daily'?{from:$('smallReportDate')?.value||'',to:$('smallReportDate')?.value||'',employee:$('smallReportEmployee')?.value||''}:monthlyReportRange();}
+function frKey(){const r=frRange();return frState.mode+'|'+r.from+'|'+r.to;}
+function frInit(){
+  if($('finalReportHub'))return;
+  initMonthlyReportUi();const parent=$('staffApp'),daily=$('smallReport'),monthly=$('monthlyReport');if(!parent||!daily||!monthly)return;
+  const hub=document.createElement('section');hub.id='finalReportHub';hub.className='staffPanel hidden';
+  hub.innerHTML='<div class="fr-header"><button type="button" id="frHome">‹ Home</button><h2>Final Report</h2><button type="button" id="frSheet">Employee Sheet</button></div><div class="fr-tabs" role="tablist" aria-label="Final Report type"><button type="button" id="frDailyTab" role="tab" aria-controls="frDailyPane">Daily</button><button type="button" id="frMonthlyTab" role="tab" aria-controls="frMonthlyPane">Monthly / Period</button></div><div class="fr-live-line"><span id="frSyncStatus" role="status" aria-live="polite"></span><button id="frRetry" type="button" class="hidden">Retry</button></div><div id="frDailyPane" class="fr-pane" role="tabpanel"></div><div id="frMonthlyPane" class="fr-pane hidden" role="tabpanel"></div>';
+  parent.appendChild(hub);$('frDailyPane').appendChild(daily);$('frMonthlyPane').appendChild(monthly);
+  $('frHome').onclick=()=>{frExit();window.fzOpenRoleHome();};$('frSheet').onclick=()=>{const date=$('smallReportDate')?.value;frExit();window.employeeSheetOpen(date);};
+  $('frDailyTab').onclick=()=>frSelect('daily');$('frMonthlyTab').onclick=()=>frSelect('monthly');$('frRetry').onclick=()=>frSubscribe(true);
+  hub.addEventListener('change',e=>{if(['smallReportDate','monthlyReportFrom','monthlyReportTo'].includes(e.target.id))frSubscribe();});
+  const menu=document.querySelector('[data-stab="monthlyReport"]');if(menu)menu.innerHTML='<span>Final Report</span>';
+}
+function frSelect(mode){
+  frState.mode=mode==='monthly'?'monthly':'daily';const daily=frState.mode==='daily';
+  $('frDailyPane').classList.toggle('hidden',!daily);$('frMonthlyPane').classList.toggle('hidden',daily);
+  $('smallReport').classList.remove('hidden');$('monthlyReport').classList.remove('hidden');
+  for(const [id,on]of [['frDailyTab',daily],['frMonthlyTab',!daily]]){$(id).classList.toggle('on',on);$(id).setAttribute('aria-selected',String(on));}
+  frSubscribe();frRenderIfOpen();
+}
+function frControls(){
+  const hub=$('finalReportHub');if(!hub)return;
+  for(const b of hub.querySelectorAll('button[onclick]')){
+    if(/download|share|print/i.test(b.getAttribute('onclick')||''))b.disabled=!frState.verified;
+  }
+}
+function frSubscribe(force=false){
+  if(!frState.open||!frAllowed())return;
+  const range=frRange(),key=frKey();if(!force&&key===frState.key&&frState.unsub)return;
+  frStop();frState.key=key;frState.rows=[];frState.verified=false;const token=frState.token,uid=currentUser.uid;
+  $('frRetry').classList.add('hidden');$('frSyncStatus').textContent='Loading saved reports…';frControls();
+  if(range.from&&range.to&&range.from>range.to){$('frSyncStatus').textContent='Start date must be on or before end date.';frRenderIfOpen();return;}
+  const filters=[];
+  if(range.from&&range.from===range.to)filters.push(where('date','==',range.from));
+  else{if(range.from)filters.push(where('date','>=',range.from));if(range.to)filters.push(where('date','<=',range.to));}
+  const q=query(collection(db,'hourlyReports'),...filters);
+  frState.unsub=onSnapshot(q,{includeMetadataChanges:true},snap=>{
+    if(!frState.open||token!==frState.token||!frAllowed()||currentUser.uid!==uid)return;
+    frState.rows=snap.docs.map(d=>({id:d.id,...d.data()}));frState.verified=snap.metadata?.fromCache!==true&&snap.metadata?.hasPendingWrites!==true;
+    const ids=new Set(frState.rows.map(r=>r.id));latestHourlyReports=[...frState.rows,...latestHourlyReports.filter(r=>!ids.has(r.id))];
+    $('frSyncStatus').textContent=frState.verified?'Live · '+frState.rows.length+' saved report(s)':'Checking cloud · cached reports shown';
+    $('frRetry').classList.add('hidden');frRenderIfOpen();frControls();
+  },error=>{
+    if(token!==frState.token||!frState.open)return;frState.verified=false;
+    $('frSyncStatus').textContent='Reports could not sync: '+(error.message||String(error))+'. Your saved data has not been deleted.';$('frRetry').classList.remove('hidden');frControls();
+  });
+}
+function frRenderIfOpen(){
+  if(!frState.open||!frAllowed()||frState.rendering)return;
+  frState.rendering=true;
+  try{if(frState.mode==='daily'){populateSmallReportEmployeeFilter();window.renderSmallReport();}else{monthlyReportPopulateEmployee();window.renderMonthlyReport();}frControls();}
+  finally{frState.rendering=false;}
+}
+window.fzOpenFinalReport=function(mode='daily',date=''){
+  if(!frAllowed())return;
+  esPersistLocal();if(esSession?.ready&&!esSession.busy)void es14AutoFlush(esSession);
+  esStopRead();frInit();if(!$('finalReportHub'))return;
+  document.body.classList.remove('es-active','hourly-v1-mode','hourly-v1-editing','hourly-v1-small-report','hourly-workspace-mode','small-report-fullscreen');document.documentElement.classList.remove('small-report-fullscreen');
+  $('employeeSheet')?.classList.add('hidden');$('fzRoleHome')?.classList.add('hidden');$('staffApp')?.classList.remove('hidden');$('employeeApp')?.classList.add('hidden');$('hourlyV1Workspace')?.classList.add('hidden');
+  document.querySelectorAll('.staffPanel').forEach(x=>x.classList.add('hidden'));
+  $('finalReportHub').classList.remove('hidden');document.body.classList.add('fz-final-report');frState.open=true;
+  if(esDateValid(date))$('smallReportDate').value=date;else if(!$('smallReportDate').value)$('smallReportDate').value=esSession?.date||todayLocal();
+  frSelect(mode);window.scrollTo({top:0,left:0,behavior:'instant'});
+};
+(function(){
+  const daily=smallReportFilteredRows,monthly=monthlyReportFilteredReports,renderDaily=window.renderSmallReport,renderMonthly=window.renderMonthlyReport,openSheet=window.employeeSheetOpen;
+  smallReportFilteredRows=function(){
+    if(!frState.open||frState.mode!=='daily')return daily();
+    const {from,employee}=frRange();return [...frState.rows].filter(r=>(!from||r.date===from)&&(!employee||r.employee===employee)).sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(a.employee).localeCompare(String(b.employee)));
+  };
+  monthlyReportFilteredReports=function(){
+    if(!frState.open||frState.mode!=='monthly')return monthly();
+    const {from,to,employee}=monthlyReportRange();return frState.rows.filter(r=>(!from||r.date>=from)&&(!to||r.date<=to)&&(!employee||r.employee===employee));
+  };
+  window.renderSmallReport=function(...a){const out=renderDaily(...a);if(frState.open){if(!frState.rendering)frSubscribe();frControls();}return out;};
+  window.renderMonthlyReport=function(...a){const out=renderMonthly(...a);if(frState.open){if(!frState.rendering)frSubscribe();frControls();}return out;};
+  window.fzOpenMonthlyReport=()=>window.fzOpenFinalReport('monthly');
+  window.hv1OpenSmallReport=()=>window.fzOpenFinalReport('daily',hv1DateValue());
+  window.employeeSheetOpen=function(...a){frExit();return openSheet(...a);};
+  // Existing Home, new-entry and other workspaces remain available.
+  for(const name of ['fzOpenRoleHome','fzOpenManagerTools','fzOpenHostCashier','fzOpenTipCalculation','newHourlyEntryFromSmallReport']){
+    const original=window[name];if(typeof original==='function')window[name]=function(...a){frExit();return original(...a);};
+  }
+})();
+document.addEventListener('click',event=>{
+  const b=event.target.closest?.('[data-stab="monthlyReport"]');if(b&&frAllowed()){event.preventDefault();event.stopImmediatePropagation();window.fzOpenFinalReport('monthly');}
+},true);
+try{onAuthStateChanged(auth,user=>{if(!user||!frAllowed())frExit();});}catch(e){}

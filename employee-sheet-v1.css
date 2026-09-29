@@ -281,3 +281,41 @@ body.es-active{overflow:hidden!important}
 #employeeSheet.es-compact.es-desktop-page .es-quick-notice{
  position:fixed;bottom:62px;left:12px;right:30px
 }
+
+/* ES1.4: sync conflict review is scoped to the sheet, no global layout change. */
+#esConflictModal{z-index:2147483000!important}
+#esConflictModal .es-sign-card{max-height:90dvh;overflow:auto}
+.es-conflict-item{border:1px solid #c5d8e2;border-radius:14px;padding:12px;margin:12px 0;background:#f5fbff}
+.es-conflict-item>b{font-size:18px}.es-conflict-item p{font-size:16px!important;overflow-wrap:anywhere}
+.es-conflict-item button{min-height:48px;margin:4px 8px 0 0;padding:10px 14px}
+#esRows .es-review-change{font-size:15px;min-height:38px;background:#fff3d8;color:#664719;border:1px solid #dbc18f;margin-top:8px}
+#esSignReview,#esSignConflicts{width:100%;font-size:18px;padding:12px;min-height:48px;margin-top:8px}
+/* Final Report retains both original report panels and exports in a single page. */
+body.fz-final-report #staffApp>.staff-menu-buttons{display:none!important}
+body.fz-final-report #finalReportHub{display:block!important;padding:0;margin:0 auto;max-width:1500px}
+body.fz-final-report #finalReportHub .fr-pane.hidden{display:none!important}
+body.fz-final-report #finalReportHub #smallReport,body.fz-final-report #finalReportHub #monthlyReport{display:block!important;margin:0;max-width:none}
+#finalReportHub .fr-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-radius:20px;background:linear-gradient(125deg,#102d42,#145c72);color:white;margin-bottom:12px;box-shadow:0 5px 0 #0b2333}
+#finalReportHub .fr-header h2{font-size:28px;margin:0}
+#finalReportHub .fr-header button,#finalReportHub .fr-tabs button,#finalReportHub #frRetry{border:1px solid #bbd4df;background:#f3fbff;color:#123c51;border-radius:13px;font-weight:850;font-size:18px;min-height:50px;padding:10px 16px}
+#finalReportHub .fr-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+#finalReportHub .fr-tabs button.on{background:#17637d;color:white;border-color:#17637d;box-shadow:0 4px 0 #104052}
+#finalReportHub .fr-live-line{display:flex;align-items:center;justify-content:space-between;font-size:15px;color:#536978;gap:12px;padding:8px 2px;min-height:34px}
+#finalReportHub .card{border-radius:18px}
+#finalReportHub input,#finalReportHub select{font-size:19px;min-height:50px}
+#finalReportHub .fz-monthly-table{font-size:16px}
+#finalReportHub .fz-monthly-table thead th{font-size:15px}
+#finalReportHub .fz-monthly-table-wrap{max-height:none}
+#finalReportHub .fz-monthly-kicker{font-size:13px}
+#finalReportHub button:disabled{opacity:.5;cursor:wait}
+@media(max-width:700px){
+ #finalReportHub .fr-header{padding:12px 10px;gap:8px;border-radius:16px}
+ #finalReportHub .fr-header h2{font-size:23px!important;line-height:1.15!important}
+ #finalReportHub .fr-header button{font-size:16px;padding:9px 10px;min-height:46px}
+ #finalReportHub #frSheet{max-width:100px}
+ #finalReportHub .fr-tabs button{font-size:18px;padding:12px 8px}
+ #finalReportHub .fr-live-line{font-size:14px}
+ #finalReportHub .fz-monthly-head h2{font-size:24px!important}
+ #finalReportHub .fz-monthly-head p{font-size:15px;line-height:1.4}
+ #finalReportHub .small-report-summary{grid-template-columns:1fr 1fr!important}
+}
