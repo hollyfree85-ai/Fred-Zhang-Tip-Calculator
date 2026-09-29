@@ -484,3 +484,80 @@ body.tt15-active{overflow:hidden!important}
  #employeeSheet .es16-export-buttons button{font-size:17px!important;min-height:76px;padding:10px 7px}
 }
 @media(max-width:360px){#employeeSheet .es16-export-buttons{grid-template-columns:1fr}#employeeSheet .es16-export-tag{display:none}}
+
+/* ES1.7 — Owner administration, separate from the three daily workspaces. */
+.ot17-panel{box-sizing:border-box;max-width:1150px;margin:12px auto 30px;padding:4px;color:#193e53}
+.ot17-panel .ot17-header{display:flex;align-items:center;gap:18px;padding:24px;border-radius:22px;background:linear-gradient(120deg,#0b2038,#145575 75%,#287d8d);color:#fff;box-shadow:0 14px 35px #143b5b24;margin-bottom:20px}
+.ot17-panel .ot17-heading{flex:1;min-width:0}
+.ot17-panel .ot17-eyebrow{font-size:12px;font-weight:900;letter-spacing:.14em;color:#9ee9f4;margin-bottom:5px}
+.ot17-panel .ot17-header h2{color:#fff!important;font-size:30px!important;line-height:1.2;margin:0 0 5px!important}
+.ot17-panel .ot17-header p{margin:0;color:#e1eef3;line-height:1.5;font-size:15px}
+.ot17-panel .ot17-header button{white-space:nowrap;min-height:44px;border-radius:12px;padding:10px 16px;font-size:16px!important}
+.ot17-panel .ot17-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.ot17-panel .ot17-action{display:flex;flex-direction:column;align-items:flex-start;box-sizing:border-box;width:100%;min-height:150px;padding:22px;border:1px solid #c6dce8;border-radius:20px;color:#143b53;background:linear-gradient(145deg,#fff,#edf6fb);box-shadow:0 5px 0 #d4e4ee;text-align:left;white-space:normal;line-height:1.45}
+.ot17-panel button.ot17-action{cursor:pointer}
+.ot17-panel .ot17-action-icon{display:block;font-size:27px;line-height:1;margin-bottom:13px}
+.ot17-panel .ot17-action b,.ot17-panel .ot17-action h3{display:block;font-size:21px!important;line-height:1.25;margin:0 0 7px!important;color:inherit}
+.ot17-panel .ot17-action small,.ot17-panel .ot17-action p{display:block;font-size:14px;line-height:1.5;color:#526e80;margin:0}
+.ot17-panel .ot17-buttons,.ot17-panel .ot17-clear-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
+.ot17-panel .ot17-buttons button,.ot17-panel .ot17-clear-actions button{min-height:44px;border-radius:10px;padding:10px 14px;font-size:15px!important;white-space:normal;line-height:1.3}
+.ot17-panel .ot17-danger{border-color:#ddbeb4;background:linear-gradient(145deg,#fffaf7,#f9e9e2);color:#7c3725;box-shadow:0 5px 0 #ebd5cd}
+.ot17-panel .ot17-danger small,.ot17-panel .ot17-danger p{color:#825342}
+.ot17-panel .ot17-note{margin:18px 0 0;padding:14px 16px;border:1px solid #c8dfe8;border-radius:12px;background:#f1f8fb;font-size:14px;line-height:1.5;color:#496a7e}
+.ot17-panel button:focus-visible{outline:3px solid #168fc1;outline-offset:3px}
+.ot17-panel button:disabled{opacity:.55;cursor:not-allowed}
+@media(hover:hover){.ot17-panel button.ot17-action:hover{background:#e6f2f8;border-color:#85b3ca}.ot17-panel button.ot17-danger:hover{background:#fae4db;border-color:#c99180}}
+@media(max-width:760px){
+ .ot17-panel{margin-top:8px;padding:4px}
+ .ot17-panel .ot17-header{flex-wrap:wrap;gap:12px;padding:18px;border-radius:18px}
+ .ot17-panel .ot17-header h2{font-size:26px!important}
+ .ot17-panel .ot17-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+ .ot17-panel .ot17-action{min-height:138px;padding:17px;border-radius:16px}
+ .ot17-panel .ot17-action b,.ot17-panel .ot17-action h3{font-size:19px!important}
+}
+@media(max-width:480px){.ot17-panel .ot17-grid{grid-template-columns:1fr}.ot17-panel .ot17-action{min-height:112px}.ot17-panel .ot17-heading{flex-basis:100%}.ot17-panel .ot17-clear-actions button{flex:1}}
+
+/* Owner section navigation stays above the existing Users / Chart / History views. */
+body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspaceNav{display:none!important}
+.ot17-panel .ot17-nav{grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}
+.ot17-panel .ot17-nav .ot17-action{min-height:88px;padding:14px;box-shadow:0 3px 0 #d4e4ee;border-radius:14px;justify-content:center}
+.ot17-panel .ot17-nav .ot17-action-icon{font-size:21px;margin:0 0 7px}
+.ot17-panel .ot17-nav .ot17-action b{font-size:17px!important;margin:0!important}
+.ot17-panel [aria-current="page"]{background:#155572!important;border-color:#155572!important;color:#fff!important}
+.ot17-panel .ot17-secondary{display:flex;flex-wrap:wrap;gap:9px;justify-content:flex-end;margin:15px 0}
+.ot17-panel .ot17-secondary button{background:#edf5fa;border:1px solid #bdd3df;color:#244f67;border-radius:10px;padding:10px 13px;font-size:14px!important;min-height:44px}
+.ot17-panel .ot17-recovery{margin-top:18px;padding:22px;border:1px solid #c3d9e6;border-radius:18px;background:#fff;box-shadow:0 5px 16px #183b4f0b}
+.ot17-panel .ot17-recovery h3{font-size:23px!important;line-height:1.3;margin:20px 0 8px}
+.ot17-panel .ot17-recovery p{font-size:16px;line-height:1.55;margin:0;color:#4d6a7a}
+.ot17-panel .ot17-recovery[hidden]{display:none!important}
+.ot17-panel .ot17-date-row{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap}
+.ot17-panel .ot17-date-row label{font-size:14px!important;display:flex;flex-direction:column;gap:5px;margin:0;color:#244f67}
+.ot17-panel .ot17-date-row input{width:230px;max-width:100%;padding:11px;font-size:18px!important}
+.ot17-panel .ot17-date-row button{min-height:49px;font-size:16px!important}
+.ot17-panel #ot17RecoverySummary{white-space:pre-line;line-height:1.6;font-size:16px}
+.ot17-panel .ot17-clear-actions button{min-width:170px;min-height:52px;font-size:18px!important;font-weight:850}
+.ot17-panel .ot17-recovery .ot17-footnote{font-size:14px;margin-top:16px}
+.ot17-panel #ot17Status{font-size:16px;line-height:1.5;color:#205b46;white-space:pre-line;overflow-wrap:anywhere;margin:18px 0 0}
+.ot17-panel #ot17Status:empty{display:none}
+.ot17-panel #ot17Status[data-error="1"]{color:#963725}
+@media(max-width:850px){.ot17-panel .ot17-nav{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:520px){.ot17-panel .ot17-nav{grid-template-columns:repeat(2,minmax(0,1fr))}.ot17-panel .ot17-recovery{padding:16px}.ot17-panel .ot17-clear-actions button{min-width:0;flex:1}.ot17-panel .ot17-nav .ot17-action b{font-size:16px!important}}
+
+/* ES1.7: the visible mobile viewport, including Android keyboard panning.
+   Keep actual sticky header/name cells in the same scrollport. */
+#employeeSheet.es-compact.es-mobile-viewport:not(.es-desktop-page){
+ top:var(--es-visible-top,0px);bottom:auto;height:var(--es-visible-height,100dvh);
+ max-height:var(--es-visible-height,100dvh);min-height:0
+}
+#employeeSheet.es-compact.es-mobile-viewport:not(.es-desktop-page)>.es-grid{min-height:0}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page){gap:4px;padding-top:4px;padding-bottom:4px}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-header{min-height:42px;padding:2px 6px;gap:6px}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-header h2{font-size:18px!important;line-height:1.15!important}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-header .es-home{min-height:40px;padding:6px 8px;font-size:16px!important}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-toolbar,
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-footer{display:none!important}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table thead th{height:50px;padding:6px 8px;font-size:16px!important;line-height:1.15}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table thead small{display:none}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-grid{scroll-padding-top:60px;scroll-padding-bottom:8px}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-extra-controls{top:50px;max-height:calc(100% - 58px)}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-quick-notice{bottom:8px;max-height:80px;font-size:14px}

@@ -10267,7 +10267,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.6';
+const ES_BUILD='ES1.7';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12753,4 +12753,328 @@ function es16DailyExportsInit(){
   esInit=function(...a){const out=init(...a);es16DailyExportsInit();return out;};
   esRenderRows=function(...a){const out=render(...a);es16DailyExportControls();return out;};
   esCompactReadBadge=function(...a){const out=badge(...a);es16DailyExportControls();return out;};
+})();
+
+
+/* ES1.7 — Owner recovery works on an explicit work date and the latest server
+ * batch. The old recovery snapshot shape is retained for existing backups.
+ * No hourlyReports or Host/Cashier documents are written by these actions.
+ */
+let es17RecoveryBusy=false;
+// Final reports are an archive, not a request to recreate a team the Owner has
+// explicitly cleared. Active rows added afterwards can still hydrate normally.
+const es17PrepareBatchBeforeRecovery=esPrepareBatch;
+esPrepareBatch=function(source,reports,date){
+  const cleared=source?.trash?.scope==='team'&&(!source.trash.date||source.trash.date===date);
+  const active=new Set((source?.team||[]).map(esKey));
+  return es17PrepareBatchBeforeRecovery(source,cleared?(reports||[]).filter(r=>active.has(esKey(r.employee))):reports,date);
+};
+function es17RecoveryOwner(date,uid=currentUser?.uid){
+  if(!currentUser||currentUser.isAnonymous||currentProfile?.role!=='owner'||currentUser.uid!==uid)throw new Error('Owner login required. Nothing was changed.');
+  if(!esDateValid(date))throw new Error('Choose a valid work date.');
+  if(!es14IsOnline())throw new Error('Reconnect before Clear All or Undo Clear All. Nothing was changed.');
+  return uid;
+}
+function es17RecoveryHasBar(bar){
+  return Object.values(bar||{}).some(p=>p&&(String(p.bartender||'').trim()||Object.values(p.entries||{}).some(v=>String(v??'').trim()!=='')));
+}
+function es17RecoveryHasTeam(raw){return !!((raw.team||[]).length||Object.keys(raw.drafts||{}).length||es17RecoveryHasBar(raw.bar));}
+function es17RecoveryTrashKey(trash){return JSON.stringify(trash||null);}
+function es17RecoverySummary(date,raw,exists=true){
+  const trash=raw.trash&&['team','bar'].includes(raw.trash.scope)&&(!raw.trash.date||raw.trash.date===date)?raw.trash:null;
+  const occupied=trash?.scope==='bar'?es17RecoveryHasBar(raw.bar):es17RecoveryHasTeam(raw);
+  return {date,exists,teamCount:(raw.team||[]).length,draftCount:Object.keys(raw.drafts||{}).length,hasBar:es17RecoveryHasBar(raw.bar),canClear:es17RecoveryHasTeam(raw),canUndo:!!trash&&!occupied,
+    trash:trash?{scope:trash.scope,date:trash.date||date,clearedAt:trash.clearedAt||0,clearedBy:trash.clearedBy||'staff'}:null};
+}
+async function es17RecoveryRead(date,uid){
+  es17RecoveryOwner(date,uid);
+  return runTransaction(db,async tx=>{
+    const snap=await tx.get(doc(db,'hourlyV1Batches',date));es17RecoveryOwner(date,uid);
+    if(snap.metadata?.fromCache===true||snap.metadata?.hasPendingWrites===true)throw new Error('The server has not confirmed this work date. Nothing was changed.');
+    const raw=snap.exists()?snap.data():{};
+    if(raw.date&&raw.date!==date)throw new Error('This batch has a different work date. Nothing was changed.');
+    return {raw,exists:snap.exists()};
+  });
+}
+window.es17LoadRecovery=async function(date){
+  const uid=es17RecoveryOwner(date),result=await es17RecoveryRead(date,uid);
+  return es17RecoverySummary(date,result.raw,result.exists);
+};
+window.es17PrepareToolsNavigation=async function(){
+  if(!currentUser||currentUser.isAnonymous||currentProfile?.role!=='owner')throw new Error('Owner login required.');
+  if(esSession?.busy||hc15Session?.busy||tt15State?.busy||esSignature||hc15Sig||hc15Credit)throw new Error('Finish the current save or close its dialog before opening Owner Tools.');
+  if(esSession?.ready&&!esPersistLocal()&&(esHasEdits(esSession)||Object.keys(esSession.draftSaves||{}).length))throw new Error('Device draft could not be saved. Keep Employee Sheet open and retry.');
+  if(hc15Session&&!hc15KeepLocal(hc15Session)&&(Object.keys(hc15Session.edits||{}).length||Object.keys(hc15Session.draftSaves||{}).length))throw new Error('Host / Cashier draft could not be saved. Keep Employee Sheet open and retry.');
+  // Wait for writes already in flight. Invalid or conflicted inputs remain in
+  // their device draft; merely opening Owner Tools does not discard them.
+  if(esSession?.autoPromise)await esSession.autoPromise;
+  if(hc15Session?.writing)await hc15Session.writing;
+  return true;
+};
+function es17RecoveryCheckDeviceDraft(date,uid){
+  const message='This date has a device draft waiting to be reviewed. Open Employee Sheet for '+date+' and sync or review it before clearing or restoring. Your draft is kept.';
+  let text;try{text=localStorage.getItem(esDraftKey(date,uid));}catch(e){throw new Error('Device drafts could not be checked. Keep this page open and retry before clearing or restoring.');}
+  if(!text)return;
+  let saved;try{saved=JSON.parse(text);}catch(e){throw new Error(message);}
+  // A work date selected in Tools may have a device draft even when another
+  // date is currently open, or there is no Employee Sheet session at all.
+  // Only an acknowledged, clean snapshot is safe to discard after Clear/Undo.
+  if(!saved||typeof saved!=='object'||Array.isArray(saved)||saved.date&&saved.date!==date||!Array.isArray(saved.rows)||!Array.isArray(saved.baseRows))throw new Error(message);
+  if(esHasEdits(saved)||saved.rows.some(row=>!row||typeof row.name!=='string'||ES_MONEY.some(field=>!es14MoneyValid(row[field]))||!es16RowMatches(row,saved.baseRows.find(base=>base?.name===row.name))))throw new Error(message);
+  if(saved.draftSaves!=null){
+    if(typeof saved.draftSaves!=='object'||Array.isArray(saved.draftSaves))throw new Error(message);
+    for(const [name,entry]of Object.entries(saved.draftSaves))if(!entry||typeof entry!=='object'||!entry.row||entry.row.name!==name||!saved.rows.some(row=>row.name===name))throw new Error(message);
+  }
+}
+async function es17RecoveryPause(date,uid){
+  es17RecoveryOwner(date,uid);
+  if(esSession?.busy||hc15Session?.busy||tt15State?.busy||esSignature||hc15Sig||hc15Credit)throw new Error('Finish the current save or close its dialog first.');
+  await window.es17PrepareToolsNavigation();es17RecoveryOwner(date,uid);
+  // The legacy queue can still contain a write started just before navigation.
+  // Drain it before the transaction reads the source of the recovery snapshot.
+  await hv1CloudWriteQueue.catch(()=>{});es17RecoveryOwner(date,uid);
+  const s=esSession?.date===date&&esSession.uid===uid?esSession:null;
+  if(!s){es17RecoveryCheckDeviceDraft(date,uid);return null;}
+  clearTimeout(s.autoTimer);
+  if(s.autoPromise)await s.autoPromise;
+  if(esHasEdits(s)){
+    if(!s.cloudReady)throw new Error('This date has device edits waiting to sync. Open Employee Sheet and sync or review them before clearing or restoring.');
+    await es14AutoFlush(s);es17RecoveryOwner(date,uid);
+    if(esHasEdits(s)||(s.conflicts||[]).length)throw new Error('This date still has unsynced or conflicting edits. Review Employee Sheet before clearing or restoring. Your draft is kept.');
+  }
+  es17RecoveryCheckDeviceDraft(date,uid);
+  clearTimeout(s.autoTimer);s.busy=true;return s;
+}
+function es17RecoveryCache(date,uid,batch,s){
+  // Change caches only after Firebase acknowledged the transaction. They must
+  // never restore a cleared team on this device when Employee Sheet reopens.
+  if(!currentUser||currentUser.uid!==uid||currentProfile?.role!=='owner')return false;
+  let localCacheSaved=true;
+  try{localStorage.setItem(HV1_STORAGE_PREFIX+date,JSON.stringify(batch));}catch(e){localCacheSaved=false;}
+  for(const key of [esDraftKey(date,uid),esFastCacheKey(date,uid)])try{localStorage.removeItem(key);}catch(e){localCacheSaved=false;}
+  if(s&&esSession===s){esStopRead();esSession=null;}
+  return localCacheSaved;
+}
+async function es17RecoveryAction(date,mode){
+  const uid=es17RecoveryOwner(date);if(es17RecoveryBusy)throw new Error('A recovery action is already running.');
+  es17RecoveryBusy=true;let paused=null;
+  try{
+    paused=await es17RecoveryPause(date,uid);
+    const before=await es17RecoveryRead(date,uid),summary=es17RecoverySummary(date,before.raw,before.exists);
+    if(mode==='clear'&&!summary.canClear)return {...summary,changed:false};
+    if(mode==='undo'&&!summary.trash)return {...summary,changed:false};
+    if(mode==='undo'&&!summary.canUndo)throw new Error('New Team / BAR data exists for this date. Undo would replace it. Review or clear the new data first.');
+    const text=mode==='clear'
+      ? `Work date: ${date}. Clear the Server / Bartender team, drafts, and BAR data for this date? The current data moves to Recently Cleared${summary.trash?' and replaces its previous backup':''}. Saved Daily Reports and Host / Cashier stay unchanged.`
+      : `Work date: ${date}. Restore the ${summary.trash.scope==='bar'?'BAR data':'Server / Bartender team, drafts, and BAR data'} cleared by ${summary.trash.clearedBy}? Saved Daily Reports and Host / Cashier stay unchanged.`;
+    if(!await hv1RequireStaffPassword(mode==='clear'?'Clear All — '+date:'Undo Clear All — '+date,text))return {cancelled:true};
+    es17RecoveryOwner(date,uid);
+    const result=await runTransaction(db,async tx=>{
+      const ref=doc(db,'hourlyV1Batches',date),snap=await tx.get(ref);es17RecoveryOwner(date,uid);
+      if(snap.metadata?.fromCache===true||snap.metadata?.hasPendingWrites===true)throw new Error('The server has not confirmed this work date. Nothing was changed.');
+      if(!snap.exists())throw new Error('This work date was removed. Nothing was changed.');
+      const raw=snap.data();if(raw.date&&raw.date!==date)throw new Error('This batch has a different work date. Nothing was changed.');
+      let batch={...raw};
+      if(mode==='clear'){
+        if(!es17RecoveryHasTeam(raw))return {batch:raw,changed:false};
+        // Capture the fresh transaction read, never the preview or local cache.
+        batch.trash={scope:'team',date,clearedAt:Date.now(),clearedBy:currentProfile.displayName||currentProfile.username||'',clearedByUid:uid,snapshot:{team:esClone(raw.team||[]),drafts:esClone(raw.drafts||{}),bar:esClone(raw.bar||{})}};
+        batch.team=[];batch.drafts={};batch.bar={};
+      }else{
+        const trash=raw.trash;
+        if(!trash||es17RecoveryTrashKey(trash)!==es17RecoveryTrashKey(before.raw.trash))throw new Error('Recently Cleared changed on another device. Reload Owner Tools and review the latest backup.');
+        if(trash.date&&trash.date!==date)throw new Error('This backup belongs to another work date. Nothing was changed.');
+        if(trash.scope==='team'){
+          if(es17RecoveryHasTeam(raw))throw new Error('New Team / BAR data was added. Undo stopped to keep those entries.');
+          batch.team=esClone(trash.snapshot?.team||[]);batch.drafts=esClone(trash.snapshot?.drafts||{});batch.bar=esClone(trash.snapshot?.bar||{});
+        }else if(trash.scope==='bar'){
+          if(es17RecoveryHasBar(raw.bar))throw new Error('New BAR data was added. Undo stopped to keep those entries.');
+          batch={...raw,drafts:esClone(raw.drafts||{}),barManual:esClone(raw.barManual||{}),bar:esClone(trash.snapshot?.bar||{})};hv1ApplyBarAutomation(batch);
+        }else throw new Error('This backup cannot be restored by Undo Clear All.');
+        batch.trash=null;
+      }
+      batch.date=date;batch.employeeSheetRevision=Number(raw.employeeSheetRevision||0)+1;
+      tx.set(ref,{...batch,updatedAt:serverTimestamp(),updatedByUid:uid,updatedBy:currentProfile.displayName||currentProfile.username||''});
+      return {batch,changed:true};
+    });
+    const localCacheSaved=result.changed?es17RecoveryCache(date,uid,result.batch,paused):true;
+    return {...es17RecoverySummary(date,result.batch,true),changed:result.changed,localCacheSaved};
+  }finally{
+    if(paused&&esSession===paused){paused.busy=false;es14Schedule(paused);}
+    es17RecoveryBusy=false;
+  }
+}
+window.es17ClearTeam=date=>es17RecoveryAction(date,'clear');
+window.es17UndoTeam=date=>es17RecoveryAction(date,'undo');
+
+/* ES1.7 — Owner administration beside App Info; daily Home has three cards. */
+let es17ToolsState={open:false,section:'recovery',date:'',uid:'',busy:false,loading:false,request:0,summary:null};
+const ES17_OWNER_SECTIONS=[['recovery','Clear All / Undo','↶'],['users','Users','♙'],['analytics','Chart','▥'],['history','History','◷'],['deletedItems','Deleted / Undo','↺']];
+function es17ToolsAllowed(){return !!currentUser&&currentProfile?.role==='owner';}
+function es17ToolsMessage(message,error=false){const n=$('ot17Status');if(n){n.textContent=message;n.dataset.error=error?'1':'0';}}
+function es17ToolsControls(){
+  const s=es17ToolsState,locked=s.busy||s.loading||!es17ToolsAllowed();
+  if($('ot17WorkDate'))$('ot17WorkDate').disabled=s.busy;
+  if($('ot17Reload'))$('ot17Reload').disabled=locked;
+  if($('ot17Clear'))$('ot17Clear').disabled=locked||!s.summary?.canClear;
+  if($('ot17Undo'))$('ot17Undo').disabled=locked||!s.summary?.canUndo;
+  $('ownerToolsPage')?.setAttribute('aria-busy',String(s.busy||s.loading));
+  for(const button of document.querySelectorAll('#ownerToolsPage [data-ot17-section],#ownerToolsPage [data-ot17-home]'))button.disabled=s.busy;
+}
+function es17InitOwnerTools(){
+  if($('ownerToolsPage'))return;
+  const staff=$('staffApp');if(!staff)return;
+  const page=document.createElement('section');page.id='ownerToolsPage';page.className='ot17-panel hidden';
+  page.innerHTML='<div class="ot17-header"><div class="ot17-heading"><div class="ot17-eyebrow">OWNER ACCESS</div><h2 tabindex="-1" id="ot17Title">Owner Tools</h2><p>Accounts, activity, recovery and work-date controls.</p></div><button type="button" class="btn light" data-ot17-home>‹ Home</button></div>'+
+    '<nav class="ot17-grid ot17-nav" aria-label="Owner tools">'+ES17_OWNER_SECTIONS.map(([key,label,icon])=>'<button type="button" class="ot17-action" data-ot17-section="'+key+'"><span aria-hidden="true" class="ot17-action-icon">'+icon+'</span><b>'+label+'</b></button>').join('')+'</nav>'+
+    '<div class="ot17-secondary"><button type="button" data-ot17-section="approvals">Employee Approvals</button><button type="button" data-ot17-section="setup">Setup</button></div>'+
+    '<div id="ot17Recovery" class="ot17-recovery"><div class="ot17-date-row"><label for="ot17WorkDate">Work date<input type="date" id="ot17WorkDate"></label><button type="button" id="ot17Reload" class="btn light">Refresh</button></div><h3>Clear All &amp; Undo Clear All</h3>'+
+    '<p>Clear the Server / Bartender team, input drafts and BAR data for the selected date. Saved Final Reports and Host/Cashier data are kept.</p><div id="ot17RecoverySummary" class="ot17-note" aria-live="polite">Choose a work date to check its team and recovery backup.</div>'+
+    '<div class="ot17-clear-actions"><button type="button" id="ot17Clear" class="btn red" disabled>Clear All</button><button type="button" id="ot17Undo" class="btn gold" disabled>Undo Clear All</button></div><p class="ot17-footnote">Your Owner password is required. Undo restores the latest available clear backup for this date.</p></div>'+
+    '<p id="ot17Status" role="status" aria-live="polite"></p>';
+  staff.insertBefore(page,staff.firstChild);
+  page.addEventListener('click',event=>{const home=event.target.closest?.('[data-ot17-home]');if(home){window.fzOpenRoleHome();return;}const b=event.target.closest?.('[data-ot17-section]');if(b)es17ShowOwnerSection(b.dataset.ot17Section);});
+  $('ot17WorkDate').addEventListener('change',()=>{if(es17ToolsState.busy)return;es17ToolsState.date=$('ot17WorkDate').value;void es17RefreshRecovery();});
+  $('ot17Reload').addEventListener('click',()=>void es17RefreshRecovery());
+  $('ot17Clear').addEventListener('click',()=>void es17RunRecoveryAction('clear'));
+  $('ot17Undo').addEventListener('click',()=>void es17RunRecoveryAction('undo'));
+}
+function es17ShowOwnerSection(section='recovery'){
+  const s=es17ToolsState;if(!es17ToolsAllowed()||!s.open||s.uid!==currentUser.uid||s.busy)return false;
+  if(![...ES17_OWNER_SECTIONS.map(x=>x[0]),'approvals','setup'].includes(section))return false;
+  s.section=section;if(section!=='recovery'){++s.request;s.loading=false;}document.querySelectorAll('.staffPanel').forEach(n=>n.classList.add('hidden'));
+  $('ot17Recovery').hidden=section!=='recovery';
+  for(const b of document.querySelectorAll('#ownerToolsPage [data-ot17-section]')){
+    if(b.dataset.ot17Section===section)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current');
+  }
+  if(section!=='recovery'){
+    const target=document.querySelector('[data-stab="'+section+'"]');
+    if(target)target.click();else $(section)?.classList.remove('hidden');
+    es17ToolsMessage('');
+  }else void es17RefreshRecovery();
+  $('ownerToolsPage').classList.remove('hidden');es17ToolsControls();return true;
+}
+async function es17RefreshRecovery(){
+  const s=es17ToolsState;if(!es17ToolsAllowed()||!s.open||s.uid!==currentUser.uid)return false;
+  const date=$('ot17WorkDate')?.value||s.date,request=++s.request,uid=currentUser.uid;
+  s.date=date;s.summary=null;s.loading=true;es17ToolsControls();es17ToolsMessage('Checking saved team and recovery backup…');
+  try{
+    const summary=await es17LoadRecovery(date);
+    if(!s.open||s.request!==request||s.date!==date||!es17ToolsAllowed()||currentUser.uid!==uid)return false;
+    s.summary=summary;
+    const parts=[date+' · '+summary.teamCount+' team member'+(summary.teamCount===1?'':'s')+' · '+summary.draftCount+' input draft'+(summary.draftCount===1?'':'s')];
+    parts.push(summary.trash?'Recovery backup: '+(summary.trash.scope==='bar'?'BAR data':'Team + drafts + BAR')+(summary.trash.clearedBy?' · cleared by '+summary.trash.clearedBy:''):'No Clear All backup for this date.');
+    if(summary.trash&&!summary.canUndo)parts.push('New team or BAR inputs exist. Undo is paused to protect those entries.');
+    $('ot17RecoverySummary').textContent=parts.join('\n');es17ToolsMessage('');return true;
+  }catch(e){if(s.open&&s.request===request){$('ot17RecoverySummary').textContent='The selected date could not be checked. Reconnect and refresh.';es17ToolsMessage(e.message||String(e),true);}return false;}
+  finally{if(s.request===request){s.loading=false;es17ToolsControls();}}
+}
+async function es17RunRecoveryAction(action){
+  const s=es17ToolsState;if(!es17ToolsAllowed()||!s.open||s.uid!==currentUser.uid||s.busy||s.loading)return false;
+  const date=$('ot17WorkDate')?.value||s.date,uid=currentUser.uid;
+  if(date!==s.date||!s.summary||(action==='clear'?!s.summary.canClear:!s.summary.canUndo))return false;
+  s.busy=true;es17ToolsControls();es17ToolsMessage(action==='clear'?'Waiting for confirmation to clear '+date+'…':'Waiting for confirmation to restore '+date+'…');
+  try{
+    const result=await (action==='clear'?es17ClearTeam(date):es17UndoTeam(date));
+    if(!s.open||!es17ToolsAllowed()||currentUser.uid!==uid)return false;
+    const canceled=result===false||result?.cancelled;
+    await es17RefreshRecovery();
+    const message=canceled?'Canceled.':result?.changed===false?'Nothing to '+(action==='clear'?'clear':'restore')+' for '+date+'.':action==='clear'?'Team, drafts and BAR cleared for '+date+'. Undo backup saved.':'Clear All undone for '+date+'.';
+    es17ToolsMessage(message+(result?.localCacheSaved===false?' Cloud saved. Reopen Employee Sheet online to refresh this device.':''));
+    return !canceled;
+  }catch(e){es17ToolsMessage(e.message||String(e),true);return false;}
+  finally{s.busy=false;es17ToolsControls();}
+}
+function es17CloseOwnerTools(){
+  const s=es17ToolsState;s.open=false;s.loading=false;s.summary=null;++s.request;
+  $('ownerToolsPage')?.classList.add('hidden');document.body.classList.remove('ot17-active');
+}
+window.fzOpenOwnerTools=async function(section='recovery'){
+  if(!es17ToolsAllowed()||es17ToolsState.busy)return false;
+  if(tt15State?.editing&&!tt15MayLeave())return false;
+  const uid=currentUser.uid;
+  try{
+    await es17PrepareToolsNavigation();
+    if(!es17ToolsAllowed()||currentUser.uid!==uid)return false;
+    es17InitOwnerTools();if(!$('ownerToolsPage'))return false;
+    tt15Close();hc15Stop();esStopRead();frExit();
+    $('fzRoleHome')?.classList.add('hidden');$('employeeApp')?.classList.add('hidden');$('staffApp')?.classList.remove('hidden');$('hourlyV1Workspace')?.classList.add('hidden');
+    document.body.classList.remove('es-active','hourly-v1-mode','hourly-v1-editing','hourly-v1-small-report','hourly-workspace-mode','small-report-fullscreen');document.documentElement.classList.remove('small-report-fullscreen');
+    const s=es17ToolsState;s.open=true;s.uid=uid;s.date=esDateValid(esSession?.date)?esSession.date:esDateValid(s.date)?s.date:todayLocal();
+    $('ot17WorkDate').value=s.date;document.body.classList.add('ot17-active');es17ShowOwnerSection(section);window.scrollTo({top:0,left:0,behavior:'instant'});$('ot17Title')?.focus?.();return true;
+  }catch(e){if(typeof esStatus==='function'&&esSession?.ready)esStatus(e.message||String(e),true);alert(e.message||String(e));return false;}
+};
+(function(){
+  for(const name of ['fzOpenRoleHome','fzOpenManagerTools','fzOpenFinalReport','fzOpenMonthlyReport','fzOpenTodayTeam','employeeSheetOpen','fzOpenHostCashier','fzOpenTipCalculation']){
+    const original=window[name];if(typeof original!=='function')continue;
+    window[name]=function(...args){if(es17ToolsState.open&&es17ToolsState.busy)return false;es17CloseOwnerTools();return original(...args);};
+  }
+  try{onAuthStateChanged(auth,user=>{if(!user||user.uid!==es17ToolsState.uid||!es17ToolsAllowed())es17CloseOwnerTools();});}catch(e){}
+})();
+
+
+/* ES1.7 — keep the real mobile table headers above the software keyboard.
+ * Chrome/Android can pan its visual viewport while the layout viewport and
+ * 100dvh stay tall. Fit the sheet to the visible rectangle instead of cloning
+ * headers or moving columns separately. Desktop page scrolling is untouched.
+ */
+function es17MobileViewportGeometry(viewport,layoutHeight,baseline,editing){
+  const positive=(value,fallback)=>Number.isFinite(Number(value))&&Number(value)>0?Number(value):fallback;
+  const layout=positive(layoutHeight,1),height=positive(viewport?.height,layout);
+  const scale=positive(viewport?.scale,1),top=Math.max(0,Number(viewport?.offsetTop)||0);
+  // Respect intentional pinch zoom; resizing a magnified sheet would reflow it
+  // beneath the user's fingers and prevent normal viewport panning.
+  if(Math.abs(scale-1)>.05)return {enabled:false,height,top,baseline,keyboard:false};
+  const full=editing?Math.max(positive(baseline,height),layout,height):height;
+  return {enabled:true,height,top,baseline:full,keyboard:!!editing&&(full-height>Math.max(100,full*.18)||height<360)};
+}
+function es17MobileRevealInput(grid,input){
+  if(!grid||!input||!grid.contains(input))return;
+  const table=input.closest?.('.es-table');if(!table)return;
+  const header=table.querySelector('thead'),box=grid.getBoundingClientRect(),field=input.getBoundingClientRect();
+  const headHeight=header?.getBoundingClientRect().height||header?.offsetHeight||50;
+  const top=box.top+headHeight+8,bottom=box.bottom-8;
+  if(bottom<=top)return;
+  // Only move the existing vertical scrollport, never the page/caret or X axis.
+  if(field.top<top)grid.scrollTop-=top-field.top;
+  else if(field.bottom>bottom)grid.scrollTop+=field.bottom-bottom;
+}
+function es17InstallMobileViewport(){
+  const area=$('employeeSheet'),grid=$('esGrid');if(!area||!grid||area.dataset.es17Viewport)return;
+  area.dataset.es17Viewport='1';
+  let frame=0,baseline=0,lastWidth=0;
+  const viewport=window.visualViewport;
+  const setClass=(name,value)=>{if(area.classList.contains(name)!==value)area.classList.toggle(name,value);};
+  const setSize=(name,value)=>{if(area.style.getPropertyValue(name)!==value)area.style.setProperty(name,value);};
+  function refresh(){
+    frame=0;
+    const active=!area.classList.contains('hidden')&&!area.classList.contains('es-desktop-page');
+    if(!active){setClass('es-mobile-viewport',false);setClass('es-mobile-keyboard',false);return;}
+    const input=document.activeElement;
+    const editing=!!(grid.contains(input)&&input?.closest?.('.es-table')&&input.matches?.('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]),textarea,[contenteditable="true"]'));
+    const width=document.documentElement.clientWidth||window.innerWidth||0;
+    if(lastWidth&&Math.abs(lastWidth-width)>80)baseline=0; // orientation/window change
+    lastWidth=width;
+    const layout=Math.max(window.innerHeight||0,document.documentElement.clientHeight||0);
+    const geometry=es17MobileViewportGeometry(viewport,layout,baseline,editing);
+    if(!geometry.enabled){setClass('es-mobile-viewport',false);setClass('es-mobile-keyboard',false);return;}
+    baseline=geometry.baseline;
+    setSize('--es-visible-top',geometry.top+'px');setSize('--es-visible-height',geometry.height+'px');
+    setClass('es-mobile-viewport',true);setClass('es-mobile-keyboard',geometry.keyboard);
+    if(editing)es17MobileRevealInput(grid,input);
+  }
+  function schedule(){if(!frame)frame=window.requestAnimationFrame(refresh);}
+  viewport?.addEventListener('resize',schedule,{passive:true});
+  viewport?.addEventListener('scroll',schedule,{passive:true});
+  window.addEventListener('resize',schedule,{passive:true});
+  window.addEventListener('pageshow',schedule,{passive:true});
+  area.addEventListener('focusin',schedule);area.addEventListener('focusout',schedule);
+  // The sheet opens asynchronously and can switch between desktop/mobile mode.
+  // Observe only its class, so setting viewport CSS variables does not loop.
+  if(typeof MutationObserver==='function')new MutationObserver(schedule).observe(area,{attributes:true,attributeFilter:['class']});
+  schedule();
+}
+(function(){
+  const init=esInit;
+  esInit=function(...args){const result=init(...args);es17InstallMobileViewport();return result;};
 })();

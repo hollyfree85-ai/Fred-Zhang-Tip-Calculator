@@ -100,8 +100,30 @@
     else if (displayMode.addListener) displayMode.addListener(changed);
   }
 
+  function syncOwnerTools(target, panel) {
+    var ownerHome = target.getAttribute && target.getAttribute('data-fz-home-role') === 'owner';
+    var button = panel.querySelector('[data-fz-owner-tools]');
+    if (!ownerHome) {
+      if (button) button.remove();
+      return;
+    }
+    if (button) return;
+    button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'btn fz-install-button fz-owner-tools-button';
+    button.setAttribute('data-fz-owner-tools', '');
+    button.textContent = 'Owner Tools';
+    button.addEventListener('click', function () {
+      if (typeof window.__getCurrentRole === 'function' && window.__getCurrentRole() === 'owner') {
+        if (typeof window.fzOpenOwnerTools === 'function') window.fzOpenOwnerTools();
+      }
+    });
+    panel.insertBefore(button, panel.querySelector('[data-fz-install-status]'));
+  }
   function mount(target) {
-    if (!target || target.querySelector('[data-fz-install]')) return;
+    if (!target) return;
+    var existing = target.querySelector('[data-fz-install]');
+    if (existing) { syncOwnerTools(target, existing); return; }
     var panel = document.createElement('div');
     panel.className = 'fz-install-support';
     panel.setAttribute('data-fz-install', '');
@@ -130,6 +152,7 @@
     steps.forEach(function (step) { var p = document.createElement('p'); p.textContent = step; help.appendChild(p); });
     panel.appendChild(help);
     target.appendChild(panel);
+    syncOwnerTools(target, panel);
     refresh();
   }
   function bindHome() {
@@ -149,7 +172,7 @@
     ready = true;
     var style = document.createElement('style');
     style.id = 'fz-install-support-css';
-    style.textContent = '.fz-install-support{margin-top:16px;padding-top:14px;border-top:1px solid #87adba55;max-width:100%;text-align:left}.fz-install-support .fz-install-button{display:inline-flex;min-height:44px!important;align-items:center;justify-content:center;background:#edf8fb!important;border:1px solid #91bac9!important;color:#12394d!important;font-size:14px!important;padding:10px 18px!important;border-radius:12px!important}.fz-install-support p{font-size:13px!important;line-height:1.55!important;margin:9px 0 0!important;overflow-wrap:anywhere}.fz-install-support [data-fz-install-help]{padding:2px 0 3px}.fz-install-support [hidden]{display:none!important}.fz-role-home-hero .fz-install-support{flex-basis:100%}.fz-role-home-hero .fz-install-support p{color:inherit!important}@media print{.fz-install-support{display:none!important}}';
+    style.textContent = '.fz-install-support{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid #87adba55;max-width:100%;text-align:left}.fz-install-support .fz-install-button{display:inline-flex;min-height:44px!important;align-items:center;justify-content:center;background:#edf8fb!important;border:1px solid #91bac9!important;color:#12394d!important;font-size:14px!important;padding:10px 18px!important;border-radius:12px!important}.fz-install-support .fz-owner-tools-button{background:#fff0be!important;border-color:#d4bc72!important;color:#493d17!important;font-weight:800}.fz-install-support .fz-install-button:focus-visible{outline:3px solid #ffda6a;outline-offset:3px}.fz-install-support p{font-size:13px!important;line-height:1.55!important;margin:0!important;overflow-wrap:anywhere}.fz-install-support [data-fz-install-status],.fz-install-support [data-fz-install-help]{flex-basis:100%;min-width:0}.fz-install-support [data-fz-install-help]{padding:2px 0 3px}.fz-install-support [data-fz-install-help] p+p{margin-top:9px!important}.fz-install-support [hidden]{display:none!important}.fz-role-home-hero .fz-install-support{position:relative;z-index:1;flex-basis:100%}.fz-role-home-hero .fz-install-support p{color:inherit!important}@media print{.fz-install-support{display:none!important}}';
     document.head.appendChild(style);
     mount(document.querySelector('#loginView .login'));
     bindHome();
