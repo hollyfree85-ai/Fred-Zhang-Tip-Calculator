@@ -3880,7 +3880,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es14",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es15",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10267,7 +10267,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.4';
+const ES_BUILD='ES1.5';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -11959,3 +11959,535 @@ document.addEventListener('click',event=>{
   const b=event.target.closest?.('[data-stab="monthlyReport"]');if(b&&frAllowed()){event.preventDefault();event.stopImmediatePropagation();window.fzOpenFinalReport('monthly');}
 },true);
 try{onAuthStateChanged(auth,user=>{if(!user||!frAllowed())frExit();});}catch(e){}
+
+/* ES1.5 — Today's Team, roster management and Host/Cashier Sheet.
+ * Existing Server/Bartender calculators are reused. The Host/Cashier split
+ * delegates to the original module's exact whole-cent allocator.
+ * Directory edits change labels/defaults only; canonical identities and old
+ * reports are never renamed/deleted. Team and host membership commit atomically.
+ */
+const TT15_ROLES=['Server','Bartender','Host','Cashier','Host / Cashier'];
+const TT15_HOST_SHIFTS=['AM','PM','DOUBLE',SHIFT_EARLY,SHIFT_MIDDLE];
+const TT15_POOLS=['cashAM','creditAM','cashPM','creditPM'];
+let tt15State=null,tt15Token=0,tt15Directory={uid:'',data:{},ready:false,unsub:null};
+let hc15Session=null,hc15Sig=null,hc15Credit=null;
+const tt15Clean=v=>String(v??'').trim().replace(/\s+/g,' ');
+const tt15Host=role=>['Host','Cashier','Host / Cashier'].includes(role);
+const tt15Key=name=>Array.from(new TextEncoder().encode(tt15Clean(name).toLowerCase()),b=>b.toString(16).padStart(2,'0')).join('');
+const tt15Copy=esClone;
+const tt15Stamp=()=>({updatedAt:serverTimestamp(),updatedByUid:currentUser?.uid||'',updatedBy:currentProfile?.displayName||currentProfile?.username||''});
+const tt15Same=(a,b)=>JSON.stringify(a??null)===JSON.stringify(b??null);
+function tt15IsHostReport(r){return r?.reportKind==='host_cashier'||r?.hostCashierReport===true;}
+function tt15Require(uid=currentUser?.uid){if(!esAllowed()||currentUser.uid!==uid)throw new Error('Manager / Owner login required. Nothing was saved.');if(navigator.onLine===false)throw new Error('Offline. Your edits are kept. Reconnect before saving.');}
+function tt15NameValid(name){return !!name&&name.length<=100&&!/[\u0000-\u001f\u007f]/.test(name)&&!['__proto__','constructor','prototype'].includes(name.toLowerCase());}
+function tt15DirectoryEntries(data=tt15Directory.data){
+  const map=new Map();
+  for(const name of getEmployeeRoster())map.set(tt15Key(name),{name,displayName:name,defaultRole:esFixedRole(name)||'Server',active:true,revision:0,phone:''});
+  for(const name of window.FZHostCashierMath?.names||[]){const k=tt15Key(name),old=map.get(k);map.set(k,{...(old||{}),name,displayName:name,defaultRole:esFixedRole(name)||'Host / Cashier',active:true,revision:0,phone:''});}
+  for(const item of Object.values(data?.entries||{})){
+    const name=tt15Clean(item?.name);if(!tt15NameValid(name))continue;const k=tt15Key(name);
+    map.set(k,{...(map.get(k)||{}),name,displayName:name,defaultRole:esFixedRole(name)||'Host / Cashier',active:item.active!==false,phone:String(item.phone||''),revision:0});
+  }
+  for(const [k,item] of Object.entries(data?.directoryEntries||{})){
+    if(!tt15NameValid(item?.name)||k!==tt15Key(item.name))continue;
+    map.set(k,{...(map.get(k)||{}),...item,displayName:tt15Clean(item.displayName)||item.name,active:item.active!==false});
+  }
+  return [...map.values()].sort((a,b)=>a.displayName.localeCompare(b.displayName));
+}
+function tt15Label(name){return tt15DirectoryEntries().find(e=>e.name===name)?.displayName||name;}
+function tt15DirectoryStart(){
+  if(!esAllowed())return;
+  const uid=currentUser.uid;if(tt15Directory.uid===uid&&tt15Directory.unsub)return;
+  tt15Directory.unsub?.();tt15Directory={uid,data:{},ready:false,unsub:null};
+  tt15Directory.unsub=onSnapshot(doc(db,'hostCashierTipReports','employee-roster'),{includeMetadataChanges:true},snap=>{
+    if(!esAllowed()||currentUser.uid!==uid||tt15Directory.uid!==uid)return;
+    tt15Directory.data=snap.exists()?snap.data():{};
+    tt15Directory.ready=snap.metadata?.fromCache!==true&&snap.metadata?.hasPendingWrites!==true;
+    tt15DirectoryPaint();tt15PaintNames();hc15UpdateValues();if(tt15State?.open&&!tt15State.editing)tt15Render();
+  },e=>{tt15Directory.ready=false;tt15Message('Employee list could not sync: '+(e.message||e),true);tt15DirectoryPaint();});
+}
+function tt15TeamRows(batch={},host={}){
+  const rows=[];
+  for(const name of batch.team||[]){const v=batch.drafts?.[name]?.values||{};rows.push({name,role:esFixedRole(name)||(['Server','Bartender'].includes(v.hPosition)?v.hPosition:'Server'),shift:v.hShift||''});}
+  const am=new Set((host.employeesAM||[]).filter(Boolean)),pm=new Set((host.employeesPM||[]).filter(Boolean));
+  for(const name of new Set([...am,...pm])){
+    const original=host.team?.[name]?.shift;
+    const shift=am.has(name)&&pm.has(name)?'DOUBLE':am.has(name)&&[SHIFT_EARLY,SHIFT_MIDDLE].includes(original)?original:am.has(name)?'AM':'PM';
+    const role=host.staffDetails?.[name]?.role||host.team?.[name]?.position||'Host / Cashier';
+    rows.push({name,role:tt15Host(role)?role:'Host / Cashier',shift});
+  }
+  return rows;
+}
+function tt15HostMembership(rows){
+  const hosts=rows.filter(r=>tt15Host(r.role));
+  const am=hosts.filter(r=>['AM','DOUBLE',SHIFT_EARLY,SHIFT_MIDDLE].includes(r.shift)).map(r=>r.name);
+  const pm=hosts.filter(r=>['PM','DOUBLE'].includes(r.shift)).map(r=>r.name);
+  if(am.length>7||pm.length>7)throw new Error('Host / Cashier: maximum 7 employees per AM or PM, matching the existing split.');
+  return {hosts,am,pm};
+}
+function tt15TeamValidate(rows,directory){
+  const seen=new Set();for(const r of rows){
+    if(!tt15NameValid(r.name))throw new Error('Select a valid employee for every row.');
+    const key=tt15Key(r.name);if(seen.has(key))throw new Error(tt15Label(r.name)+' is listed twice. Use the existing separate work profiles for two positions.');seen.add(key);
+    if(!TT15_ROLES.includes(r.role))throw new Error('Choose a position for '+tt15Label(r.name)+'.');
+    if(!(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).includes(r.shift))throw new Error('Choose a supported shift for '+tt15Label(r.name)+'.');
+    const fixed=esFixedRole(r.name);if(fixed&&fixed!==r.role)throw new Error(r.name+' is a '+fixed+' work profile. Choose the matching profile.');
+  }
+  tt15HostMembership(rows);return true;
+}
+function tt15MergeTeam(base,edited,remote){
+  const result=tt15Copy(remote),conflicts=[];
+  for(const old of base){
+    const local=edited.find(r=>r.name===old.name),current=result.find(r=>r.name===old.name);
+    if(!local){if(current&&!tt15Same(current,old))conflicts.push(old.name);else if(current)result.splice(result.indexOf(current),1);continue;}
+    if(!current){if(!tt15Same(local,old))conflicts.push(old.name);continue;}
+    for(const f of ['role','shift'])if(local[f]!==old[f]){if(current[f]!==old[f]&&current[f]!==local[f])conflicts.push(old.name);else current[f]=local[f];}
+  }
+  for(const row of edited)if(!base.some(r=>r.name===row.name)){
+    const current=result.find(r=>r.name===row.name);if(current&&!tt15Same(current,row))conflicts.push(row.name);else if(!current)result.push(tt15Copy(row));
+  }
+  if(conflicts.length){const e=new Error('Another device changed '+[...new Set(conflicts)].join(', ')+'. Review the latest team before updating. Your edits are kept.');e.teamConflict=true;throw e;}
+  return result;
+}
+function tt15BuildTeam(raw,host,rows,date){
+  const batch=tt15Copy(raw||{});batch.date=date;batch.drafts ||= {};hv1EnsureBarState(batch);
+  const servers=rows.filter(r=>!tt15Host(r.role)),removed=new Set(batch.todayTeamRemoved||[]);
+  for(const name of batch.team||[])if(!servers.some(r=>r.name===name))removed.add(name);
+  const resultRows=esRowsFromBatch({...batch,team:servers.map(r=>r.name)},[],date);
+  for(const input of servers){
+    const row=resultRows.find(r=>r.name===input.name);const old=tt15Copy(row);
+    row.role=input.role;row.shift=input.shift;
+    if(input.shift!==old.shift){
+      if(!['AM','DOUBLE',SHIFT_EARLY].includes(row.shift)&&row.role==='Server')row.totalAM='';
+      if(!['AM','DOUBLE','LONG',SHIFT_MIDDLE].includes(row.shift))row.total24='';
+      if(row.shift==='DOUBLE'&&old.shift!=='DOUBLE'){row.clockIn2='';row.clockOut2='';}
+      if(isShortShift(row.shift)){const [a,b]=shortShiftTimes(row.shift);row.clockIn ||= a;row.clockOut ||= b;}
+    }
+    if(row.role!==old.role){row.barAM=row.bar24=row.barPM=row.role==='Server';}
+    removed.delete(input.name);
+  }
+  const route=esRouting(resultRows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,batch.bar[cp]?.bartender||''])));
+  for(const row of resultRows)esLinkSales(row,'shift',route);
+  const built=esBuildBatch(batch,resultRows,date,route);built.todayTeamRemoved=[...removed];built.todayTeamManaged=true;
+  built.todayTeamRevision=Number(raw?.todayTeamRevision||0)+1;built.employeeSheetRevision=Number(raw?.employeeSheetRevision||0)+1;
+  // Keep removed drafts/receipts; exclude their BAR sales from the active team.
+  for(const cp of ES_PERIODS){const allowed=new Set(servers.filter(r=>r.role==='Server').map(r=>r.name));
+    for(const name of Object.keys(built.bar[cp].entries||{}))if(!allowed.has(name))delete built.bar[cp].entries[name];
+  }
+  hv1ApplyBarAutomation(built);
+  const membership=tt15HostMembership(rows),hc=tt15Copy(host||{});hc.date=date;hc.team ||= {};hc.staffDetails ||= {};
+  for(const name of Object.keys(hc.team))hc.team[name]={...hc.team[name],working:false};
+  for(const row of membership.hosts){hc.team[row.name]={...(hc.team[row.name]||{}),working:true,shift:row.shift,position:row.role};hc.staffDetails[row.name]={...(hc.staffDetails[row.name]||{}),role:row.role};}
+  hc.employeesAM=[...membership.am,...Array(7-membership.am.length).fill('')];hc.employeesPM=[...membership.pm,...Array(7-membership.pm.length).fill('')];
+  hc.todayTeamRevision=Number(host?.todayTeamRevision||0)+1;hc.sheetRevision=Number(host?.sheetRevision||0)+1;
+  for(const p of TT15_POOLS)if(hc[p]===undefined)hc[p]=0;
+  hc.signatures ||= {AM:{},PM:{}};
+  return {batch:built,host:hc};
+}
+function tt15Message(text,error=false){const el=$('tt15Status');if(el){el.textContent=text;el.dataset.error=error?'1':'0';}}
+function tt15Close(){if(tt15State){tt15State.unsubs.forEach(u=>u());tt15State.unsubs=[];tt15State.open=false;}++tt15Token;$('todayTeamPage')?.classList.add('hidden');document.body.classList.remove('tt15-active');}
+function tt15Init(){
+  if($('todayTeamPage'))return;const parent=$('staffApp');if(!parent)return;
+  const page=document.createElement('section');page.id='todayTeamPage';page.className='staffPanel tt15-page hidden';
+  page.innerHTML=`<header class="tt15-header"><button type="button" id="tt15Home">‹ Home</button><h2>Today's Team</h2><button type="button" id="tt15Sheet">Sheet ›</button></header>
+    <div class="tt15-toolbar"><label>Work date<input id="tt15Date" type="date"></label><button type="button" id="tt15Edit">Edit Team</button><button type="button" id="tt15Manage">Manage Employee</button></div>
+    <div id="tt15Status" role="status" aria-live="polite"></div>
+    <div class="tt15-team-grid"><table class="tt15-table"><thead><tr><th>Employee</th><th>Position</th><th>Shift</th><th></th></tr></thead><tbody id="tt15Rows"></tbody></table></div>
+    <div class="tt15-actions"><button type="button" id="tt15AddRow">＋ Add row</button><button type="button" id="tt15Cancel">Cancel edits</button><button type="button" class="tt15-primary" id="tt15Update">Update Team</button></div>
+    <p class="tt15-hint">Server / Bartender → upper sheet. Host / Cashier → lower sheet. Updating the team does not delete saved reports.</p>
+    <div id="tt15DirectoryPanel" class="tt15-modal hidden" role="dialog" aria-modal="true" aria-labelledby="tt15DirectoryTitle"><div class="tt15-dialog"><header><h3 id="tt15DirectoryTitle">Manage Employee</h3><button type="button" id="tt15DirectoryClose" aria-label="Close manage employee">✕</button></header>
+    <p class="tt15-hint">Team roster only. Login accounts stay in Users. Editing a display name keeps the original report identity.</p><div class="tt15-directory-toolbar"><input type="search" id="tt15DirectorySearch" placeholder="Find employee" aria-label="Find employee in directory"><button type="button" id="tt15New">＋ Add Employee</button></div>
+    <div id="tt15DirectoryEdit" class="hidden"><label>Employee name / display name<input id="tt15EmployeeName" maxlength="100" autocomplete="off"></label><label>Default position<select id="tt15EmployeeRole">${TT15_ROLES.map(r=>esOption(r,r,'Server')).join('')}</select></label><label>Phone (optional)<input id="tt15EmployeePhone" type="tel" maxlength="40" autocomplete="off"></label><div class="tt15-actions"><button id="tt15EmployeeCancel" type="button">Cancel</button><button id="tt15EmployeeSave" type="button" class="tt15-primary">Save Employee</button></div></div>
+    <label class="tt15-show-inactive"><input id="tt15ShowInactive" type="checkbox"> Show deleted / restore</label><div id="tt15DirectoryStatus" role="status"></div><div id="tt15DirectoryList"></div></div></div>`;
+  parent.appendChild(page);
+  $('tt15Home').onclick=()=>{if(!tt15MayLeave())return;tt15Close();window.fzOpenRoleHome();};
+  $('tt15Sheet').onclick=()=>{if(!tt15MayLeave())return;const date=tt15State.date;tt15Close();window.employeeSheetOpen(date);};
+  $('tt15Date').onchange=()=>{const value=$('tt15Date').value;if(tt15MayLeave())window.fzOpenTodayTeam(value);else $('tt15Date').value=tt15State.date;};
+  $('tt15Edit').onclick=()=>{if(!tt15State?.ready||tt15State.busy)return;tt15State.editing=true;tt15Render();};
+  $('tt15Cancel').onclick=()=>{if(tt15State?.busy)return;tt15State.rows=tt15Copy(tt15State.latestRows||tt15State.baseRows);tt15State.baseRows=tt15Copy(tt15State.rows);tt15State.editing=false;tt15Render();tt15Message('Latest shared team.');};
+  $('tt15AddRow').onclick=()=>{if(tt15State?.editing&&!tt15State.busy){tt15State.rows.push({name:'',role:'Server',shift:'AM'});tt15Render();}};
+  $('tt15Rows').addEventListener('change',e=>{const i=Number(e.target.dataset.ttIndex),key=e.target.dataset.ttField,s=tt15State;if(!key||!s?.editing||s.busy)return;const row=s.rows[i];if(!row)return;
+    row[key]=e.target.value;
+    if(key==='name'){const entry=tt15DirectoryEntries().find(x=>x.name===row.name);row.role=esFixedRole(row.name)||entry?.defaultRole||'Server';}
+    if(tt15Host(row.role)&&!TT15_HOST_SHIFTS.includes(row.shift))row.shift='PM';
+    tt15Render();
+  });
+  $('tt15Rows').addEventListener('click',e=>{const btn=e.target.closest('[data-tt-remove]');if(btn&&tt15State?.editing&&!tt15State.busy){tt15State.rows.splice(Number(btn.dataset.ttRemove),1);tt15Render();}});
+  $('tt15Update').onclick=async()=>{const date=tt15State?.date;if(await tt15UpdateTeam())window.employeeSheetOpen(date);};$('tt15Manage').onclick=()=>{tt15DirectoryStart();$('tt15DirectoryPanel').classList.remove('hidden');tt15DirectoryPaint();};
+  $('tt15DirectoryClose').onclick=()=>{if(tt15Directory.busy)return;$('tt15DirectoryPanel').classList.add('hidden');};
+  $('tt15New').onclick=()=>tt15EditEmployee();$('tt15DirectorySearch').oninput=tt15DirectoryPaint;$('tt15ShowInactive').onchange=tt15DirectoryPaint;
+  $('tt15EmployeeCancel').onclick=()=>{if(!tt15Directory.busy){tt15Directory.edit=null;$('tt15DirectoryEdit').classList.add('hidden');}};
+  $('tt15EmployeeSave').onclick=()=>tt15SaveEmployee();
+  $('tt15DirectoryList').onclick=e=>{const btn=e.target.closest('[data-dir-action]');if(!btn)return;const entry=tt15DirectoryEntries().find(x=>tt15Key(x.name)===btn.dataset.dirKey);if(!entry)return;if(btn.dataset.dirAction==='edit')tt15EditEmployee(entry);else tt15ToggleEmployee(entry);};
+}
+function tt15MayLeave(){const s=tt15State;if(s?.busy)return false;return !s?.editing||tt15Same(s.rows,s.baseRows)||confirm('Leave without applying team edits? Existing saved reports are kept.');}
+function tt15Render(){
+  const s=tt15State;if(!s||!$('tt15Rows'))return;
+  const directory=tt15DirectoryEntries(),editable=s.ready&&s.editing&&!s.busy;
+  $('tt15Date').value=s.date;$('tt15Date').disabled=!!s.busy;
+  $('tt15Edit').disabled=!s.ready||s.editing||s.busy;$('tt15Update').disabled=!editable;$('tt15AddRow').disabled=!editable;$('tt15Cancel').disabled=!s.editing||s.busy;
+  $('tt15Manage').disabled=!!s.busy;
+  $('tt15Rows').innerHTML=s.rows.map((r,i)=>{
+    const options=directory.filter(e=>e.active||e.name===r.name);if(r.name&&!options.some(e=>e.name===r.name))options.push({name:r.name,displayName:r.name,active:false});
+    return `<tr><td><select data-tt-index="${i}" data-tt-field="name" aria-label="Employee ${i+1}"${!editable?' disabled':''}>${esOption('','Select employee',r.name)}${options.map(e=>esOption(e.name,e.displayName+(e.active?'':' (inactive)'),r.name)).join('')}</select></td><td><select data-tt-index="${i}" data-tt-field="role" aria-label="Position ${i+1}"${!editable||esFixedRole(r.name)?' disabled':''}>${TT15_ROLES.map(x=>esOption(x,x,r.role)).join('')}</select></td><td><select data-tt-index="${i}" data-tt-field="shift" aria-label="Shift ${i+1}"${!editable?' disabled':''}>${esOption('','Choose shift',r.shift)}${(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>esOption(x,x==='DOUBLE'?'Double':x==='LONG'?'Long':x,r.shift)).join('')}</select></td><td><button type="button" data-tt-remove="${i}" aria-label="Remove ${esc(r.name||'row')} from this team"${!editable?' disabled':''}>✕</button></td></tr>`;
+  }).join('')||'<tr><td colspan="4">No team yet. Click Edit Team, then Add row.</td></tr>';
+}
+window.fzOpenTodayTeam=async function(date){
+  if(!esAllowed())return;tt15Init();if(tt15State?.busy)return;
+  const workdate=esDateValid(date)?date:esSession?.date||todayLocal();
+  esPersistLocal();if(esSession?.ready&&esSession.cloudReady)await es14AutoFlush(esSession);
+  esStopRead();hc15Stop();frExit();tt15Close();tt15DirectoryStart();
+  document.querySelectorAll('.staffPanel').forEach(e=>e.classList.add('hidden'));$('fzRoleHome')?.classList.add('hidden');$('staffApp')?.classList.remove('hidden');$('hourlyV1Workspace')?.classList.add('hidden');
+  document.body.classList.remove('es-active','fz-final-report','hourly-v1-mode','hourly-v1-editing','hourly-v1-small-report');document.body.classList.add('tt15-active');$('todayTeamPage').classList.remove('hidden');
+  const token=++tt15Token,s={uid:currentUser.uid,date:workdate,open:true,ready:false,editing:false,busy:false,rows:[],baseRows:[],latestRows:[],batch:null,host:null,unsubs:[]};tt15State=s;
+  tt15Message('Loading team…');tt15Render();
+  const accept=(kind,snap)=>{if(tt15State!==s||token!==tt15Token||!esAllowed()||currentUser.uid!==s.uid)return;s[kind]=snap.exists()?snap.data():{};s[kind+'Ready']=snap.metadata?.fromCache!==true&&snap.metadata?.hasPendingWrites!==true;
+    if(s.batch!==null&&s.host!==null){const rows=tt15TeamRows(s.batch,s.host);s.latestRows=tt15Copy(rows);s.ready=s.batchReady&&s.hostReady;
+      if((!s.editing||tt15Same(s.rows,s.baseRows))&&!s.busy){const wasEmpty=!s.rows.length;s.rows=rows;s.baseRows=tt15Copy(rows);if(s.ready&&!rows.length)s.editing=true;else if(wasEmpty&&rows.length)s.editing=false;tt15Render();}
+      if(!s.busy)tt15Message(s.ready?(s.editing?'Edit team, then Update Team.':'Live · '+rows.length+' employees'):'Checking cloud…');}
+  };
+  for(const [kind,col]of [['batch','hourlyV1Batches'],['host','hostCashierTipReports']])s.unsubs.push(onSnapshot(doc(db,col,workdate),{includeMetadataChanges:true},snap=>accept(kind,snap),e=>{if(tt15State===s){s.ready=false;tt15Message('Team could not sync: '+(e.message||e)+'. Reopen Today\'s Team to retry.',true);tt15Render();}}));
+};
+async function tt15UpdateTeam(){
+  const s=tt15State;if(!s?.ready||!s.editing||s.busy)return false;
+  try{tt15Require(s.uid);tt15TeamValidate(s.rows);if(!s.rows.length&&!confirm('Remove everyone from this date’s active team? Saved reports and archived drafts will remain.'))return false;}catch(e){tt15Message(e.message,true);return false;}
+  const edited=tt15Copy(s.rows),base=tt15Copy(s.baseRows);s.busy=true;tt15Render();tt15Message('Updating both sections…');
+  try{
+    const result=await runTransaction(db,async tx=>{
+      const ref=doc(db,'hourlyV1Batches',s.date),href=doc(db,'hostCashierTipReports',s.date),dref=doc(db,'hostCashierTipReports','employee-roster');
+      const bs=await tx.get(ref),hs=await tx.get(href),ds=await tx.get(dref);tt15Require(s.uid);
+      const raw=bs.exists()?bs.data():{},hc=hs.exists()?hs.data():{},dir=tt15DirectoryEntries(ds.exists()?ds.data():{}),remote=tt15TeamRows(raw,hc),rows=tt15MergeTeam(base,edited,remote);
+      for(const r of rows)if(!remote.some(x=>x.name===r.name)&&!dir.some(e=>e.name===r.name&&e.active))throw new Error(r.name+' is not active in Manage Employee. Restore or add the employee first.');
+      tt15TeamValidate(rows);const out=tt15BuildTeam(raw,hc,rows,s.date);
+      tx.set(ref,{...out.batch,...tt15Stamp()});tx.set(href,{...out.host,...tt15Stamp()});return {...out,rows};
+    });
+    if(tt15State===s){s.batch=result.batch;s.host=result.host;s.rows=tt15Copy(result.rows);s.baseRows=tt15Copy(result.rows);s.latestRows=tt15Copy(result.rows);s.editing=false;tt15Message('Team updated · Employee Sheet is ready.');}
+    return true;
+  }catch(e){tt15Message(e.message||String(e),true);return false;}
+  finally{if(tt15State===s){s.busy=false;tt15Render();}}
+}
+function tt15DirectoryPaint(){
+  const host=$('tt15DirectoryList');if(!host)return;
+  const q=($('tt15DirectorySearch')?.value||'').toLowerCase(),inactive=$('tt15ShowInactive')?.checked;
+  host.innerHTML=tt15DirectoryEntries().filter(e=>(inactive||e.active)&&(e.displayName+' '+e.name).toLowerCase().includes(q)).map(e=>`<div class="tt15-person"><div><b>${esc(e.displayName)}</b><small>${esc(e.defaultRole||'Server')}${!e.active?' · Deleted from active list':''}</small></div><button type="button" data-dir-action="edit" data-dir-key="${tt15Key(e.name)}"${!tt15Directory.ready||tt15Directory.busy?' disabled':''}>Edit</button><button type="button" data-dir-action="toggle" data-dir-key="${tt15Key(e.name)}"${!tt15Directory.ready||tt15Directory.busy?' disabled':''}>${e.active?'Delete':'Restore'}</button></div>`).join('')||'<p>No matching employees.</p>';
+  $('tt15New').disabled=!tt15Directory.ready||!!tt15Directory.busy;$('tt15EmployeeSave').disabled=!tt15Directory.ready||!!tt15Directory.busy;
+}
+function tt15EditEmployee(entry=null){
+  if(!tt15Directory.ready||tt15Directory.busy)return;
+  tt15Directory.edit=entry?tt15Copy(entry):{name:'',revision:0,active:true};
+  $('tt15EmployeeName').value=entry?.displayName||'';$('tt15EmployeeRole').value=entry?.defaultRole||'Server';$('tt15EmployeeRole').disabled=!!esFixedRole(entry?.name||'');$('tt15EmployeePhone').value=entry?.phone||'';
+  $('tt15DirectoryEdit').classList.remove('hidden');$('tt15DirectoryStatus').textContent='';$('tt15EmployeeName').focus();
+}
+async function tt15WriteEmployee(original,changes){
+  const uid=currentUser?.uid;tt15Require(uid);
+  const label=tt15Clean(changes.displayName),name=original.name||label;
+  if(!tt15NameValid(label)||!tt15NameValid(name))throw new Error('Enter a valid employee name (1–100 characters).');
+  if(!TT15_ROLES.includes(changes.defaultRole))throw new Error('Choose a default position.');
+  const fixed=esFixedRole(name);if(fixed&&changes.defaultRole!==fixed)throw new Error('This work profile must remain '+fixed+'.');
+  const key=tt15Key(name),ref=doc(db,'hostCashierTipReports','employee-roster');
+  return runTransaction(db,async tx=>{
+    const snap=await tx.get(ref);tt15Require(uid);const raw=snap.exists()?snap.data():{},entries=tt15DirectoryEntries(raw),current=entries.find(e=>tt15Key(e.name)===key);
+    if(!original.name&&current)throw new Error('That employee already exists. Use Edit or Restore instead.');
+    if(original.name&&Number(current?.revision||0)!==Number(original.revision||0))throw new Error('This employee was edited on another device. Close the editor and choose Edit again.');
+    if(entries.some(e=>e.active&&tt15Key(e.name)!==key&&tt15Key(e.displayName)===tt15Key(label)))throw new Error('Another active employee already uses that display name.');
+    const value={name,displayName:label,defaultRole:changes.defaultRole,phone:String(changes.phone||'').slice(0,40),active:changes.active!==false,revision:Number(current?.revision||0)+1};
+    // Legacy HC membership list gets only HC employees. Server accounts are not
+    // injected into the Host/Cashier dropdown. Neither auth nor old reports move.
+    const legacy={...(raw.entries||{})};
+    if(tt15Host(value.defaultRole)||legacy[key])legacy[key]={name,phone:value.phone,active:value.active&&tt15Host(value.defaultRole)};
+    const data={...raw,kind:raw.kind||'host_cashier_roster',entries:legacy,directoryEntries:{...(raw.directoryEntries||{}),[key]:value},...tt15Stamp()};
+    tx.set(ref,data);return {data,value};
+  });
+}
+async function tt15SaveEmployee(){
+  const edit=tt15Directory.edit;if(!edit||tt15Directory.busy||!tt15Directory.ready)return false;
+  tt15Directory.busy=true;tt15DirectoryPaint();
+  try{const out=await tt15WriteEmployee(edit,{displayName:$('tt15EmployeeName').value,defaultRole:$('tt15EmployeeRole').value,phone:$('tt15EmployeePhone').value,active:edit.active});
+    tt15Directory.data=out.data;tt15Directory.edit=null;$('tt15DirectoryEdit').classList.add('hidden');$('tt15DirectoryStatus').textContent='Employee saved. Available in Today’s Team.';tt15PaintNames();if(tt15State?.open)tt15Render();return true;
+  }catch(e){$('tt15DirectoryStatus').textContent=e.message||String(e);return false;}
+  finally{tt15Directory.busy=false;tt15DirectoryPaint();}
+}
+async function tt15ToggleEmployee(entry){
+  if(tt15Directory.busy||!tt15Directory.ready)return false;
+  if(entry.active&&!confirm('Delete '+entry.displayName+' from the active employee list? Saved reports, signatures and existing teams stay unchanged. Login access is managed separately in Users.'))return false;
+  tt15Directory.busy=true;tt15DirectoryPaint();
+  try{const out=await tt15WriteEmployee(entry,{...entry,active:!entry.active});tt15Directory.data=out.data;$('tt15DirectoryStatus').textContent=out.value.active?'Employee restored.':'Deleted from active list. Existing reports and today’s team are unchanged.';return true;}
+  catch(e){$('tt15DirectoryStatus').textContent=e.message||String(e);return false;}
+  finally{tt15Directory.busy=false;tt15DirectoryPaint();if(tt15State?.open)tt15Render();}
+}
+function tt15PaintNames(){
+  if(!esSession?.ready)return;const q=String($('esSearch')?.value||'').toLowerCase();
+  document.querySelectorAll('#esRows tr[data-es-index]').forEach(tr=>{const row=esSession.rows[Number(tr.dataset.esIndex)];if(!row)return;const label=tt15Label(row.name),b=tr.querySelector('.es-name>b');if(b)b.textContent=label;tr.hidden=!!q&&!(label+' '+row.name).toLowerCase().includes(q);});
+}
+
+/* Host/Cashier: independent draft/pool document, separate from BAR/Busser. */
+function hc15Math(data){
+  const math=window.FZHostCashierMath;if(!math)throw new Error('Host / Cashier calculator is still loading. Please retry shortly.');
+  return math.calculate(data);
+}
+function hc15Member(data,name){return tt15TeamRows({},data).find(r=>r.name===name)||null;}
+function hc15Field(name,field){return JSON.stringify([name||'',field]);}
+function hc15Get(data,key){const [name,field]=JSON.parse(key);return name?String(data.staffDetails?.[name]?.[field]??''):field.startsWith('creditAccounts')?(data[field]||[]):String(data[field]??0);}
+function hc15Put(data,key,value){const [name,field]=JSON.parse(key);if(name){data.staffDetails ||= {};data.staffDetails[name] ||= {};data.staffDetails[name][field]=value;}else{data[field]=field.startsWith('creditAccounts')?tt15Copy(value):(es14MoneyValid(value)?Number(value)||0:String(value));if(field==='creditAM'||field==='creditPM')data['creditAccounts'+field.slice(-2)]=[{label:'Sheet total',amount:Number(value)||0}];}}
+function hc15Equal(key,a,b){const [name,field]=JSON.parse(key);return name?String(a??'')===String(b??''):field.startsWith('creditAccounts')?tt15Same(a,b):es14MoneyText(a)===es14MoneyText(b);}
+function hc15Valid(key,value){const [name,field]=JSON.parse(key);if(name)return value===''||/^([01]\d|2[0-3]):[0-5]\d$/.test(value);if(field.startsWith('creditAccounts'))return Array.isArray(value)&&value.length<=50&&value.every(r=>es14MoneyValid(r.amount)&&String(r.label||'').length<=80);return es14MoneyValid(value);}
+function hc15View(s=hc15Session){const data=tt15Copy(s?.data||{});for(const [key,e]of Object.entries(s?.edits||{}))hc15Put(data,key,e.local);return data;}
+function hc15LocalKey(s){return 'fz_hc15_draft_'+s.uid+'_'+s.date;}
+function hc15KeepLocal(s=hc15Session){if(!s)return;try{if(Object.keys(s.edits).length)localStorage.setItem(hc15LocalKey(s),JSON.stringify({edits:s.edits,savedAt:Date.now()}));else localStorage.removeItem(hc15LocalKey(s));}catch(e){}}
+function hc15Accept(s,data,verified=true){
+  if(s!==hc15Session||!esAllowed()||currentUser.uid!==s.uid)return;
+  if(Number(data.sheetRevision||0)<Number(s.data?.sheetRevision||0)&&verified)return;
+  s.data=tt15Copy(data);s.verified=verified;s.conflicts=[];
+  for(const [key,e]of Object.entries(s.edits)){
+    const remote=hc15Get(data,key),[name]=JSON.parse(key);
+    if(name&&!hc15Member(data,name)){s.conflicts.push(key);continue;}
+    if(hc15Equal(key,remote,e.local))delete s.edits[key];
+    else if(!hc15Equal(key,remote,e.base))s.conflicts.push(key);
+  }
+  hc15KeepLocal(s);hc15Render();hc15Schedule(s);
+}
+function hc15Stop(){const s=hc15Session;if(!s)return;clearTimeout(s.timer);clearTimeout(s.renderTimer);hc15KeepLocal(s);if(!s.busy&&s.verified&&esAllowed()&&currentUser.uid===s.uid&&Object.keys(s.edits).length)void hc15Flush(s);s.unsub?.();s.unsub=null;hc15Session=null;}
+function hc15Start(date){
+  if(!esAllowed()||!esDateValid(date))return;
+  if(hc15Session?.date===date&&hc15Session.uid===currentUser.uid&&hc15Session.unsub)return;
+  hc15Stop();const s={uid:currentUser.uid,date,data:{date},verified:false,edits:{},conflicts:[],unsub:null,busy:false,writing:null,error:'',timer:0,loaded:false};hc15Session=s;
+  try{s.edits=JSON.parse(localStorage.getItem(hc15LocalKey(s))||'{}').edits||{};}catch(e){}
+  hc15Render();
+  s.unsub=onSnapshot(doc(db,'hostCashierTipReports',date),{includeMetadataChanges:true},snap=>{
+    if(s!==hc15Session)return;const verified=snap.metadata?.fromCache!==true&&snap.metadata?.hasPendingWrites!==true;
+    if(s.verified&&!verified)return;s.loaded=true;s.hadCloud ||= snap.exists();
+    hc15Accept(s,snap.exists()?snap.data():{date},verified);
+  },e=>{if(s!==hc15Session)return;s.verified=false;s.error='Host / Cashier could not sync: '+(e.message||e);hc15Render();});
+}
+function hc15Set(name,field,value){
+  const s=hc15Session;if(!s||s.busy)return;
+  const key=hc15Field(name,field);if(name)value=esNormalizeClock(value);
+  const base=s.edits[key]?.base??hc15Get(s.data,key);
+  if(hc15Equal(key,value,base))delete s.edits[key];else s.edits[key]={base:tt15Copy(base),local:tt15Copy(value)};
+  s.error='';hc15KeepLocal(s);hc15UpdateValues();hc15Schedule(s);
+}
+function hc15Schedule(s=hc15Session){
+  if(!s)return;clearTimeout(s.timer);if(s!==hc15Session||!s.verified||s.busy||s.writing||hc15Sig||hc15Credit||navigator.onLine===false)return;
+  if(Object.entries(s.edits).some(([k,e])=>!s.conflicts.includes(k)&&hc15Valid(k,e.local)))s.timer=setTimeout(()=>void hc15Flush(s),700);
+}
+async function hc15Flush(s=hc15Session){
+  if(s?.writing)return s.writing;if(!s||!s.verified||navigator.onLine===false)return false;
+  const edits=tt15Copy(Object.fromEntries(Object.entries(s.edits).filter(([k,e])=>!s.conflicts.includes(k)&&hc15Valid(k,e.local))));if(!Object.keys(edits).length)return true;
+  clearTimeout(s.timer);
+  s.writing=(async()=>{
+    const ref=doc(db,'hostCashierTipReports',s.date);
+    const result=await runTransaction(db,async tx=>{
+      const snap=await tx.get(ref);tt15Require(s.uid);if(!snap.exists()&&s.hadCloud)throw new Error('This Host / Cashier date was removed. Your device edits are kept.');
+      const raw=snap.exists()?snap.data():{date:s.date},next=tt15Copy(raw),applied=[],conflicts=[];
+      for(const [key,e]of Object.entries(edits)){
+        const [name]=JSON.parse(key);if(name&&!hc15Member(raw,name)){conflicts.push(key);continue;}
+        const remote=hc15Get(raw,key);if(!hc15Equal(key,remote,e.base)&&!hc15Equal(key,remote,e.local)){conflicts.push(key);continue;}
+        hc15Put(next,key,e.local);applied.push(key);
+      }
+      if(applied.length){next.sheetRevision=Number(raw.sheetRevision||0)+1;tx.set(ref,{...next,...tt15Stamp()});}
+      return {next,applied,conflicts};
+    });
+    if(s===hc15Session){
+      for(const key of result.applied)if(s.edits[key]){if(hc15Equal(key,s.edits[key].local,edits[key].local))delete s.edits[key];else s.edits[key].base=tt15Copy(edits[key].local);}
+      s.conflicts=[...new Set([...s.conflicts,...result.conflicts])];s.error=result.conflicts.length?'Another device changed the same field. Review changes below.':'';
+      hc15Accept(s,result.next,true);
+    }return true;
+  })().catch(e=>{if(s===hc15Session){s.error=e.message||String(e);hc15Render();}return false;});
+  try{return await s.writing;}finally{s.writing=null;hc15KeepLocal(s);hc15UpdateValues();if(!s.error)hc15Schedule(s);}
+}
+function hc15Hours(data,name,complete=false){
+  const row=hc15Member(data,name),v=data.staffDetails?.[name]||{},fields=row?.shift==='DOUBLE'?['clockIn','clockOut','clockIn2','clockOut2']:['clockIn','clockOut'];
+  if(!fields.some(k=>v[k]))return {totalMinutesWork:0,totalHoursWork:0,hours:{}};
+  const input={...esDefaults(name,data.date),role:'Server',shift:row?.shift,grand:'0',paid:'0',cardFee:'0',cash:'0',meal:'0',totalAM:'0',total24:'0',...Object.fromEntries(fields.map(k=>[k,String(v[k]||'')]))};
+  if(complete){const errs=esValidateSales(input,{},true);if(errs.length)throw new Error(tt15Label(name)+': '+errs.join(' '));}
+  const hours=esHours(input),mins=window.FredTipCalculatorLogic.calculateTotalMinutes(row?.shift,hours);
+  return {totalMinutesWork:mins||0,totalHoursWork:(mins||0)/60,hours};
+}
+function hc15Report(data,name){
+  const member=hc15Member(data,name);if(!member)throw new Error('This employee is no longer on the Host / Cashier team.');
+  const m=hc15Math(data),am=m.amountsAM[name]||0,pm=m.amountsPM[name]||0,total=(Math.round(am*100)+Math.round(pm*100))/100,time=hc15Hours(data,name);
+  return {date:data.date,employee:name,employeeDisplayName:tt15Label(name),position:member.role,shift:member.shift,reportKind:'host_cashier',hostCashierReport:true,
+    paidTip:total,paidTips:total,totalTips:total,payCardTipFee:0,cardFee:0,cashTip:0,meal:0,grandTotal:0,totalAM:0,totalPM:0,busserAM:'N/A',busserRate:0,busserTipOut:0,busserTipOutAM:0,busserTipOutPM:0,totalShared:0,
+    barTipOut:0,barTipAM:0,barTipPM:0,amBarTipOut:0,pmBarTipOut:0,bartenderBarTipReceived:0,amBarSales:false,pmBarSales:false,
+    totalBeforeMeal:total,grandTotalTip:total,grandTotalAfterAdjustment:total,totalPaidOutBeforeAdjustment:total,totalPaidOut:total,
+    hourlyRate:0,hourlyMinimum:0,adjustmentCandidate:0,adjustmentEligible:false,adjustmentSalaryHourly:0,adjustmentDecision:'NONE',
+    totalMinutesWork:time.totalMinutesWork,totalHoursWork:time.totalHoursWork,hours:time.hours,...time.hours,
+    hostCashierTipAM:am,hostCashierTipPM:pm,hostCashierPoolAM:m.poolAM,hostCashierPoolPM:m.poolPM,hostCashierCountAM:m.countAM,hostCashierCountPM:m.countPM,
+    hostCashierRounding:'Whole cents; remainder in alphabetical employee order',
+    hostCashierCashTreatment:'Paid Tip is the combined cash + credit pool share. Cash Tip is 0 because it is not a separately retained personal cash tip.'};
+}
+function hc15Fingerprint(r){return JSON.stringify([r.date,r.employee,r.position,r.shift,r.hostCashierTipAM,r.hostCashierTipPM,r.totalPaidOut,r.totalMinutesWork,r.hours||{}]);}
+function hc15Summary(s,name){
+  const view=hc15View(s),r=hc15Report(view,name),old=s.data.sheetFinalized?.[tt15Key(name)];
+  return !old?{text:'Draft · not saved',kind:'draft'}:old.fingerprint!==hc15Fingerprint(r)?{text:'Changed · Save again',kind:'dirty'}:old.signed?{text:'Saved · Signed',kind:'signed'}:{text:'Saved · Unsigned',kind:'saved'};
+}
+function hc15Init(){
+  if($('hc15Section')||!$('esGrid'))return;
+  const section=document.createElement('section');section.id='hc15Section';section.className='hc15-section';
+  section.innerHTML=`<div class="hc15-heading"><h3>Host / Cashier</h3><button type="button" id="hc15EditTeam">Edit Team</button></div><div id="hc15Status" class="hc15-status" role="status"></div>
+    <div id="hc15Pools" class="hc15-pools"><table><thead><tr><th>Shift</th><th>Cash</th><th>Credit</th><th>Pool / Staff</th></tr></thead><tbody>${['AM','PM'].map(cp=>`<tr><th>${cp}</th><td><input data-hc15-pool="cash${cp}" inputmode="decimal" type="text" aria-label="Host Cashier Cash ${cp}" placeholder="0.00"></td><td><input data-hc15-pool="credit${cp}" inputmode="decimal" type="text" aria-label="Host Cashier Credit ${cp}" placeholder="0.00"><button class="hc15-accounts" data-hc15-credit="${cp}" type="button">Accounts +</button></td><td id="hc15Pool${cp}">—</td></tr>`).join('')}</tbody></table></div>
+    <div id="hc15Conflict" class="hidden"><p>Another device changed the same field. Choose which values to keep.</p><button type="button" id="hc15UseCloud">Use latest</button><button type="button" id="hc15KeepMine">Keep this device</button></div>
+    <table class="es-table hc15-table"><colgroup><col class="es-name-col"><col style="width:145px"><col style="width:170px">${Array(4).fill('<col style="width:150px">').join('')}<col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:200px"></colgroup><thead><tr><th class="es-name">Host / Cashier<span>Save · Sign · Print</span></th>${['Shift','Position','Clock In 1','Clock Out 1','Clock In 2','Clock Out 2','Total Hours','Tip AM','Tip PM','Paid Tip Out'].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody id="hc15Rows"></tbody></table>
+    <p class="hc15-footnote">Cash + Credit is split equally within each shift, using the existing cent-rounding rule. Double receives AM + PM. Clock fields are optional; they do not change the split.</p>`;
+  $('esGrid').appendChild(section);
+  $('hc15EditTeam').onclick=()=>window.fzOpenTodayTeam(hc15Session?.date||esSession?.date);
+  section.addEventListener('input',e=>{if(e.target.dataset.hc15Pool)hc15Set('',e.target.dataset.hc15Pool,e.target.value);if(e.target.dataset.hc15Clock){const val=esNormalizeClock(e.target.value);e.target.value=val;hc15Set(e.target.dataset.hc15Name,e.target.dataset.hc15Clock,val);}});
+  section.addEventListener('change',e=>{if(e.target.dataset.hc15Pool&&es14MoneyValid(e.target.value)&&e.target.value!==''){e.target.value=es14MoneyText(e.target.value);hc15Set('',e.target.dataset.hc15Pool,e.target.value);}});
+  section.addEventListener('click',e=>{const credit=e.target.closest('[data-hc15-credit]');if(credit){hc15OpenCredit(credit.dataset.hc15Credit);return;}const b=e.target.closest('[data-hc15-action]');if(!b)return;const name=b.dataset.hc15Name;if(b.dataset.hc15Action==='sign')hc15Sign(name);else hc15Action(name,b.dataset.hc15Action);});
+  $('hc15UseCloud').onclick=()=>{const s=hc15Session;if(!s)return;for(const key of s.conflicts)delete s.edits[key];s.conflicts=[];s.error='';hc15KeepLocal(s);hc15Render();};
+  $('hc15KeepMine').onclick=()=>{const s=hc15Session;if(!s)return;for(const key of s.conflicts)if(s.edits[key]){const [name]=JSON.parse(key);if(name&&!hc15Member(s.data,name)){s.error='This employee was removed from the team. Use latest, or add them again in Today’s Team.';hc15Render();return;}s.edits[key].base=tt15Copy(hc15Get(s.data,key));}s.conflicts=[];s.error='';hc15Schedule(s);hc15Render();};
+  const modal=document.createElement('div');modal.id='hc15SignModal';modal.className='es-modal hidden';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-labelledby','hc15SignTitle');
+  modal.innerHTML='<div class="es-sign-card"><h3 id="hc15SignTitle">Host / Cashier signature</h3><p id="hc15SignSummary"></p><canvas id="hc15SignCanvas" width="1000" height="320"></canvas><div class="es-sign-actions"><button type="button" id="hc15SignCancel">Cancel</button><button type="button" id="hc15SignClear">Clear</button><button type="button" id="hc15SignSave">Save signature</button></div><p id="hc15SignStatus" role="status"></p></div>';
+  $('employeeSheet').appendChild(modal);hc15BindSign();
+  const credit=document.createElement('div');credit.id='hc15CreditModal';credit.className='es-modal hidden';credit.setAttribute('role','dialog');credit.setAttribute('aria-modal','true');credit.innerHTML='<div class="es-sign-card"><h3 id="hc15CreditTitle">Credit accounts</h3><div id="hc15CreditRows"></div><button id="hc15CreditAdd" type="button">＋ Add account</button><p id="hc15CreditTotal"></p><div class="es-sign-actions"><button id="hc15CreditCancel" type="button">Cancel</button><button id="hc15CreditUse" type="button">Use total</button></div><p id="hc15CreditStatus" role="status"></p></div>';$('employeeSheet').appendChild(credit);hc15BindCredit();
+}
+function hc15Render(){
+  const s=hc15Session;if(!s||!$('hc15Rows'))return;
+  if(esPan||performance.now()<esTouchUntil){clearTimeout(s.renderTimer);s.renderTimer=setTimeout(hc15Render,180);return;}
+  const data=hc15View(s),members=tt15TeamRows({},data),key=JSON.stringify(members);
+  if(s.rowsKey!==key||!$('hc15Rows').children.length){
+    s.rowsKey=key;$('hc15Rows').innerHTML=members.map(r=>`<tr data-hc15-row="${tt15Key(r.name)}"><th class="es-name"><b>${esc(tt15Label(r.name))}</b><span class="es-state" data-hc15-state></span><div class="es-row-actions">${['Save','Sign','Print'].map(a=>`<button type="button" data-hc15-action="${a.toLowerCase()}" data-hc15-name="${esc(r.name)}">${a}</button>`).join('')}</div></th><td>${esc(r.shift)}</td><td>${esc(r.role)}</td>${['clockIn','clockOut','clockIn2','clockOut2'].map(f=>`<td><input type="text" inputmode="numeric" maxlength="5" data-hc15-clock="${f}" data-hc15-name="${esc(r.name)}" aria-label="${esc(r.name+' '+f)}" value="${esc(data.staffDetails?.[r.name]?.[f]||'')}" placeholder="${f.endsWith('2')&&r.shift!=='DOUBLE'?'—':'HH:MM'}"${f.endsWith('2')&&r.shift!=='DOUBLE'?' disabled':''}></td>`).join('')}<td data-hc15-out="hours"></td><td data-hc15-out="am"></td><td data-hc15-out="pm"></td><td class="es-payout" data-hc15-out="total"></td></tr>`).join('')||'<tr><td colspan="11">No Host / Cashier on this date. Add them in Today’s Team.</td></tr>';
+  }
+  for(const input of $('hc15Pools').querySelectorAll('input')){if(input!==document.activeElement)input.value=String(data[input.dataset.hc15Pool]??0);input.disabled=!s.verified||s.busy;}
+  for(const input of $('hc15Rows').querySelectorAll('input')){const r=hc15Member(data,input.dataset.hc15Name);input.disabled=!s.verified||s.busy||(input.dataset.hc15Clock.endsWith('2')&&r?.shift!=='DOUBLE');if(input!==document.activeElement)input.value=data.staffDetails?.[input.dataset.hc15Name]?.[input.dataset.hc15Clock]||'';}
+  for(const b of $('hc15Rows').querySelectorAll('button'))b.disabled=!s.verified||s.busy;
+  hc15UpdateValues();
+}
+function hc15UpdateValues(){
+  const s=hc15Session;if(!s||!$('hc15Status'))return;
+  const data=hc15View(s),q=String($('esSearch')?.value||'').toLowerCase();
+  $('hc15Status').textContent=s.error||(!s.verified?'Checking Host / Cashier…':s.writing?'Sharing changes…':Object.keys(s.edits).length?'Draft changes · auto-sync':'Live · Save a row to Final Report');
+  $('hc15Status').dataset.error=s.error?'1':'0';$('hc15Conflict').classList.toggle('hidden',!s.conflicts.length);
+  try{
+    const m=hc15Math(data);for(const cp of ['AM','PM'])$('hc15Pool'+cp).innerHTML='<b>'+esc(esMoney(m['pool'+cp]))+'</b><small>'+m['count'+cp]+' staff</small>';
+    for(const row of tt15TeamRows({},data)){
+      const tr=$('hc15Rows').querySelector('[data-hc15-row="'+tt15Key(row.name)+'"]');if(!tr)continue;const result=hc15Report(data,row.name),state=hc15Summary(s,row.name),mins=result.totalMinutesWork;
+      tr.hidden=!!q&&!(tt15Label(row.name)+' '+row.name).toLowerCase().includes(q);
+      const title=tr.querySelector('.es-name>b');if(title)title.textContent=tt15Label(row.name);
+      const status=tr.querySelector('[data-hc15-state]');status.textContent=state.text;status.dataset.kind=state.kind;
+      for(const [k,v]of Object.entries({hours:mins?Math.floor(mins/60)+'h '+mins%60+'m':'—',am:esMoney(result.hostCashierTipAM),pm:esMoney(result.hostCashierTipPM),total:esMoney(result.totalPaidOut)}))tr.querySelector('[data-hc15-out="'+k+'"]').textContent=v;
+    }
+  }catch(e){$('hc15Status').textContent=e.message;}
+}
+async function hc15Commit(name,signature=null,expected=''){
+  const s=hc15Session;if(!s?.verified)throw new Error('Checking cloud. Your signature is kept.');tt15Require(s.uid);
+  if(!(await hc15Flush(s)))throw new Error(s.error||'Host / Cashier draft could not sync.');
+  const view=hc15View(s);for(const f of TT15_POOLS)if(!es14MoneyValid(view[f]))throw new Error('Enter valid '+f+' with at most 2 decimals.');
+  if(s.conflicts.length)throw new Error('Review conflicting Host / Cashier edits before saving this pool.');
+  if(Object.keys(s.edits).some(k=>JSON.parse(k)[0]===name))throw new Error('Finish the selected employee’s clock fields before saving.');
+  hc15Hours(view,name,true);
+  const reportRef=doc(db,'hourlyReports','hc15-'+s.date+'-'+tt15Key(name)),ref=doc(db,'hostCashierTipReports',s.date);
+  const out=await runTransaction(db,async tx=>{
+    const hs=await tx.get(ref),rs=await tx.get(reportRef);tt15Require(s.uid);
+    if(!hs.exists())throw new Error('Set this date’s Host / Cashier team first.');
+    const data=hs.data(),before=rs.exists()?rs.data():null,r=hc15Report(data,name);hc15Hours(data,name,true);
+    if(before&&(!tt15IsHostReport(before)||!hourlyReportBelongsTo(before,name,s.date)))throw new Error('Report identity mismatch. No data was replaced.');
+    const fp=hc15Fingerprint(r);
+    if(signature&&fp!==expected)throw new Error('Amounts or team changed while signing. Cancel, review the updated row, then sign again. Your signature remains visible.');
+    const same=before?.hostCashierFingerprint===fp,sig=signature||(same?before?.pickupSignature:null);
+    const report={...r,hostCashierFingerprint:fp,pickupSignature:sig||null,signatureStatus:sig?'SIGNED':'PENDING',status:'money_ready',employeeSheetBuild:ES_BUILD,employeeKey:fzEmployeeIdentityKey(name),reportIdentityVersion:'13.8.28',updatedAt:serverTimestamp(),updatedBy:currentProfile?.displayName||currentProfile?.username||''};
+    const next=tt15Copy(data);next.sheetFinalized ||= {};next.sheetFinalized[tt15Key(name)]={id:reportRef.id,fingerprint:fp,signed:!!sig};next.signatures ||= {AM:{},PM:{}};
+    for(const cp of ['AM','PM']){
+      next.signatures[cp] ||= {};const amount=r['hostCashierTip'+cp],active=(data['employees'+cp]||[]).includes(name);
+      if(signature&&active)next.signatures[cp][name]={...signature,amount,date:s.date,signedAt:signature.signedAtLocal};
+      else if(!same&&next.signatures[cp][name]&&Number(next.signatures[cp][name].amount)!==amount)delete next.signatures[cp][name];
+    }
+    next.sheetRevision=Number(data.sheetRevision||0)+1;next.metrics=hc15Math(data);next.combinedPayout=tt15TeamRows({},data).map(e=>{const x=hc15Report(data,e.name);return {name:e.name,am:x.hostCashierTipAM,pm:x.hostCashierTipPM,total:x.totalPaidOut};});next.savedBy=currentProfile?.displayName||currentProfile?.username||'';next.savedByUid=s.uid;
+    if(before)tx.update(reportRef,report);else tx.set(reportRef,{...report,createdAt:serverTimestamp(),createdByUid:s.uid});
+    tx.set(ref,{...next,...tt15Stamp()});return {data:next,report:{...(before||{}),...report,id:reportRef.id}};
+  });
+  if(hc15Session===s)hc15Accept(s,out.data,true);
+  latestHourlyReports=[out.report,...latestHourlyReports.filter(r=>r.id!==out.report.id)];frRenderIfOpen();return out.report;
+}
+async function hc15Action(name,action='save'){
+  const s=hc15Session;if(!s||s.busy)return false;let popup=null;
+  const android=/Android/i.test(navigator.userAgent||'');if(action==='print'&&!android){popup=window.open('','_blank','width=430,height=760');if(!popup){s.error='Allow print pop-ups, then retry.';hc15UpdateValues();return false;}popup.document.write('<p>Preparing receipt…</p>');}
+  s.busy=true;hc15Render();
+  try{const report=await hc15Commit(name);if(action==='print')await hc15PrintReport(report,popup);s.error='';esStatus(tt15Label(name)+(action==='print'?' saved · receipt sent to print.':' saved to Final Report.'));return true;}
+  catch(e){popup?.close();s.error=e.message||String(e);esStatus(s.error,true);return false;}
+  finally{s.busy=false;hc15Render();hc15Schedule(s);}
+}
+async function hc15PrintReport(report,popup){
+  const html=esThermalHtml(report);
+  if(/Android/i.test(navigator.userAgent||'')){
+    try{await prepareSmallReportPassPrntReturn(report);try{const b=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');b.employeeSheet=true;localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(b));}catch(e){}
+      const link=document.createElement('a');link.href=esPassPrntUri(report,html);link.style.display='none';document.body.appendChild(link);link.click();link.remove();
+    }catch(e){await cancelSmallReportPassPrntReturn();throw e;}
+  }else{popup.document.open();popup.document.write(html);popup.document.close();setTimeout(()=>{try{popup.focus();popup.print();}catch(e){}},250);}
+}
+function hc15Sign(name){
+  const s=hc15Session;if(!s?.verified||s.busy)return;
+  try{const data=hc15View(s),r=hc15Report(data,name);hc15Hours(data,name,true);hc15Sig={name,uid:s.uid,date:s.date,fingerprint:hc15Fingerprint(r),strokes:[],current:null,scroll:es14CaptureScroll()};
+    $('hc15SignTitle').textContent=tt15Label(name)+' — Host / Cashier';$('hc15SignSummary').textContent=s.date+' · '+r.shift+' · Paid Tip Out '+esMoney(r.totalPaidOut);$('hc15SignStatus').textContent='Save signature returns to this row.';$('hc15SignModal').classList.remove('hidden');hc15Draw();$('hc15SignCancel').focus();
+  }catch(e){s.error=e.message;hc15UpdateValues();}
+}
+function hc15Draw(){const c=$('hc15SignCanvas');if(!c)return;const ctx=c.getContext('2d');ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle='#10233f';ctx.lineWidth=3.4;ctx.lineCap='round';ctx.lineJoin='round';for(const st of hc15Sig?.strokes||[]){ctx.beginPath();st.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p.x*c.width,p.y*c.height));ctx.stroke();}}
+function hc15BindSign(){
+  const c=$('hc15SignCanvas'),pt=e=>{const r=c.getBoundingClientRect();return {x:Math.max(0,Math.min(1,(e.clientX-r.left)/r.width)),y:Math.max(0,Math.min(1,(e.clientY-r.top)/r.height))};};
+  c.onpointerdown=e=>{if(!hc15Sig||hc15Session?.busy)return;e.preventDefault();c.setPointerCapture(e.pointerId);hc15Sig.current=[pt(e)];hc15Sig.strokes.push(hc15Sig.current);hc15Draw();};
+  c.onpointermove=e=>{if(hc15Sig?.current){e.preventDefault();if(hc15Sig.current.length<800)hc15Sig.current.push(pt(e));hc15Draw();}};
+  c.onpointerup=c.onpointercancel=()=>{if(hc15Sig)hc15Sig.current=null;};
+  $('hc15SignCancel').onclick=()=>{if(hc15Session?.busy)return;hc15Sig=null;$('hc15SignModal').classList.add('hidden');hc15Schedule();};
+  $('hc15SignClear').onclick=()=>{if(hc15Sig&&!hc15Session?.busy){hc15Sig.strokes=[];hc15Draw();}};
+  $('hc15SignSave').onclick=async()=>{
+    const sign=hc15Sig,s=hc15Session;if(!sign||!s||s.busy)return;if(sign.strokes.reduce((n,a)=>n+a.length,0)<4){$('hc15SignStatus').textContent='Please sign first.';return;}
+    if(sign.date!==s.date||sign.uid!==s.uid){$('hc15SignStatus').textContent='Work date or login changed. Close and sign again.';return;}
+    s.busy=true;hc15Render();$('hc15SignSave').disabled=true;$('hc15SignStatus').textContent='Saving…';
+    try{await hc15Commit(sign.name,esSerializeSignature(sign.strokes),sign.fingerprint);hc15Sig=null;$('hc15SignModal').classList.add('hidden');es14RestoreScroll(sign.scroll);esStatus(tt15Label(sign.name)+' signed · Final Report updated.');}
+    catch(e){$('hc15SignStatus').textContent=e.message||String(e);}
+    finally{s.busy=false;$('hc15SignSave').disabled=false;hc15Render();if(!hc15Sig)es14RestoreScroll(sign.scroll);hc15Schedule(s);}
+  };
+}
+function hc15OpenCredit(cp){
+  const s=hc15Session;if(!s?.verified||s.busy)return;const data=hc15View(s),rows=data['creditAccounts'+cp]||[];
+  hc15Credit={cp,rows:tt15Copy(rows.length?rows:[{label:'Account 1',amount:data['credit'+cp]||0}])};$('hc15CreditTitle').textContent='Credit '+cp+' — Accounts';$('hc15CreditStatus').textContent='';$('hc15CreditModal').classList.remove('hidden');hc15CreditRender();
+}
+function hc15CreditRender(){
+  if(!hc15Credit)return;$('hc15CreditRows').innerHTML=hc15Credit.rows.map((r,i)=>`<div class="hc15-credit-row"><input data-hc15-account="${i}" data-key="label" value="${esc(r.label||'')}" placeholder="Account name" maxlength="80" aria-label="Account ${i+1}"><input data-hc15-account="${i}" data-key="amount" value="${esc(r.amount)}" inputmode="decimal" aria-label="Amount ${i+1}"><button type="button" data-hc15-remove="${i}" aria-label="Remove account ${i+1}">✕</button></div>`).join('');hc15CreditTotal();
+}
+function hc15CreditTotal(){if(hc15Credit)$('hc15CreditTotal').textContent='Total '+esMoney(hc15Credit.rows.reduce((sum,r)=>sum+Math.round((Number(r.amount)||0)*100),0)/100);}
+function hc15BindCredit(){
+  $('hc15CreditRows').oninput=e=>{if(e.target.dataset.hc15Account===undefined||!hc15Credit)return;hc15Credit.rows[Number(e.target.dataset.hc15Account)][e.target.dataset.key]=e.target.value;hc15CreditTotal();};
+  $('hc15CreditRows').onclick=e=>{const b=e.target.closest('[data-hc15-remove]');if(!b||!hc15Credit)return;hc15Credit.rows.splice(Number(b.dataset.hc15Remove),1);hc15CreditRender();};
+  $('hc15CreditAdd').onclick=()=>{if(hc15Credit&&hc15Credit.rows.length<50){hc15Credit.rows.push({label:'Account '+(hc15Credit.rows.length+1),amount:0});hc15CreditRender();}};
+  $('hc15CreditCancel').onclick=()=>{hc15Credit=null;$('hc15CreditModal').classList.add('hidden');hc15Schedule();};
+  $('hc15CreditUse').onclick=()=>{const c=hc15Credit,s=hc15Session;if(!c||!s)return;if(c.rows.some(r=>!es14MoneyValid(r.amount))){$('hc15CreditStatus').textContent='Enter valid nonnegative amounts, with at most 2 decimals.';return;}
+    const total=c.rows.reduce((sum,r)=>sum+Math.round((Number(r.amount)||0)*100),0)/100;hc15Set('','credit'+c.cp,String(total));hc15Set('','creditAccounts'+c.cp,c.rows.map(r=>({label:r.label,amount:Number(r.amount)||0})));hc15Credit=null;$('hc15CreditModal').classList.add('hidden');hc15Render();hc15Schedule(s);
+  };
+}
+function hc15Jump(){
+  const target=$('hc15Section'),port=esSheetScrollPort();if(!target||!port)return;
+  port.scrollLeft=0;port.scrollTop+=target.getBoundingClientRect().top-port.getBoundingClientRect().top-4;
+}
+
+/* Integration stays scoped: host records must never enter server BAR math. */
+(function(){
+  const prepare=esPrepareBatch,find=esFindReport,accept=esAcceptRead,init=esInit,render=esRenderRows,open=window.employeeSheetOpen;
+  esPrepareBatch=function(source,reports,date){const removed=new Set(source?.todayTeamRemoved||[]);return prepare(source,(reports||[]).filter(r=>!tt15IsHostReport(r)&&!removed.has(r.employee)),date);};
+  esFindReport=function(reports,name){return find((reports||[]).filter(r=>!tt15IsHostReport(r)),name);};
+  esAcceptRead=function(c,kind,value,...rest){return accept(c,kind,kind==='reports'?(value||[]).filter(r=>!tt15IsHostReport(r)):value,...rest);};
+  esRenderRows=function(...a){const out=render(...a);tt15PaintNames();return out;};
+  esInit=function(...a){const out=init(...a);hc15Init();
+    if($('esToolActions')&&!$('tt15SheetTeam')){const b=document.createElement('button');b.type='button';b.id='tt15SheetTeam';b.textContent="Today's Team";b.onclick=()=>window.fzOpenTodayTeam(esSession?.date);$('esToolActions').prepend(b);}
+    if($('esTeamDetails')){$('esTeamDetails').querySelector('summary').textContent='BAR assignments';$('esTeamDetails').querySelector('.es-add')?.classList.add('hidden');}
+    if($('esQuickColumns')&&!$('esQuickColumns').querySelector('[value="host-cashier"]')){
+      const option=document.createElement('option');option.value='host-cashier';option.textContent='Host / Cashier ↓';$('esQuickColumns').appendChild(option);
+      $('esQuickColumns').addEventListener('change',e=>{if(e.target.value==='host-cashier'){e.stopImmediatePropagation();hc15Jump();e.target.value='';}},true);
+      $('esSearch').addEventListener('input',()=>{tt15PaintNames();hc15UpdateValues();});
+      $('esReload').addEventListener('click',()=>{hc15Stop();hc15Start(esSession?.date);});
+    }
+    const empty=$('esRows')?.querySelector('.es-empty');if(empty)empty.textContent="Add employees in Today's Team → Update Team.";
+    return out;
+  };
+  window.employeeSheetOpen=async function(...a){if(tt15State?.busy)return;tt15Close();tt15DirectoryStart();const out=await open(...a);if(esAllowed()&&esSession)hc15Start(esSession.date);return out;};
+  for(const name of ['fzOpenRoleHome','fzOpenManagerTools','fzOpenTipCalculation','fzOpenFinalReport']){
+    const original=window[name];if(typeof original!=='function')continue;
+    window[name]=function(...a){tt15Close();hc15Stop();return original(...a);};
+  }
+  window.fzOpenHostCashier=async function(){if(!esAllowed())return;await window.employeeSheetOpen(esSession?.date||todayLocal());requestAnimationFrame(()=>requestAnimationFrame(hc15Jump));};
+})();
+window.addEventListener('fz-host-math-ready',()=>hc15Render());
+window.addEventListener('online',()=>hc15Schedule());
+window.addEventListener('offline',()=>{if(hc15Session){hc15Session.error='Offline · inputs kept on this device';hc15UpdateValues();}});
+window.addEventListener('beforeunload',()=>hc15KeepLocal());
+try{onAuthStateChanged(auth,user=>{if(!user||!esAllowed()){tt15Close();hc15Stop();tt15Directory.unsub?.();tt15Directory={uid:'',data:{},ready:false,unsub:null};hc15Sig=null;hc15Credit=null;$('hc15SignModal')?.classList.add('hidden');$('hc15CreditModal')?.classList.add('hidden');$('tt15DirectoryPanel')?.classList.add('hidden');}});}catch(e){}

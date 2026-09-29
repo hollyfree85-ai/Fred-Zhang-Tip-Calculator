@@ -319,3 +319,141 @@ body.fz-final-report #finalReportHub #smallReport,body.fz-final-report #finalRep
  #finalReportHub .fz-monthly-head p{font-size:15px;line-height:1.4}
  #finalReportHub .small-report-summary{grid-template-columns:1fr 1fr!important}
 }
+
+/* ES1.5 — Today's Team + manager/owner employee directory. */
+body.tt15-active{overflow:hidden!important}
+#todayTeamPage{position:fixed;inset:0;z-index:22000;background:#eaf2f7;color:#15354a;overflow:auto;padding:12px 18px 26px;font:18px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;isolation:isolate}
+#todayTeamPage.hidden{display:none!important}
+#todayTeamPage *{box-sizing:border-box}
+#todayTeamPage .tt15-header{position:sticky;top:-12px;z-index:5;display:flex;gap:14px;align-items:center;justify-content:space-between;background:linear-gradient(130deg,#0b253b,#155d78);color:#fff;padding:14px;border-radius:18px;box-shadow:0 4px 0 #082637;margin-bottom:16px}
+#todayTeamPage h2{margin:0!important;font-size:30px!important;color:inherit}
+#todayTeamPage h3{font-size:25px!important;color:#15354a;margin:0!important}
+#todayTeamPage button,#todayTeamPage input,#todayTeamPage select{font-family:inherit;font-size:18px!important;line-height:1.3;min-height:48px;border:1px solid #b7cedc;border-radius:12px;padding:10px;color:#15354a;max-width:100%;box-shadow:0 3px 0 #bed1de;background:linear-gradient(#fff,#eef6fb)}
+#todayTeamPage input,#todayTeamPage select{background:#fff!important;width:100%;box-shadow:inset 0 2px 4px #12334a09}
+#todayTeamPage input:focus-visible,#todayTeamPage button:focus-visible,#todayTeamPage select:focus-visible{outline:3px solid #0f8fca;outline-offset:2px}
+#todayTeamPage button{font-weight:800;cursor:pointer}
+#todayTeamPage button:disabled{opacity:.55;cursor:default}
+#todayTeamPage select:disabled{opacity:1;color:#21495e;background:#edf6fa!important;-webkit-text-fill-color:#21495e}
+#todayTeamPage .tt15-primary{background:linear-gradient(#228aab,#12688b);color:#fff;border-color:#12698b;box-shadow:0 3px 0 #0f455e}
+#todayTeamPage .tt15-toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-bottom:10px}
+#todayTeamPage .tt15-toolbar label{width:220px;font-size:16px;font-weight:800;margin:0}
+#todayTeamPage .tt15-toolbar input{margin-top:4px}
+#tt15Status{min-height:26px;max-width:1200px;margin:8px 0;color:#35637a}
+#tt15Status[data-error="1"],#tt15DirectoryStatus{color:#993b2b;white-space:normal;overflow-wrap:anywhere}
+#todayTeamPage .tt15-team-grid{overflow:auto;border-radius:14px;border:1px solid #b6ccd9;box-shadow:0 4px 0 #bed1dc;background:white}
+#todayTeamPage .tt15-table{width:100%;min-width:760px;table-layout:fixed;border-collapse:separate;border-spacing:0;margin:0}
+#todayTeamPage .tt15-table th,#todayTeamPage .tt15-table td{padding:13px 12px;font-size:18px;border-right:1px solid #d5e4ec;border-bottom:1px solid #c1d8e4;text-align:left;vertical-align:middle;background:#fff}
+#todayTeamPage .tt15-table th{position:sticky;top:0;z-index:2;background:#143d55;color:white;font-weight:850}
+#todayTeamPage .tt15-table th:first-child,#todayTeamPage .tt15-table td:first-child{position:sticky;left:0;width:38%;z-index:1;box-shadow:4px 0 5px #143d5510}
+#todayTeamPage .tt15-table th:first-child{z-index:4}
+#todayTeamPage .tt15-table th:nth-child(2){width:26%}
+#todayTeamPage .tt15-table th:nth-child(3){width:26%}
+#todayTeamPage .tt15-table th:last-child{width:76px}
+#todayTeamPage .tt15-table tr:nth-child(even) td{background:#f2f8fc}
+#todayTeamPage .tt15-actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}
+#todayTeamPage .tt15-hint{font-size:16px!important;color:#4d6e82;line-height:1.5;margin:12px 0;max-width:1000px}
+#todayTeamPage .tt15-modal{position:fixed;inset:0;z-index:30;padding:20px;background:#082232bd;display:flex;align-items:center;justify-content:center}
+#todayTeamPage .tt15-modal.hidden{display:none!important}
+#todayTeamPage .tt15-dialog{width:min(960px,100%);max-height:94dvh;overflow:auto;border-radius:22px;padding:22px;background:#fafdff;box-shadow:0 22px 60px #08223270}
+#todayTeamPage .tt15-dialog>header{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:-22px;padding:8px 0;background:#fafdff;z-index:2}
+#todayTeamPage .tt15-directory-toolbar{display:flex;gap:12px;margin:14px 0}
+#todayTeamPage .tt15-directory-toolbar input{flex:1;min-width:120px}
+#tt15DirectoryEdit{border:1px solid #aecfdf;border-radius:16px;padding:16px;background:#eaf5fa;margin:16px 0;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#tt15DirectoryEdit.hidden{display:none!important}
+#tt15DirectoryEdit label{margin:0;font-size:16px!important;font-weight:800}
+#tt15DirectoryEdit .tt15-actions{margin:0;align-items:end}
+#todayTeamPage .tt15-show-inactive{display:flex;gap:10px;align-items:center;font-size:16px!important}
+#todayTeamPage .tt15-show-inactive input{width:24px;height:24px;min-height:24px;box-shadow:none}
+#todayTeamPage .tt15-person{display:flex;gap:10px;align-items:center;padding:12px;border:1px solid #ccdee8;border-radius:12px;background:#fff;margin:10px 0}
+#todayTeamPage .tt15-person>div{flex:1;min-width:0;overflow-wrap:anywhere}
+#todayTeamPage .tt15-person b{font-size:20px}
+#todayTeamPage .tt15-person small{display:block;font-size:15px;color:#537080;margin-top:4px}
+/* HC stays physically below the Server / Bartender table in the same scrollport. */
+#employeeSheet .hc15-section{position:relative;padding-top:20px;min-height:220px;background:#edf7f4;width:100%;border-top:7px solid #3d8878}
+#employeeSheet .hc15-heading,#employeeSheet .hc15-status,#employeeSheet .hc15-pools,#employeeSheet .hc15-footnote,#hc15Conflict{position:relative;left:0;width:min(960px,calc(100vw - 54px));max-width:none;margin:0 12px 12px}
+#employeeSheet .hc15-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;left:0}
+#employeeSheet .hc15-heading h3{font-size:25px!important;color:#1b5348;margin:0!important}
+#employeeSheet .hc15-status{font-size:16px;line-height:1.4;overflow-wrap:anywhere;position:sticky;left:0}
+#employeeSheet .hc15-status[data-error="1"]{color:#993b2b}
+#employeeSheet .hc15-pools{overflow:auto;background:white;border:1px solid #b4d0c8;border-radius:12px;position:sticky;left:0}
+#employeeSheet .hc15-pools table{min-width:590px;width:100%;table-layout:fixed;margin:0;border-collapse:separate;border-spacing:0}
+#employeeSheet .hc15-pools th,#employeeSheet .hc15-pools td{padding:10px 8px;border-bottom:1px solid #d8e6e1;font-size:18px;text-align:left;vertical-align:top;background:white}
+#employeeSheet .hc15-pools thead th{background:#d9eee7;color:#205448}
+#employeeSheet .hc15-pools th:first-child{width:65px}
+#employeeSheet .hc15-pools th:last-child{width:160px}
+#employeeSheet .hc15-accounts{font-size:15px!important;min-height:34px;margin-top:5px;width:100%}
+#employeeSheet .hc15-table{width:calc(var(--es-name-w) + 1565px)!important;margin:0;border-top:1px solid #aecac1}
+#employeeSheet .hc15-table thead th{background:linear-gradient(#267865,#175643)!important;color:#fff!important}
+#employeeSheet .hc15-table .es-name{background:#eff8f4}
+#employeeSheet .hc15-table [data-hc15-out]{font-weight:850;font-size:20px!important;white-space:nowrap;text-align:right}
+#employeeSheet .hc15-table [data-hc15-out="total"]{color:#14634d;font-size:24px!important}
+#employeeSheet .hc15-table [data-hc15-action="save"]{background:linear-gradient(#228cab,#15678a);color:#fff;border-color:#176a88}
+#employeeSheet .hc15-table [data-hc15-action="sign"]{background:linear-gradient(#e3f7ef,#cdeade);color:#205342}
+#employeeSheet .hc15-footnote{font-size:16px;line-height:1.5;color:#426c62;padding:12px 0;position:sticky;left:0}
+#hc15Conflict{padding:12px;border-radius:10px;background:#fff1e7;color:#8d432b;position:sticky;left:0}
+#hc15Conflict button{margin-right:10px}
+#hc15SignCanvas{display:block;width:100%;height:220px;border:2px solid #adcad8;border-radius:15px;background:white;touch-action:none;margin:14px 0}
+#hc15SignModal,#hc15CreditModal{z-index:2147483001!important}
+#hc15CreditModal .hc15-credit-row{display:grid;grid-template-columns:1fr 130px 46px;gap:10px;margin-bottom:12px}
+#hc15CreditModal .es-sign-actions{display:flex;gap:12px;margin-top:16px}
+#hc15CreditModal .es-sign-actions button{flex:1}
+@media(max-width:700px){
+ #todayTeamPage{padding:8px 10px 22px;font-size:19px}
+ #todayTeamPage .tt15-header{gap:8px;padding:10px;top:-8px;border-radius:14px}
+ #todayTeamPage h2{font-size:23px!important;line-height:1.1!important}
+ #todayTeamPage button,#todayTeamPage input,#todayTeamPage select{font-size:19px!important;min-height:48px}
+ #todayTeamPage .tt15-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+ #todayTeamPage .tt15-toolbar label{width:auto;grid-column:1/-1}
+ #todayTeamPage .tt15-team-grid{max-height:55dvh}
+ #todayTeamPage .tt15-actions button{flex:1}
+ #todayTeamPage .tt15-modal{padding:10px}
+ #todayTeamPage .tt15-dialog{padding:16px}
+ #todayTeamPage .tt15-dialog>header{top:-16px}
+ #todayTeamPage .tt15-directory-toolbar{flex-direction:column}
+ #tt15DirectoryEdit{grid-template-columns:1fr;padding:12px}
+ #todayTeamPage .tt15-person{flex-wrap:wrap;gap:8px}
+ #todayTeamPage .tt15-person>div{flex-basis:100%}
+ #todayTeamPage .tt15-person button{flex:1}
+ #employeeSheet .hc15-heading,#employeeSheet .hc15-status,#employeeSheet .hc15-pools,#employeeSheet .hc15-footnote,#hc15Conflict{width:calc(100vw - 52px);margin-left:8px}
+ #employeeSheet .hc15-heading h3{font-size:23px!important}
+ #employeeSheet .hc15-pools table{min-width:555px}
+ #employeeSheet .hc15-pools th,#employeeSheet .hc15-pools td{font-size:19px}
+ #employeeSheet .hc15-table input{font-size:19px!important}
+ #hc15CreditModal .hc15-credit-row{grid-template-columns:minmax(100px,1fr) 95px 40px;gap:5px}
+}
+/* Phone team editor: all three fields visible; never shrink the names. */
+@media(max-width:700px){
+ #todayTeamPage .tt15-team-grid{max-height:60dvh;overflow-x:hidden}
+ #todayTeamPage .tt15-table{display:block;min-width:0;width:100%;table-layout:auto}
+ #todayTeamPage .tt15-table thead{display:none}
+ #todayTeamPage .tt15-table tbody{display:block}
+ #todayTeamPage .tt15-table tbody tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 46px;gap:8px;padding:12px;border-bottom:2px solid #c7dce7;background:#fff}
+ #todayTeamPage .tt15-table tbody tr:nth-child(even){background:#f2f8fc}
+ #todayTeamPage .tt15-table td{position:static!important;width:auto!important;border:0;padding:0!important;background:transparent!important;box-shadow:none!important;min-width:0}
+ #todayTeamPage .tt15-table td:first-child{grid-column:1/3;grid-row:1}
+ #todayTeamPage .tt15-table td:nth-child(2){grid-column:1;grid-row:2}
+ #todayTeamPage .tt15-table td:nth-child(3){grid-column:2/4;grid-row:2}
+ #todayTeamPage .tt15-table td:last-child{grid-column:3;grid-row:1;align-self:end}
+ #todayTeamPage .tt15-table td[colspan]{grid-column:1/-1!important}
+ #todayTeamPage .tt15-table td:nth-child(2):before{content:'Position';display:block;font-size:15px;font-weight:750;margin-bottom:5px;color:#46677b}
+ #todayTeamPage .tt15-table td:nth-child(3):before{content:'Shift';display:block;font-size:15px;font-weight:750;margin-bottom:5px;color:#46677b}
+ #todayTeamPage .tt15-table select{padding:10px 5px!important;min-width:0}
+ #todayTeamPage .tt15-table td:last-child button{width:44px;padding:4px}
+ #employeeSheet .hc15-pools table{min-width:0!important;width:100%!important}
+ #employeeSheet .hc15-pools th,#employeeSheet .hc15-pools td{padding:7px 4px!important;font-size:17px!important;overflow-wrap:anywhere}
+ #employeeSheet .hc15-pools th:first-child{width:35px!important}
+ #employeeSheet .hc15-pools th:last-child{width:85px!important}
+ #employeeSheet .hc15-pools input{font-size:19px!important;padding:10px 5px!important;min-width:0}
+ #employeeSheet .hc15-pools button.hc15-accounts{min-height:36px!important;font-size:15px!important;padding:5px!important}
+}
+/* Keep inline controls inside their cells despite legacy nowrap table rules. */
+#employeeSheet .hc15-pools th,#employeeSheet .hc15-pools td{white-space:normal!important;line-height:1.3;vertical-align:top}
+#employeeSheet .hc15-pools button.hc15-accounts{display:block!important;white-space:normal!important}
+#employeeSheet .hc15-pools [id^="hc15Pool"] b{display:block;white-space:nowrap;font-size:18px}
+#employeeSheet .hc15-pools [id^="hc15Pool"] small{display:block;font-size:15px;margin-top:3px}
+@media(max-width:700px){
+ #employeeSheet .hc15-pools th:first-child{width:45px!important}
+ #employeeSheet .hc15-pools th:last-child{width:85px!important}
+ #employeeSheet .hc15-pools thead th{font-size:16px!important}
+ #employeeSheet .hc15-pools [id^="hc15Pool"] b{font-size:17px}
+}

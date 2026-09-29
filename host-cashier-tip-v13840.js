@@ -490,3 +490,14 @@ if(document.readyState==="loading"){
 }else{
   init();
 }
+
+// ES1.5: no legacy formula or save method changed. Expose pure split math only.
+window.FZHostCashierMath=Object.freeze({
+ names:Object.freeze(HOSTS.map(x=>x[0])), allocate, cents:cent,
+ calculate(data){
+  const am=[...new Set((data.employeesAM||[]).filter(Boolean))],pm=[...new Set((data.employeesPM||[]).filter(Boolean))];
+  const poolAM=(cent(data.cashAM)+cent(data.creditAM))/100,poolPM=(cent(data.cashPM)+cent(data.creditPM))/100;
+  return {poolAM,poolPM,am,pm,amountsAM:allocate(poolAM,am),amountsPM:allocate(poolPM,pm),eachAM:am.length?poolAM/am.length:0,eachPM:pm.length?poolPM/pm.length:0,countAM:am.length,countPM:pm.length};
+ }
+});
+try{window.dispatchEvent(new Event('fz-host-math-ready'));}catch(e){}
