@@ -457,3 +457,30 @@ body.tt15-active{overflow:hidden!important}
  #employeeSheet .hc15-pools thead th{font-size:16px!important}
  #employeeSheet .hc15-pools [id^="hc15Pool"] b{font-size:17px}
 }
+
+/* ES1.6 — exports stay below both staff tables and in view horizontally. */
+#employeeSheet .es16-daily-exports{position:sticky;left:0;box-sizing:border-box;width:calc(100vw - 56px);max-width:960px;margin:20px 12px 18px;padding:20px;background:#f9fcff;border:1px solid #b5cdda;border-top:5px solid #1d6987;border-radius:14px;box-shadow:0 4px 0 #d0e1eb;color:#183d52;white-space:normal}
+#employeeSheet.es-desktop-page .es16-daily-exports{width:calc(var(--es-page-width, 100vw) - 28px)}
+#employeeSheet .es16-export-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+#employeeSheet .es16-export-heading h3{margin:0!important;font-size:25px!important;color:#173e54;line-height:1.2}
+#employeeSheet .es16-export-heading p{margin:6px 0 0;font-size:16px!important;line-height:1.4}
+#employeeSheet .es16-export-tag{background:#dfefe9;color:#245d4b;padding:7px 10px;border-radius:20px;font-size:14px!important;font-weight:800;white-space:nowrap}
+#employeeSheet .es16-export-note{font-size:16px!important;line-height:1.45;color:#526e7e;margin:10px 0 16px;white-space:normal}
+#employeeSheet .es16-export-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+#employeeSheet .es16-export-buttons button{white-space:normal;min-height:58px;font-size:18px!important;font-weight:800;line-height:1.3;padding:12px;word-break:normal;border-radius:12px;cursor:pointer}
+#employeeSheet .es16-export-buttons [data-es16-format="xls"]{background:linear-gradient(#e5f5ed,#cce8db);border:1px solid #7cae98;box-shadow:0 3px 0 #98beab;color:#215642}
+#employeeSheet .es16-export-buttons [data-es16-format="pdf"]{background:linear-gradient(#ecf4fc,#d9e9f5);border:1px solid #94b6cd;box-shadow:0 3px 0 #a8c6da;color:#194c6a}
+#employeeSheet .es16-export-buttons button:focus-visible{outline:3px solid #0088be;outline-offset:3px}
+#employeeSheet .es16-export-buttons button:disabled{opacity:.55;cursor:wait}
+#employeeSheet #es16ExportStatus{font-size:16px!important;line-height:1.45;margin:14px 0 0;color:#245d4b;white-space:normal;overflow-wrap:anywhere}
+#employeeSheet #es16ExportStatus:empty{display:none}
+#employeeSheet #es16ExportStatus[data-error="1"]{color:#973d2d}
+@media(max-width:700px){
+ #employeeSheet .es16-daily-exports{width:calc(100vw - 52px);margin:18px 8px 20px;padding:15px 12px}
+ #employeeSheet .es16-export-heading{align-items:flex-start}
+ #employeeSheet .es16-export-heading h3{font-size:22px!important}
+ #employeeSheet .es16-export-tag{font-size:12px!important;padding:6px 8px}
+ #employeeSheet .es16-export-buttons{gap:10px}
+ #employeeSheet .es16-export-buttons button{font-size:17px!important;min-height:76px;padding:10px 7px}
+}
+@media(max-width:360px){#employeeSheet .es16-export-buttons{grid-template-columns:1fr}#employeeSheet .es16-export-tag{display:none}}

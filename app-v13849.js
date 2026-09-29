@@ -10267,7 +10267,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.5';
+const ES_BUILD='ES1.6';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10292,7 +10292,7 @@ function esPrepareBatch(source,reports,date){
     if(r.date!==date || !r.employee)continue;
     const name=s.team.find(n=>esKey(n)===esKey(r.employee))||r.employee;
     if(!s.team.includes(name))s.team.push(name);
-    if(!s.drafts[name] || !s.drafts[name].values?.hShift){
+    if(!s.drafts[name] || (!s.drafts[name].values?.hShift && !es16RawValid(s.drafts[name],s,name))){
       s.drafts[name]=hv1DraftFromFinalizedReport(r,name,date);
     }
     const d=s.drafts[name];
@@ -10318,6 +10318,7 @@ function esRowsFromBatch(s,reports=[],date=s.date||hv1DateValue()){
     for(const [field,cp] of [['barAM','AM'],['bar24','2PM_4PM'],['barPM','PM']]){
       if(s.bar?.[cp]?.excluded?.[name]===undefined && !d.entered?.[hv1BarChoiceField(cp,s,name)])row[field]=true;
     }
+    if(es16RawValid(d,s,name))for(const field of ES_FIELDS)if(Object.prototype.hasOwnProperty.call(d.employeeSheetRawRow,field))row[field]=d.employeeSheetRawRow[field];
     return row;
   });
 }
@@ -10426,7 +10427,11 @@ function esBuildBatch(source,rows,date,route){
     }
   }
   // These are the same, unchanged BAR functions as the existing Team Board.
-  hv1ApplyBarAutomation(s);return s;
+  hv1ApplyBarAutomation(s);
+  // Preserve intentional blanks through the legacy wizard/BAR bridge. A legacy
+  // editor changing its underlying values invalidates this raw overlay.
+  for(const row of rows){const d=s.drafts[row.name];d.employeeSheetRawRow=esClone(row);d.employeeSheetRawSource=es16RawSource(s,row.name);}
+  return s;
 }
 function esCalculate(row,batch,oldReport=null){
   const L=window.FredTipCalculatorLogic,d=batch.drafts[row.name],v=d.values,bt=row.role==='Bartender';
@@ -10513,8 +10518,8 @@ function esRecalculate(){
   }catch(e){esStatus(e.message,true);}
 }
 function esPersistLocal(){
-  const s=esSession;if(!s?.ready)return;
-  try{localStorage.setItem(esDraftKey(s.date,s.uid),JSON.stringify({date:s.date,rows:s.rows,dirty:s.dirty,routing:s.routing,baseRows:s.baseRows,baseRouting:s.baseRouting,savedAt:Date.now(),scrollLeft:$('esGrid')?.scrollLeft||0,scrollTop:$('esGrid')?.scrollTop||0}));}catch(e){esStatus('Device draft storage is full. Use Save before leaving.',true);}
+  const s=esSession;if(!s?.ready)return false;
+  try{localStorage.setItem(esDraftKey(s.date,s.uid),JSON.stringify({date:s.date,rows:s.rows,dirty:s.dirty,routing:s.routing,baseRows:s.baseRows,baseRouting:s.baseRouting,draftSaves:s.draftSaves||{},savedAt:Date.now(),scrollLeft:$('esGrid')?.scrollLeft||0,scrollTop:$('esGrid')?.scrollTop||0}));return true;}catch(e){esStatus('Device draft could not be saved. Free storage or reconnect before leaving.',true);return false;}
 }
 const ES_COLUMNS=[
  ['shift','Shift',145,'staff'],['clockIn','Clock In 1',130,'clocks'],['clockOut','Clock Out 1',130,'clocks'],['clockIn2','Clock In 2',130,'clocks'],['clockOut2','Clock Out 2',130,'clocks'],['hours','Total Hours',135,'clocks'],['role','Position',150,'staff'],
@@ -10555,6 +10560,13 @@ function esOutput(row,field){
 }
 function esRowStatus(row){
   const s=esSession,old=esFindReport(s.reports,row.name),r=s.results[row.name];
+  const incomplete=esValidateSales(row,s.routing,true).length>0;
+  if(incomplete || !old || esFingerprint(r)!==esFingerprint(old)){
+    const shared=s.baseBatch?.drafts?.[row.name]?.employeeSheetDraftSaved;
+    if(shared&&es16RowMatches(row,shared.row)&&!(s.conflicts||[]).some(c=>c.name===row.name||c.name==='BAR routing'))return {text:'Draft saved · synced',kind:'draft'};
+    const local=s.draftSaves?.[row.name];
+    if(local&&es16RowMatches(row,local.row))return {text:'Draft saved · device only',kind:'draft'};
+  }
   if(s.errors[row.name]?.length)return {text:'Check input',kind:'error'};
   if(!old)return {text:'Draft · not saved',kind:'draft'};
   if(esFingerprint(r)!==esFingerprint(old))return {text:'Changed · Save again',kind:'dirty'};
@@ -10704,6 +10716,7 @@ window.employeeSheetOpen=async function(date,force=false){
   const batch=esPrepareBatch(local,reports,d),rows=esRowsFromBatch(batch,reports,d);
   const routing=esRouting(rows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,batch.bar[cp].bartender||''])));
   Object.assign(esSession,{ready:true,baseBatch:batch,baseRows:esClone(rows),rows,reports,routing,baseRouting:esClone(routing),hadCloud:false,rawBase:esClone(local)});
+  esSession.draftSaves=draft?.date===d?draft.draftSaves||{}:{};
   if(draft?.date===d && Array.isArray(draft.rows) && (Object.keys(draft.dirty||{}).length||JSON.stringify(draft.routing)!==JSON.stringify(draft.baseRouting)) && confirm('Restore unfinished Employee Sheet input for '+d+' from this device?')){
     esSession.rows=draft.rows;esSession.dirty=draft.dirty||{};esSession.baseRows=draft.baseRows||rows;esSession.routing=draft.routing||routing;esSession.baseRouting=draft.baseRouting||routing;
   }
@@ -10932,7 +10945,7 @@ function esSetReadStatus(c){
   let text;
   if(error)text='Cloud read failed: '+String(error.code||error.message||error)+'. Tap Reload. Your device draft is kept.';
   else if(s.cloudReady)text=esHasEdits(s)?'Cloud connected · Unsynced device edits. Use Sync Draft or Save.':'Cloud connected · Shared sheet.';
-  else if(c.slow)text='Connection is slow or offline. Showing available data; checking another read connection. Save stays locked until checked.';
+  else if(c.slow)text='Connection is slow or offline. Showing available data; checking another read connection. Save keeps a device draft until the connection is checked.';
   else text='Checking cloud '+(!c.batch.server?'team / BAR':'Daily Reports')+'… Available rows are shown below.';
   const el=$('esCloudStatus');if(el){el.textContent=ES_BUILD+' · '+text;el.dataset.error=error?'1':'0';}
   esReadControls();
@@ -10944,7 +10957,7 @@ function esSetReadStatus(c){
 function esReadControls(){
   const s=esSession;if(!s?.ready||!s.esReadEnabled)return;
   const locked=s.busy||!s.cloudReady;
-  for(const b of document.querySelectorAll('#esRows [data-es-action],#esSyncDraft'))b.disabled=locked;
+  for(const b of document.querySelectorAll('#esRows [data-es-action],#esSyncDraft'))b.disabled=b.dataset.esAction==='save'?s.busy||!es14AllowedSession(s):locked;
 }
 function esReadStamp(value){
   if(!value)return 0;if(typeof value.toMillis==='function')return value.toMillis();
@@ -11671,7 +11684,7 @@ esApplyRead=function(c){
   try{
     es14Rebase(s,raw,reports);s.hadCloud=!!s.hadCloud||!!value?.exists;c.pending=false;
     latestHourlyReports=[...reports,...latestHourlyReports.filter(r=>r.date!==s.date)];
-    if(s.cloudReady&&!c.initialReady){c.initialReady=true;esStatus('Shared sheet loaded. Edits sync automatically. Save writes the selected Final Report.');}
+    if(s.cloudReady&&!c.initialReady){c.initialReady=true;esStatus('Shared sheet loaded. Save keeps unfinished rows as drafts; complete rows update Final Report.');}
     esFastCacheSave(c);es14Schedule(s);frRenderIfOpen();
   }catch(e){esRejectRead(c,'batch',e);}
 };
@@ -11747,8 +11760,13 @@ esCommit=async function(name,signature=null,expectedSignatureFingerprint=''){
 };
 window.employeeSheetSave=async function(name){
   if(!esAllowed()||esSession?.busy)return false;const scroll=es14CaptureScroll();
-  esSetBusy(true);esStatus('Saving '+name+' to Final Report…');
-  try{await esCommit(name);esStatus(name+' saved · Final Report updated.');return true;}
+  esSetBusy(true);esStatus('Saving '+name+'…');
+  try{
+    const row=esSession.rows.find(r=>r.name===name);if(!row)throw new Error('Employee row not found.');
+    if(esValidateSales(row,esSession.routing,true).length || !esSession.cloudReady || !es14IsOnline())await es16SaveDraft(name);
+    else{await esCommit(name);esStatus(name+' saved · Final Report updated.');}
+    return true;
+  }
   catch(e){es14HandleError(e);return false;}
   finally{esSetBusy(false);esRenderRows();esRenderRouting();const p=esSheetScrollPort();if(p){p.scrollLeft=scroll.left;p.scrollTop=scroll.top;}es14ConflictUI();}
 };
@@ -12233,7 +12251,7 @@ function hc15Equal(key,a,b){const [name,field]=JSON.parse(key);return name?Strin
 function hc15Valid(key,value){const [name,field]=JSON.parse(key);if(name)return value===''||/^([01]\d|2[0-3]):[0-5]\d$/.test(value);if(field.startsWith('creditAccounts'))return Array.isArray(value)&&value.length<=50&&value.every(r=>es14MoneyValid(r.amount)&&String(r.label||'').length<=80);return es14MoneyValid(value);}
 function hc15View(s=hc15Session){const data=tt15Copy(s?.data||{});for(const [key,e]of Object.entries(s?.edits||{}))hc15Put(data,key,e.local);return data;}
 function hc15LocalKey(s){return 'fz_hc15_draft_'+s.uid+'_'+s.date;}
-function hc15KeepLocal(s=hc15Session){if(!s)return;try{if(Object.keys(s.edits).length)localStorage.setItem(hc15LocalKey(s),JSON.stringify({edits:s.edits,savedAt:Date.now()}));else localStorage.removeItem(hc15LocalKey(s));}catch(e){}}
+function hc15KeepLocal(s=hc15Session){if(!s)return false;try{if(Object.keys(s.edits).length||Object.keys(s.draftSaves||{}).length)localStorage.setItem(hc15LocalKey(s),JSON.stringify({data:s.data,edits:s.edits,draftSaves:s.draftSaves||{},savedAt:Date.now()}));else localStorage.removeItem(hc15LocalKey(s));return true;}catch(e){return false;}}
 function hc15Accept(s,data,verified=true){
   if(s!==hc15Session||!esAllowed()||currentUser.uid!==s.uid)return;
   if(Number(data.sheetRevision||0)<Number(s.data?.sheetRevision||0)&&verified)return;
@@ -12251,12 +12269,18 @@ function hc15Start(date){
   if(!esAllowed()||!esDateValid(date))return;
   if(hc15Session?.date===date&&hc15Session.uid===currentUser.uid&&hc15Session.unsub)return;
   hc15Stop();const s={uid:currentUser.uid,date,data:{date},verified:false,edits:{},conflicts:[],unsub:null,busy:false,writing:null,error:'',timer:0,loaded:false};hc15Session=s;
-  try{s.edits=JSON.parse(localStorage.getItem(hc15LocalKey(s))||'{}').edits||{};}catch(e){}
+  try{const local=JSON.parse(localStorage.getItem(hc15LocalKey(s))||'{}');s.edits=local.edits||{};s.draftSaves=local.draftSaves||{};if(local.data?.date===date){s.data=local.data;s.deviceRestored=true;}}catch(e){}
   hc15Render();
   s.unsub=onSnapshot(doc(db,'hostCashierTipReports',date),{includeMetadataChanges:true},snap=>{
     if(s!==hc15Session)return;const verified=snap.metadata?.fromCache!==true&&snap.metadata?.hasPendingWrites!==true;
-    if(s.verified&&!verified)return;s.loaded=true;s.hadCloud ||= snap.exists();
-    hc15Accept(s,snap.exists()?snap.data():{date},verified);
+    if(s.verified&&!verified)return;s.loaded=true;
+    const exists=snap.exists(),data=exists?snap.data():{date};
+    // An offline SDK cache may be empty or older than the draft explicitly saved
+    // on this device. Keep that saved team/base until a current server read (or
+    // a strictly newer cached revision) is available; this does not verify it.
+    if(!verified&&s.deviceRestored&&(!exists||Number(data.sheetRevision||0)<=Number(s.data?.sheetRevision||0))){hc15Render();return;}
+    s.hadCloud ||= exists;hc15Accept(s,data,verified);
+    if(s.verified)s.deviceRestored=false;
   },e=>{if(s!==hc15Session)return;s.verified=false;s.error='Host / Cashier could not sync: '+(e.message||e);hc15Render();});
 }
 function hc15Set(name,field,value){
@@ -12319,6 +12343,11 @@ function hc15Report(data,name){
 function hc15Fingerprint(r){return JSON.stringify([r.date,r.employee,r.position,r.shift,r.hostCashierTipAM,r.hostCashierTipPM,r.totalPaidOut,r.totalMinutesWork,r.hours||{}]);}
 function hc15Summary(s,name){
   const view=hc15View(s),r=hc15Report(view,name),old=s.data.sheetFinalized?.[tt15Key(name)];
+  if(hc16NeedsDraft(view,name)||!old||old.fingerprint!==hc15Fingerprint(r)){
+    const raw=hc16DraftRow(view,name),shared=s.data.sheetDraftSaved?.[tt15Key(name)],local=s.draftSaves?.[name];
+    if(shared&&tt15Same(raw,shared.row)&&!s.conflicts.length)return {text:'Draft saved · synced',kind:'draft'};
+    if(local&&tt15Same(raw,local.row))return {text:'Draft saved · device only',kind:'draft'};
+  }
   return !old?{text:'Draft · not saved',kind:'draft'}:old.fingerprint!==hc15Fingerprint(r)?{text:'Changed · Save again',kind:'dirty'}:old.signed?{text:'Saved · Signed',kind:'signed'}:{text:'Saved · Unsigned',kind:'saved'};
 }
 function hc15Init(){
@@ -12350,7 +12379,7 @@ function hc15Render(){
   }
   for(const input of $('hc15Pools').querySelectorAll('input')){if(input!==document.activeElement)input.value=String(data[input.dataset.hc15Pool]??0);input.disabled=!s.verified||s.busy;}
   for(const input of $('hc15Rows').querySelectorAll('input')){const r=hc15Member(data,input.dataset.hc15Name);input.disabled=!s.verified||s.busy||(input.dataset.hc15Clock.endsWith('2')&&r?.shift!=='DOUBLE');if(input!==document.activeElement)input.value=data.staffDetails?.[input.dataset.hc15Name]?.[input.dataset.hc15Clock]||'';}
-  for(const b of $('hc15Rows').querySelectorAll('button'))b.disabled=!s.verified||s.busy;
+  for(const b of $('hc15Rows').querySelectorAll('button'))b.disabled=s.busy||(!s.verified&&b.dataset.hc15Action!=='save')||!esAllowed()||currentUser.uid!==s.uid;
   hc15UpdateValues();
 }
 function hc15UpdateValues(){
@@ -12403,7 +12432,7 @@ async function hc15Action(name,action='save'){
   const s=hc15Session;if(!s||s.busy)return false;let popup=null;
   const android=/Android/i.test(navigator.userAgent||'');if(action==='print'&&!android){popup=window.open('','_blank','width=430,height=760');if(!popup){s.error='Allow print pop-ups, then retry.';hc15UpdateValues();return false;}popup.document.write('<p>Preparing receipt…</p>');}
   s.busy=true;hc15Render();
-  try{const report=await hc15Commit(name);if(action==='print')await hc15PrintReport(report,popup);s.error='';esStatus(tt15Label(name)+(action==='print'?' saved · receipt sent to print.':' saved to Final Report.'));return true;}
+  try{if(action==='save'&&(hc16NeedsDraft(hc15View(s),name)||!s.verified||!es14IsOnline())){await hc16SaveDraft(name);return true;}const report=await hc15Commit(name);if(action==='print')await hc15PrintReport(report,popup);s.error='';esStatus(tt15Label(name)+(action==='print'?' saved · receipt sent to print.':' saved to Final Report.'));return true;}
   catch(e){popup?.close();s.error=e.message||String(e);esStatus(s.error,true);return false;}
   finally{s.busy=false;hc15Render();hc15Schedule(s);}
 }
@@ -12491,3 +12520,237 @@ window.addEventListener('online',()=>hc15Schedule());
 window.addEventListener('offline',()=>{if(hc15Session){hc15Session.error='Offline · inputs kept on this device';hc15UpdateValues();}});
 window.addEventListener('beforeunload',()=>hc15KeepLocal());
 try{onAuthStateChanged(auth,user=>{if(!user||!esAllowed()){tt15Close();hc15Stop();tt15Directory.unsub?.();tt15Directory={uid:'',data:{},ready:false,unsub:null};hc15Sig=null;hc15Credit=null;$('hc15SignModal')?.classList.add('hidden');$('hc15CreditModal')?.classList.add('hidden');$('tt15DirectoryPanel')?.classList.add('hidden');}});}catch(e){}
+
+/* ES1.6 — Save accepts unfinished rows. Drafts never write hourlyReports.
+ * Sign/Print still use the existing strict final-report commit functions.
+ */
+function es16RawSource(batch,name){
+  const d=batch?.drafts?.[name]||{};
+  return JSON.stringify([d.values||{},d.entered||{},ES_PERIODS.map(cp=>[batch.bar?.[cp]?.entries?.[name]??null,batch.bar?.[cp]?.excluded?.[name]??null])]);
+}
+function es16RawValid(d,batch,name){return !!d?.employeeSheetRawRow&&d.employeeSheetRawRow.name===name&&d.employeeSheetRawSource===es16RawSource(batch,name);}
+function es16RowMatches(a,b){return !!a&&!!b&&a.name===b.name&&ES_FIELDS.every(f=>es14Same(f,a[f],b[f]));}
+function es16KeepDraft(s,name){
+  const previous=s.draftSaves?.[name];s.draftSaves ||= {};
+  s.draftSaves[name]={row:esClone(s.rows.find(r=>r.name===name)),savedAt:Date.now()};
+  if(esPersistLocal())return true;
+  if(previous)s.draftSaves[name]=previous;else delete s.draftSaves[name];return false;
+}
+async function es16PublishRowDraft(s,name){
+  const draft=es14DraftSnapshot(s),selected=draft.rows.find(r=>r.name===name),ref=doc(db,'hourlyV1Batches',s.date);
+  const out=await runTransaction(db,async tx=>{
+    const snap=await tx.get(ref);if(!es14AllowedSession(s))throw new Error('Login changed. No draft was shared.');
+    if(!snap.exists()&&draft.hadCloud)throw new Error('This work date was removed. Your device draft is kept.');
+    const raw=snap.exists()?snap.data():draft.baseBatch,remote=es14Remote(raw,draft.reports,draft.date,s);
+    const routes=es14MergeRoute(draft.baseRouting,draft.routing,remote.routing);
+    const dirty=draft.dirty[name]?{[name]:draft.dirty[name]}:{};
+    const merged=es14Patch(draft.baseRows,draft.rows,remote.rows,dirty,routes.route,true);
+    const routing=esRouting(merged.rows,routes.route),batch=esBuildBatch(remote.batch,merged.rows,draft.date,routing);
+    const row=merged.rows.find(r=>r.name===name),conflicts=[...remote.conflicts.filter(c=>c.name===name),...merged.conflicts,...routes.conflicts];
+    const shared=!!row&&es16RowMatches(selected,row)&&!conflicts.length;
+    if(shared){batch.drafts[name].employeeSheetDraftSaved={row:esClone(row),savedAt:Date.now()};batch.drafts[name].savedAt=Date.now();}
+    const changed=shared||Object.keys(merged.applied).length>0||ES_PERIODS.some(cp=>(routing[cp]||'')!==(remote.routing[cp]||''));
+    if(changed){batch.employeeSheetRevision=Number(raw.employeeSheetRevision||0)+1;
+      tx.set(ref,{...raw,date:draft.date,team:batch.team,drafts:batch.drafts,bar:batch.bar,barManual:batch.barManual||{},employeeSheetRevision:batch.employeeSheetRevision,updatedAt:serverTimestamp(),updatedByUid:s.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});}
+    return {batch:changed?batch:remote.batch,rows:merged.rows,fields:merged.applied,routing,shared,conflicts};
+  });
+  if(esSession===s&&es14AllowedSession(s)){
+    es14AcceptCommit(s,out.batch,s.reports,out);es14RecordConflicts(s,[...(s.conflicts||[]),...out.conflicts]);
+  }
+  return out;
+}
+async function es16SaveDraft(name){
+  const s=esSession;if(!es14AllowedSession(s)||!s.ready)throw new Error('Manager / Owner session required.');
+  if(!s.rows.some(r=>r.name===name))throw new Error('Employee row not found.');
+  clearTimeout(s.autoTimer);const kept=es16KeepDraft(s,name);
+  let shared=false,reason='';
+  if(s.cloudReady&&es14IsOnline()){
+    try{if(s.autoPromise)await s.autoPromise;if(!es14AllowedSession(s)||esSession!==s)throw new Error('Login or work date changed.');
+      const out=await es16PublishRowDraft(s,name);shared=out.shared;
+      if(!shared)reason=out.conflicts.length?' Review changes before syncing.':' Finish invalid fields before syncing the entire row.';
+    }catch(e){reason=' Not synced: '+(e.message||String(e));}
+  }else reason=es14IsOnline()?' Cloud connection is not ready.':' Offline.';
+  if(!shared&&!kept)throw new Error('Draft was not saved: device storage is unavailable and the complete draft could not sync. Keep this page open and retry.');
+  esStatus(name+(shared?' · Draft saved and synced. Complete the row later.':' · Draft saved on this device only.'+reason));
+  return {draft:true,shared,local:kept};
+}
+function hc16DraftRow(data,name){
+  const member=hc15Member(data,name);
+  return {member,clocks:tt15Copy(data.staffDetails?.[name]||{}),pools:Object.fromEntries(TT15_POOLS.map(f=>[f,data[f]??0]))};
+}
+function hc16NeedsDraft(data,name){
+  if(TT15_POOLS.some(f=>!es14MoneyValid(data[f])))return true;
+  try{hc15Hours(data,name,true);return false;}catch(e){return true;}
+}
+async function hc16SaveDraft(name){
+  const s=hc15Session;if(!s||!esAllowed()||currentUser.uid!==s.uid)throw new Error('Manager / Owner session required.');if(!hc15Member(hc15View(s),name))throw new Error('Host / Cashier row not found.');
+  const previous=s.draftSaves?.[name];s.draftSaves ||= {};
+  const captured=hc16DraftRow(hc15View(s),name);s.draftSaves[name]={row:captured,savedAt:Date.now()};
+  const kept=hc15KeepLocal(s);if(!kept){if(previous)s.draftSaves[name]=previous;else delete s.draftSaves[name];}
+  let shared=false,reason='';
+  if(s.verified&&es14IsOnline()){
+    try{
+      if(!(await hc15Flush(s)))throw new Error(s.error||'Host / Cashier draft could not sync.');
+      const pending=Object.keys(s.edits).some(k=>{const [who]=JSON.parse(k);return !who||who===name;});
+      if(!pending&&!s.conflicts.length){
+        const ref=doc(db,'hostCashierTipReports',s.date);
+        const result=await runTransaction(db,async tx=>{
+          const snap=await tx.get(ref);tt15Require(s.uid);if(!snap.exists())throw new Error('Host / Cashier team no longer exists on this date.');
+          const raw=snap.data();if(!tt15Same(captured,hc16DraftRow(raw,name)))throw new Error('Another device changed this row or pool. Your device draft is kept.');
+          const next=tt15Copy(raw);next.sheetDraftSaved ||= {};next.sheetDraftSaved[tt15Key(name)]={row:captured,savedAt:Date.now()};next.sheetRevision=Number(raw.sheetRevision||0)+1;
+          tx.set(ref,{...next,...tt15Stamp()});return next;
+        });
+        if(hc15Session===s)hc15Accept(s,result,true);shared=true;
+      }else reason=s.conflicts.length?' Review changes before syncing.':' Finish invalid fields before syncing the entire row.';
+    }catch(e){reason=' Not synced: '+(e.message||String(e));}
+  }else reason=es14IsOnline()?' Cloud connection is not ready.':' Offline.';
+  if(!shared&&!kept)throw new Error('Draft was not saved: device storage is unavailable and the complete draft could not sync. Keep this page open and retry.');
+  s.error='';esStatus(tt15Label(name)+(shared?' · Draft saved and synced. Complete the row later.':' · Draft saved on this device only.'+reason));
+  return {draft:true,shared,local:kept};
+}
+
+
+/* ES1.6 — date-scoped Daily Report downloads at the bottom of Employee Sheet.
+ * Reads saved hourlyReports only. Draft rows, search boxes, and Final Report's
+ * hidden employee/date filters are deliberately not used as export sources.
+ */
+let es16ExportBusy=false;
+function es16ExportGroup(group){
+  if(group==='server'||group==='host-cashier')return group;
+  throw new Error('Choose Server or Host/Cashier.');
+}
+function es16ExportGroupTitle(group){return es16ExportGroup(group)==='server'?'Server / Bartender':'Host / Cashier';}
+function es16ExportIsHost(row){
+  return tt15IsHostReport(row)||/^(host|cashier|host\s*[/&]\s*cashier)$/i.test(String(row?.position||'').trim());
+}
+function es16ExportSession(date){
+  const s=esSession;
+  if(!esAllowed()||!s?.ready||s.uid!==currentUser?.uid)throw new Error('Open Employee Sheet with your Manager / Owner login first.');
+  if(!esDateValid(date)||s.date!==date||($('esDate')&&$('esDate').value!==date))throw new Error('The work date changed. Select the date again, then download.');
+  if(s.busy)throw new Error('Please wait for this save to finish, then download.');
+  return s;
+}
+async function es16DailyExportRows(group,date){
+  es16ExportGroup(group);const session=es16ExportSession(date),uid=currentUser.uid;
+  if(!es14IsOnline())throw new Error('Reconnect to download the latest saved Daily Report.');
+  const snap=await getDocs(query(collection(db,'hourlyReports'),where('date','==',date)));
+  if(es16ExportSession(date)!==session||currentUser.uid!==uid)throw new Error('The session changed. Please download again.');
+  if(snap.metadata?.fromCache===true||snap.metadata?.hasPendingWrites===true)throw new Error('Saved reports are still syncing. Please try the download again when connected.');
+  return snap.docs.map(d=>({id:d.id,...d.data()}))
+    .filter(r=>r.date===date&&(group==='host-cashier'?es16ExportIsHost(r):!es16ExportIsHost(r)))
+    .sort((a,b)=>String(a.employee||'').localeCompare(String(b.employee||''))||String(a.shift||'').localeCompare(String(b.shift||''))||String(a.id||'').localeCompare(String(b.id||'')));
+}
+function es16DailyXlsBlob(rows,group,date){
+  const groupTitle=es16ExportGroupTitle(group),host=group==='host-cashier';
+  const safe=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  // x:str plus text formatting protects strings in Excel; prefix formula-like
+  // employee/position/shift text as a second layer for other spreadsheet apps.
+  const textValue=v=>{const s=String(v??'');return safe(/^[\s\u0000-\u001f]*[=+\-@]/.test(s)?"'"+s:s);};
+  const num=v=>Number.isFinite(Number(v))?Number(v):0;
+  const decimal=v=>num(v).toFixed(2);
+  const columns=[
+    ['Date','text',r=>r.date,115],['Employee','text',r=>r.employee,250],['Shift','text',r=>r.shift,125],
+    ['Clock In 1','text',r=>smallReportClockFields(r).in1,130],['Clock Out 1','text',r=>smallReportClockFields(r).out1,130],
+    ['Clock In 2','text',r=>smallReportClockFields(r).in2,130],['Clock Out 2','text',r=>smallReportClockFields(r).out2,130],
+    ['Total Hours','number',r=>r.totalHoursWork??r.totalHours??0,130],['Paid Tips','money',r=>r.paidTip,155],
+    ['Tip Card Fee','money',r=>r.payCardTipFee??r.cardFee,155],['Busser AM','money',r=>r.busserTipOutAM,150],
+    ['Busser PM','money',r=>r.busserTipOutPM,150],['Busser Total','money',r=>r.busserTipOut,155],
+    ['Bar Tip Out / Received','money',r=>smallReportBarAmount(r),195],
+    ['Total Tip Before Meal','money',r=>r.totalBeforeMeal,205],['Cash Tip','money',r=>r.cashTip,150],['Meal','money',r=>r.meal,150],
+    ['Total Paid Out','money',r=>smallReportPaidOut(r),185],['Grand Total (Total Before Meal + Cash Tip)','money',r=>smallReportGrandTotal(r),280],
+    ['Signature','signature',r=>r.pickupSignature,280]
+  ];
+  const numericCell=(v,type,extra='')=>`<td class="${type}" x:num="${decimal(v)}"${extra}>${decimal(v)}</td>`;
+  const signatureCell=signature=>{
+    const svg=smallReportSignatureSvg(signature,240,86);
+    if(!svg)return '<td class="signature pending" x:str>PENDING SIGNATURE</td>';
+    const uri='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg)));
+    return `<td class="signature" x:str><img alt="Employee signature" src="${uri}" width="240" height="86"><br><b>SIGNED</b></td>`;
+  };
+  const body=rows.map((r,i)=>'<tr class="data-row" style="background:'+(i%2?'#edf4f8':'#ffffff')+'">'+columns.map(([label,type,value])=>{
+    const v=value(r);if(type==='signature')return signatureCell(v);
+    if(type==='number'||type==='money')return numericCell(v,type,label==='Total Paid Out'?' style="font-weight:bold;color:#155a46"':'');
+    return `<td class="text" x:str>${label==='Employee'?'<b>'+textValue(v)+'</b><br><span>'+textValue(r.position)+'</span>':textValue(v)}</td>`;
+  }).join('')+'</tr>').join('');
+  const signed=rows.filter(r=>smallReportHasPickupSignature(r)).length;
+  const totals='<tr class="totals">'+columns.map(([label,type,value],i)=>{
+    if(i===0)return '<td class="text" x:str>TOTAL</td>';
+    if(i===1)return `<td class="text" x:str>${rows.length} report${rows.length===1?'':'s'}</td>`;
+    if(type==='signature')return `<td class="text" x:str>${signed} of ${rows.length} signed</td>`;
+    if(type!=='number'&&type!=='money')return '<td></td>';
+    const total=type==='money'?rows.reduce((sum,r)=>sum+Math.round(num(value(r))*100),0)/100:rows.reduce((sum,r)=>sum+num(value(r)),0);
+    return numericCell(total,type);
+  }).join('')+'</tr>';
+  const color=host?'#175643':'#143d55';
+  const html=`<!DOCTYPE html><html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="UTF-8"><title>Daily Report — ${safe(groupTitle)}</title>
+    <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>${host?'Host Cashier':'Server Bartender'}</x:Name><x:WorksheetOptions><x:PageSetup><x:Layout x:Orientation="Landscape"/></x:PageSetup><x:FreezePanes/><x:FrozenNoSplit/><x:SplitHorizontal>4</x:SplitHorizontal><x:TopRowBottomPane>4</x:TopRowBottomPane><x:SplitVertical>2</x:SplitVertical><x:LeftColumnRightPane>2</x:LeftColumnRightPane><x:ActivePane>0</x:ActivePane><x:ProtectObjects>False</x:ProtectObjects><x:ProtectScenarios>False</x:ProtectScenarios></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+    <style>body,table,th,td{font-family:Arial,sans-serif;font-size:14pt}table{border-collapse:collapse}th,td{border:1px solid #bfd0dc;padding:12px 10px;vertical-align:middle}th{background:${color};color:#fff;font-weight:bold;text-align:center;white-space:normal;height:62px}td{color:#183b4e}td.text{mso-number-format:"\\@";text-align:left;white-space:nowrap}.number{mso-number-format:"0.00";text-align:right}.money{mso-number-format:"\\$#,##0.00;[Red]\\-\\$#,##0.00";text-align:right}.title{background:${color};color:white;font-weight:bold;height:44px;border-color:${color}}.subtitle{background:#dcebf2;color:#173f53;font-weight:bold;height:36px}.note{background:#f4f8fb;color:#496778;white-space:normal;height:36px}.data-row{height:104px}.signature{text-align:center;min-width:260px}.signature img{display:block;border:1px solid #c7d6df}.pending{background:#fff8e4;color:#876323;white-space:normal;font-weight:bold}.totals td{background:#dcece6;font-weight:bold;border-top:3px solid #23705c;height:44px}</style></head><body>
+    <table><colgroup>${columns.map(c=>`<col width="${c[3]}" style="width:${c[3]}px">`).join('')}</colgroup>
+    <thead><tr><td colspan="${columns.length}" class="title" x:str>FRED ZHANG TIP CALCULATOR — DAILY REPORT</td></tr>
+    <tr><td colspan="${columns.length}" class="subtitle" x:str>${safe(groupTitle)} · Work date: ${safe(date)} · ${rows.length} saved report${rows.length===1?'':'s'}</td></tr>
+    <tr><td colspan="${columns.length}" class="note" x:str>Saved Daily Report values. ${host?'Host / Cashier saved tip reports.':'Server deductions and bartender receipts share the BAR column.'} Draft-only rows are excluded.</td></tr>
+    <tr>${columns.map(c=>'<th scope="col" x:str>'+safe(c[0])+'</th>').join('')}</tr></thead><tbody>${body}${totals}</tbody></table></body></html>`;
+  // HTML-format .xls is also opened by spreadsheet importers that ignore CSS.
+  // Legacy FONT/BGCOLOR attributes retain Arial 14 and the same visual styling
+  // there; CSS and x:num remain for Excel. Values and formulas are unchanged.
+  const portable=html.replace(/<tr\b([^>]*)>([\s\S]*?)<\/tr>/g,(match,trAttrs,cells)=>{
+    const isTotals=/class="totals"/.test(trAttrs);
+    const stripe=(trAttrs.match(/background:(#[0-9a-f]{6})/i)||[])[1]||'#ffffff';
+    const output=cells.replace(/<(td|th)\b([^>]*)>([\s\S]*?)<\/\1>/g,(cell,tag,attrs,content)=>{
+      const cls=(attrs.match(/class="([^"]*)"/)||[])[1]||'';
+      const has=name=>cls.split(/\s+/).includes(name);
+      const dark=tag==='th'||has('title');
+      const bg=dark?color:isTotals?'#dcece6':has('subtitle')?'#dcebf2':has('note')?'#f4f8fb':has('pending')?'#fff8e4':stripe;
+      const ink=dark?'#ffffff':has('subtitle')?'#173f53':has('note')?'#496778':has('pending')?'#876323':isTotals?'#185343':'#183b4e';
+      const bold=dark||isTotals||has('subtitle')||has('pending')||/font-weight:bold/.test(attrs);
+      const align=has('money')||has('number')?'right':tag==='th'||has('signature')?'center':'left';
+      const body=bold?'<b>'+content+'</b>':content;
+      const nowrap=has('text')||has('money')||has('number')?' nowrap':'';
+      return '<'+tag+attrs+nowrap+' bgcolor="'+bg+'" align="'+align+'" valign="middle"><font face="Arial" size="4" color="'+ink+'">'+body+'</font></'+tag+'>';
+    });
+    return '<tr'+trAttrs+'>'+output+'</tr>';
+  });
+  return new Blob(['\ufeff',portable],{type:'application/vnd.ms-excel;charset=utf-8'});
+}
+function es16DailyPdfBlob(rows,group,date){
+  es16ExportGroup(group);
+  const normalized=rows.map(r=>({...r,totalPaidOut:smallReportPaidOut(r),employeeGrandTotal:smallReportGrandTotal(r)}));
+  return simplePdfBlob(normalized);
+}
+function es16ExportMessage(text,error=false){const out=$('es16ExportStatus');if(out){out.textContent=text;out.dataset.error=error?'1':'0';}}
+function es16DailyExportControls(){
+  const wrap=$('es16DailyExports');if(!wrap)return;
+  const s=esSession,disabled=es16ExportBusy||!esAllowed()||!s?.ready||s.busy||s.uid!==currentUser?.uid;
+  wrap.setAttribute('aria-busy',String(es16ExportBusy));
+  for(const button of wrap.querySelectorAll('button'))button.disabled=disabled;
+  const date=$('es16ExportDate');if(date)date.textContent=s?.date||'Select a work date';
+}
+window.employeeSheetDownload=async function(group,format){
+  if(es16ExportBusy)return false;
+  try{
+    es16ExportGroup(group);if(!['xls','pdf'].includes(format))throw new Error('Choose XLS or PDF.');
+    const date=$('esDate')?.value||esSession?.date||'';
+    es16ExportSession(date);es16ExportBusy=true;es16DailyExportControls();
+    es16ExportMessage('Loading saved '+es16ExportGroupTitle(group)+' reports for '+date+'…');
+    const rows=await es16DailyExportRows(group,date);
+    if(!rows.length){es16ExportMessage('No saved '+es16ExportGroupTitle(group)+' Daily Reports for '+date+'. Finish and save a row to Final Report, then download. Draft-only rows are not included.');return false;}
+    const blob=format==='xls'?es16DailyXlsBlob(rows,group,date):es16DailyPdfBlob(rows,group,date);
+    const file='Fred_Zhang_Daily_Report_'+(group==='server'?'Server_Bartender':'Host_Cashier')+'_'+date+'.'+format;
+    downloadBlob(blob,file);es16ExportMessage('Downloaded '+rows.length+' saved '+es16ExportGroupTitle(group)+' report'+(rows.length===1?'':'s')+' · '+date+'.');return true;
+  }catch(e){es16ExportMessage(e.message||'The saved report could not be downloaded. Please try again.',true);return false;}
+  finally{es16ExportBusy=false;es16DailyExportControls();}
+};
+function es16DailyExportsInit(){
+  if($('es16DailyExports')||!$('esGrid'))return;
+  const section=document.createElement('section');section.id='es16DailyExports';section.className='es16-daily-exports';section.setAttribute('aria-labelledby','es16ExportTitle');
+  section.innerHTML='<div class="es16-export-heading"><div><h3 id="es16ExportTitle">Download Daily Report</h3><p>Work date: <b id="es16ExportDate"></b></p></div><span class="es16-export-tag">Saved reports</span></div><p class="es16-export-note">Server includes Bartender. Downloads use the saved Daily Report for this date; draft-only rows are excluded.</p><div class="es16-export-buttons"><button type="button" data-es16-group="server" data-es16-format="xls">Download XLS Server</button><button type="button" data-es16-group="server" data-es16-format="pdf">Download PDF Server</button><button type="button" data-es16-group="host-cashier" data-es16-format="xls">Download XLS Host/Cashier</button><button type="button" data-es16-group="host-cashier" data-es16-format="pdf">Download PDF Host/Cashier</button></div><p id="es16ExportStatus" role="status" aria-live="polite"></p>';
+  $('esGrid').appendChild(section);
+  section.addEventListener('click',e=>{const b=e.target.closest('button[data-es16-group]');if(b)window.employeeSheetDownload(b.dataset.es16Group,b.dataset.es16Format);});
+  es16DailyExportControls();
+}
+(function(){
+  const init=esInit,render=esRenderRows,badge=esCompactReadBadge;
+  esInit=function(...a){const out=init(...a);es16DailyExportsInit();return out;};
+  esRenderRows=function(...a){const out=render(...a);es16DailyExportControls();return out;};
+  esCompactReadBadge=function(...a){const out=badge(...a);es16DailyExportControls();return out;};
+})();

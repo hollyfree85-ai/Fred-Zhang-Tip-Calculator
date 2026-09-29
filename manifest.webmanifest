@@ -1,6 +1,7 @@
 {
   "name": "Fred Zhang Tip Calculator",
   "short_name": "FZ Tip",
+  "id": "./",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
