@@ -10265,7 +10265,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.1';
+const ES_BUILD='ES1.2';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10684,7 +10684,9 @@ window.employeeSheetOpen=async function(date,force=false){
   try{local=JSON.parse(localStorage.getItem(HV1_STORAGE_PREFIX+d)||'{}')||{};}catch(e){}
   try{draft=JSON.parse(localStorage.getItem(esDraftKey(d,uid))||'null');}catch(e){}
   // Render what this device already has BEFORE waiting for the network.
-  const reports=latestHourlyReports.filter(r=>r.date===d);
+  const cached=esFastCacheGet(d,uid);
+  if(cached?.batch?.exists)local=cached.batch.data;
+  const reports=cached?.reports||latestHourlyReports.filter(r=>r.date===d);
   const batch=esPrepareBatch(local,reports,d),rows=esRowsFromBatch(batch,reports,d);
   const routing=esRouting(rows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,batch.bar[cp].bartender||''])));
   Object.assign(esSession,{ready:true,baseBatch:batch,baseRows:esClone(rows),rows,reports,routing,baseRouting:esClone(routing),hadCloud:false,rawBase:esClone(local)});
@@ -10695,7 +10697,7 @@ window.employeeSheetOpen=async function(date,force=false){
   if(draft){$('esGrid').scrollLeft=draft.scrollLeft||0;$('esGrid').scrollTop=draft.scrollTop||0;}
   esStatus(rows.length?'Device copy shown. Checking the shared sheet…':'Checking the shared sheet for '+d+'…');
   esStartRead(esSession);
-  refreshEmployeeAccountRoster().then(()=>{if(esSession?.uid===uid&&esSession.date===d&&esAllowed())esRenderRouting();}).catch(()=>{});
+  esFastRefreshRoster(uid,d,force);
 };
 
 function esSetBusy(busy){
@@ -11119,3 +11121,250 @@ window.addEventListener('pagehide',()=>esStopRead());
 window.addEventListener('pageshow',()=>{if(esAllowed()&&esSession?.esReadEnabled&&document.body.classList.contains('es-active')&&!esRead)esStartRead(esSession);});
 // App backgrounding / sign-out must not let an old response affect a new identity.
 try{onAuthStateChanged(auth,user=>{if(esRead&&(!user||user.uid!==esRead.session.uid)){esStopRead();if(esSession?.esReadEnabled){esSession.cloudReady=false;esReadControls();}}});}catch(e){}
+
+/* ES1.2 — compact sheet, fast read path and touch direction lock.
+ * Scope: presentation + read scheduling only. Numerical formulas, transactions,
+ * signature/print code, authentication and security rules are NOT replaced.
+ */
+const ES_FAST_READ_MS=900;
+const ES_FAST_CACHE_TTL=30*60*1000;
+const esFastCache=new Map();
+let esFastRoster={uid:'',at:0},esPan=null,esPanFrame=0,esTouchUntil=0,esNoticeTimer=0;
+function esFastCacheKey(date,uid){return 'fz_es12_view_'+FIREBASE_CONFIG.projectId+'_'+uid+'_'+date;}
+function esFastCacheGet(date,uid){
+  const key=esFastCacheKey(date,uid);
+  let value=esFastCache.get(key);
+  if(!value)try{value=JSON.parse(sessionStorage.getItem(key)||'null');}catch(e){}
+  if(!value||value.uid!==uid||value.date!==date||Date.now()-value.at>ES_FAST_CACHE_TTL)return null;
+  return esClone(value);
+}
+function esFastCacheSave(c){
+  if(!esReadCurrent(c)||!c.batch.server||!c.reports.server||c.batch.error||c.reports.error)return;
+  // Only remote snapshots are cached, never the local dirty row overlay.
+  const key=esFastCacheKey(c.session.date,c.session.uid);
+  const stamp=JSON.stringify([c.batch.value,c.reports.value]);
+  if(c.cacheStamp===stamp)return;
+  c.cacheStamp=stamp;
+  const value=esClone({date:c.session.date,uid:c.session.uid,at:Date.now(),batch:c.batch.value,reports:c.reports.value});
+  esFastCache.delete(key);esFastCache.set(key,value);
+  try{
+    sessionStorage.setItem(key,JSON.stringify(value));
+    const indexKey='fz_es12_view_index_'+FIREBASE_CONFIG.projectId+'_'+c.session.uid;
+    const keys=[...(JSON.parse(sessionStorage.getItem(indexKey)||'[]')).filter(k=>k!==key),key];
+    while(keys.length>3)sessionStorage.removeItem(keys.shift());
+    sessionStorage.setItem(indexKey,JSON.stringify(keys));
+  }catch(e){/* Existing local draft persistence is independent and unchanged. */}
+  while(esFastCache.size>3)esFastCache.delete(esFastCache.keys().next().value);
+}
+function esFastRefreshRoster(uid,date,force){
+  if(!force&&esFastRoster.uid===uid&&Date.now()-esFastRoster.at<120000)return;
+  esFastRoster={uid,at:Date.now()};
+  refreshEmployeeAccountRoster().then(()=>{if(esSession?.uid===uid&&esSession.date===date&&esAllowed())esRenderRouting();})
+    .catch(()=>{esFastRoster.at=0;});
+}
+function esFastQueueRead(c){
+  if(!esReadCurrent(c)||c.paintFrame)return;
+  c.paintFrame=requestAnimationFrame(()=>{c.paintFrame=0;if(esReadCurrent(c))esApplyRead(c);});
+}
+(function(){
+  const stop=esStopRead,apply=esApplyRead,render=esRenderRows,setReadStatus=esSetReadStatus;
+  esStopRead=function(){if(esRead?.paintFrame)cancelAnimationFrame(esRead.paintFrame);stop();};
+  esAcceptRead=function(c,kind,value,server=true,origin='sdk'){
+    if(!esReadCurrent(c))return;
+    const old=c[kind];
+    if(old.server&&!server)return;
+    if(kind==='batch'&&server&&old.server&&value.exists&&old.value?.exists){
+      const prior=esReadStamp(old.value.data?.updatedAt),next=esReadStamp(value.data?.updatedAt);
+      if(prior&&next&&next<prior)return;
+    }
+    if(origin==='once'&&old.server)return;
+    const key=JSON.stringify(value);
+    const changed=old.contentKey!==key;
+    c[kind]={value,server,error:null,origin,contentKey:key};
+    if(c.batch.server&&c.reports.server){for(const t of c.timers)clearTimeout(t);c.timers=[];}
+    esSetReadStatus(c);esFastCacheSave(c);
+    // Cache->server metadata alone does not rebuild every cell / lose the row.
+    if(changed||c.pending){c.pending=true;esFastQueueRead(c);}
+    else if(c.session.cloudReady&&!c.initialReady){c.initialReady=true;esStatus('Shared sheet loaded.');}
+  };
+  esApplyRead=function(c){
+    if(!esReadCurrent(c))return;
+    if(esPan||performance.now()<esTouchUntil){
+      c.pending=true;
+      if(!c.gestureTimer){c.gestureTimer=setTimeout(()=>{c.gestureTimer=0;esFastQueueRead(c);},180);c.timers.push(c.gestureTimer);}
+      return;
+    }
+    const out=apply(c);esFastCacheSave(c);return out;
+  };
+  esRenderRows=function(...args){
+    const g=$('esGrid');let left=g?.scrollLeft||0,top=g?.scrollTop||0,anchor=null;
+    if(g&&top>0){
+      const edge=g.getBoundingClientRect().top+(g.querySelector('thead')?.offsetHeight||0);
+      for(const tr of g.querySelectorAll('tbody tr[data-es-index]:not([hidden])')){
+        const box=tr.getBoundingClientRect();if(box.bottom>edge){anchor={name:tr.querySelector('.es-name>b')?.textContent,offset:box.top-g.getBoundingClientRect().top};break;}
+      }
+    }
+    const out=render(...args);
+    if(g){
+      g.scrollLeft=left;g.scrollTop=top;
+      if(anchor){const tr=[...g.querySelectorAll('tbody tr[data-es-index]:not([hidden])')].find(t=>t.querySelector('.es-name>b')?.textContent===anchor.name);
+        if(tr)g.scrollTop+=tr.getBoundingClientRect().top-g.getBoundingClientRect().top-anchor.offset;}
+    }
+    return out;
+  };
+  esSetReadStatus=function(c){setReadStatus(c);esCompactReadBadge();};
+})();
+esStartRead=function(s){
+  // Preserve the baseline fresh verification after Save / Sync Draft.
+  esStopRead();s.esReadEnabled=true;s.cloudReady=false;
+  const c={session:s,batch:{server:false,value:null,error:null},reports:{server:false,value:null,error:null},unsubs:[],timers:[],aborters:[],pending:false,slow:false};esRead=c;
+  esSetReadStatus(c);
+  const refs={batch:doc(db,'hourlyV1Batches',s.date),reports:query(collection(db,'hourlyReports'),where('date','==',s.date))};
+  for(const kind of ['batch','reports']){
+    try{
+      const unsubscribe=onSnapshot(refs[kind],{includeMetadataChanges:true},snap=>{
+        const server=snap.metadata?.fromCache!==true&&snap.metadata?.hasPendingWrites!==true;
+        const value=kind==='batch'?{exists:snap.exists(),data:snap.exists()?snap.data():{}}:snap.docs.map(x=>({id:x.id,...x.data()}));
+        esAcceptRead(c,kind,value,server,'listen');
+      },e=>esRejectRead(c,kind,e));
+      if(typeof unsubscribe==='function')c.unsubs.push(unsubscribe);
+    }catch(e){esRejectRead(c,kind,e);}
+  }
+  // Only two scoped listeners normally. No duplicate getDoc/getDocs requests.
+  // A stalled stream uses the existing authenticated, read-only HTTPS fallback
+  // after 900ms, rather than leaving the phone waiting through the 8s watchdog.
+  c.timers.push(setTimeout(()=>{
+    if(!esReadCurrent(c)||s.cloudReady)return;
+    for(const kind of ['batch','reports'])if(!c[kind].server&&!/permission|unauthenticated/i.test(String(c[kind].error?.code||'')))esHttpRead(c,kind);
+  },ES_FAST_READ_MS));
+  c.timers.push(setTimeout(()=>{
+    if(!esReadCurrent(c)||s.cloudReady)return;c.slow=true;esSetReadStatus(c);
+    esStatus('Connection is slow. Available rows stay visible; Save waits for a cloud check.',true);
+  },5000));
+};
+function esCompactReadBadge(){
+  const b=$('esReadBadge'),s=esSession;if(!b||!s)return;
+  const c=esReadCurrent(esRead)?esRead:null;
+  const error=!!(c?.batch.error||c?.reports.error);
+  b.textContent=ES_BUILD+' · '+(error?'Retry':s.cloudReady?(esHasEdits(s)?'Draft':'Live'):c?.slow?'Offline?':'Checking…');
+  b.dataset.state=error?'error':s.cloudReady?(esHasEdits(s)?'draft':'ready'):'waiting';
+  b.title=$('esCloudStatus')?.textContent||'Open sheet tools';
+}
+function esCompactTools(open){
+  const area=$('employeeSheet');if(!area)return;
+  area.classList.toggle('es-controls-open',open);
+  $('esTools').setAttribute('aria-expanded',String(open));
+  if(!open)$('esTeamDetails').open=false;
+}
+function esCompactInit(){
+  const area=$('employeeSheet');if(!area||$('esCompactTools'))return;
+  area.classList.add('es-compact');
+  const header=area.querySelector('.es-header');
+  $('esTools').textContent='More';$('esTools').setAttribute('aria-label','More: Team, BAR, Sync Draft, Reload and notes');
+  $('esSearch').placeholder='Find name';$('esSearch').setAttribute('aria-label','Find employee');$('esDate').setAttribute('aria-label','Work date');
+  for(const label of area.querySelectorAll('.es-toolbar>label')){
+    for(const node of [...label.childNodes])if(node.nodeType===3&&node.textContent.trim()){
+      const span=document.createElement('span');span.className='es-sr-only';span.textContent=node.textContent;node.replaceWith(span);
+    }
+  }
+  const tools=document.createElement('div');tools.id='esCompactTools';tools.className='es-extra-controls';tools.setAttribute('role','region');tools.setAttribute('aria-label','Employee Sheet tools');
+  tools.innerHTML='<div class="es-tool-heading"><b>Sheet tools</b><button type="button" id="esToolsClose" aria-label="Close sheet tools">✕</button></div><div id="esToolActions"></div>';
+  area.appendChild(tools);
+  $('esTools').setAttribute('aria-controls','esCompactTools');
+  $('esToolActions').appendChild($('esReload'));
+  tools.appendChild($('esTeamDetails'));
+  tools.appendChild(area.querySelector('.es-guide'));
+  tools.appendChild(area.querySelector('.es-jump'));
+  tools.appendChild($('esStatus'));
+  const footer=area.querySelector('.es-footer');
+  tools.appendChild($('esTotals'));
+  footer.replaceChildren();
+  footer.innerHTML='<label class="es-sr-only" for="esQuickColumns">Jump to columns</label><select id="esQuickColumns" aria-label="Jump to columns"><option value="">⇄ Columns</option>'+[['staff','Staff'],['clocks','Clocks'],['sales','Sales'],['busser','Busser'],['bar','BAR'],['tips','Tips / Meal'],['checks','BAR Sales'],['payout','Payout']].map(([v,t])=>'<option value="'+v+'">'+t+'</option>').join('')+'</select><button type="button" id="esReadBadge" aria-label="Connection status — open tools">'+ES_BUILD+' · Checking…</button>';
+  const notice=document.createElement('div');notice.id='esQuickNotice';notice.className='es-quick-notice hidden';notice.setAttribute('role','status');notice.setAttribute('aria-live','polite');area.appendChild(notice);
+  $('esReadBadge').addEventListener('click',()=>esCompactTools(!area.classList.contains('es-controls-open')));
+  $('esToolsClose').addEventListener('click',()=>{esCompactTools(false);$('esTools').focus({preventScroll:true});});
+  area.addEventListener('pointerdown',e=>{if(area.classList.contains('es-controls-open')&&!tools.contains(e.target)&&e.target!==$('esTools')&&e.target!==$('esReadBadge'))esCompactTools(false);});
+  area.addEventListener('keydown',e=>{if(e.key==='Escape'&&area.classList.contains('es-controls-open')){esCompactTools(false);$('esTools').focus({preventScroll:true});}});
+  $('esQuickColumns').addEventListener('change',e=>{
+    const button=area.querySelector('[data-es-jump="'+e.target.value+'"]');
+    if(button)button.click();e.target.value='';
+  });
+  esInstallAxisLock();
+}
+(function(){
+  const init=esInit,sync=esEnsureSyncUI,status=esStatus;
+  esInit=function(...a){const out=init(...a);esCompactInit();return out;};
+  esEnsureSyncUI=function(...a){const out=sync(...a);const tools=$('esCompactTools');if(tools&&$('esSyncBar')){
+    tools.insertBefore($('esSyncBar'),$('esTeamDetails'));$('esToolActions').appendChild($('esSyncDraft'));
+  }return out;};
+  esStatus=function(text,error=false){
+    status(text,error);esCompactReadBadge();
+    const toast=$('esQuickNotice');if(!toast)return;
+    // Routine instructions remain in More, not five paragraphs over the table.
+    const routine=/^(Loading|Checking|Device copy|Available rows|Shared sheet loaded|Your device edits|Live preview|Ready)/i.test(text||'');
+    if(routine&&!error)return;
+    clearTimeout(esNoticeTimer);toast.textContent=text;toast.dataset.error=error?'1':'0';toast.classList.remove('hidden');
+    esNoticeTimer=setTimeout(()=>toast.classList.add('hidden'),error?6500:4200);
+  };
+})();
+function esInstallAxisLock(){
+  const grid=$('esGrid');if(!grid||grid.dataset.esAxisLock)return;
+  grid.dataset.esAxisLock='1';grid.classList.add('es-axis-scroll');
+  let suppressClickUntil=0,settleTimer=0;
+  function stopCoast(){cancelAnimationFrame(esPanFrame);esPanFrame=0;}
+  function flush(){if(esReadCurrent(esRead)&&esRead.pending)esFastQueueRead(esRead);}
+  function finish(cancel=false){
+    const p=esPan;esPan=null;
+    if(!p)return;
+    if(p.axis==='x'){
+      suppressClickUntil=performance.now()+450;
+      // Short, controlled horizontal glide only. Vertical coordinate stays pinned.
+      let speed=cancel||performance.now()-p.lastAt>100?0:Math.max(-1.8,Math.min(1.8,p.velocity));
+      if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)speed=0;
+      let last=performance.now(),started=last;
+      const step=now=>{
+        if(esPan){stopCoast();return;}
+        const dt=Math.min(32,now-last);last=now;
+        const before=grid.scrollLeft;grid.scrollLeft=before+speed*dt;grid.scrollTop=p.top;
+        speed*=Math.pow(.88,dt/16.67);
+        if(Math.abs(speed)>.025&&now-started<280&&grid.scrollLeft!==before){esTouchUntil=now+100;esPanFrame=requestAnimationFrame(step);}
+        else{esPanFrame=0;esTouchUntil=0;flush();}
+      };
+      if(Math.abs(speed)>.025){esTouchUntil=performance.now()+350;esPanFrame=requestAnimationFrame(step);}else{esTouchUntil=0;flush();}
+    }else{
+      // Let native vertical inertia finish before a snapshot may rebuild the rows.
+      esTouchUntil=performance.now()+180;clearTimeout(settleTimer);settleTimer=setTimeout(flush,200);
+    }
+  }
+  grid.addEventListener('touchstart',e=>{
+    stopCoast();
+    if(e.touches.length!==1){finish(true);esPan=null;esTouchUntil=0;return;}
+    suppressClickUntil=0; // A new intentional tap must not be blocked by the prior swipe.
+    const t=e.touches[0],active=document.activeElement;
+    // Keep native caret selection when dragging inside the currently edited text.
+    if(active===e.target&&active.matches('input[type="text"],input[type="search"],textarea')){esPan=null;return;}
+    esPan={id:t.identifier,x:t.clientX,y:t.clientY,left:grid.scrollLeft,top:grid.scrollTop,axis:'',lastX:t.clientX,lastAt:performance.now(),velocity:0};
+  },{passive:true});
+  grid.addEventListener('touchmove',e=>{
+    const p=esPan;if(!p)return;
+    if(e.touches.length!==1){finish(true);esTouchUntil=0;return;}
+    const t=[...e.touches].find(x=>x.identifier===p.id);if(!t)return;
+    const dx=t.clientX-p.x,dy=t.clientY-p.y;
+    if(!p.axis){if(Math.max(Math.abs(dx),Math.abs(dy))<7)return;p.axis=Math.abs(dx)>Math.abs(dy)?'x':'y';}
+    if(p.axis==='x'){
+      if(e.cancelable)e.preventDefault();
+      grid.scrollLeft=p.left-dx;grid.scrollTop=p.top;
+      const now=performance.now(),dt=Math.max(1,now-p.lastAt);p.velocity=(p.lastX-t.clientX)/dt;p.lastX=t.clientX;p.lastAt=now;
+    }
+    // Vertical direction uses native scrolling (pan-y) and keeps horizontal still.
+  },{passive:false});
+  grid.addEventListener('touchend',e=>{if(!e.touches.length)finish(false);},{passive:true});
+  grid.addEventListener('touchcancel',()=>finish(true),{passive:true});
+  grid.addEventListener('scroll',()=>{
+    if(esPan?.axis==='x'&&Math.abs(grid.scrollTop-esPan.top)>.5)grid.scrollTop=esPan.top;
+    if(esPan?.axis==='y'&&Math.abs(grid.scrollLeft-esPan.left)>.5)grid.scrollLeft=esPan.left;
+    if(!esPan&&performance.now()<esTouchUntil&&!esPanFrame){esTouchUntil=performance.now()+180;clearTimeout(settleTimer);settleTimer=setTimeout(flush,200);}
+  },{passive:true});
+  grid.addEventListener('click',e=>{if(performance.now()<suppressClickUntil){e.preventDefault();e.stopImmediatePropagation();}},{capture:true});
+  window.addEventListener('pagehide',()=>{stopCoast();esPan=null;esTouchUntil=0;clearTimeout(settleTimer);});
+}
