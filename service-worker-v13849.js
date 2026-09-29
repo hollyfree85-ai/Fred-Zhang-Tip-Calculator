@@ -67,8 +67,8 @@ self.addEventListener("notificationclick",event=>{
   })());
 });
 
-const CACHE="fz-tip-v13849-es1";
-const CORE=["./", "./index.html", "./fresh-v13825.html", "./app-v13849.js?v=13849-es1", "./employee-sheet-v1.css?v=es1", "./hourly-logic-v13840.js?v=13849", "./host-cashier-tip-v13840.js?v=13849", "./simple-ui-v13824p1.js?v=138241a", "./board-hotfix-v13825.js?v=13825", "./firebase-config.js", "./push-config.js", "./manifest.webmanifest", "./money-ready-chime.wav", "./icon-192.png", "./caishen-intro.png"];
+const CACHE="fz-tip-v13849-es11";
+const CORE=["./", "./index.html", "./fresh-v13825.html", "./app-v13849.js?v=13849-es11", "./employee-sheet-v1.css?v=es11", "./hourly-logic-v13840.js?v=13849", "./host-cashier-tip-v13840.js?v=13849", "./simple-ui-v13824p1.js?v=138241a", "./board-hotfix-v13825.js?v=13825", "./firebase-config.js", "./push-config.js", "./manifest.webmanifest", "./money-ready-chime.wav", "./icon-192.png", "./caishen-intro.png"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();
@@ -86,6 +86,11 @@ self.addEventListener("activate",event=>{
 self.addEventListener("fetch",event=>{
   const req=event.request;
   const url=new URL(req.url);
+  // ES1.1 authenticated HTTPS reads must never be cached by the PWA worker.
+  if(url.hostname==="firestore.googleapis.com" && req.cache==="no-store"){
+    event.respondWith(fetch(req));
+    return;
+  }
   const localCode=url.origin===self.location.origin &&
     (req.mode==="navigate" || ["script","style","worker"].includes(req.destination));
 

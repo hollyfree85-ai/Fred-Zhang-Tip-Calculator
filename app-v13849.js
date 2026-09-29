@@ -10265,7 +10265,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1';
+const ES_BUILD='ES1.1';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10600,7 +10600,7 @@ function esInit(){
     <footer class="es-footer"><span id="esTotals"></span><span>⇄ Slide columns · Name + header stay fixed</span></footer>
     <div id="esSignatureModal" class="es-modal hidden" role="dialog" aria-modal="true" aria-labelledby="esSignatureTitle"><div class="es-sign-card"><h3 id="esSignatureTitle">Employee signature</h3><p id="esSignSummary"></p><canvas id="esSignatureCanvas" width="1000" height="320"></canvas><div class="es-sign-actions"><button type="button" id="esSignCancel">Cancel</button><button type="button" id="esSignClear">Clear</button><button type="button" id="esSignSave">Save signature</button></div><p id="esSignStatus" role="status"></p></div></div>`;
   parent.appendChild(el);
-  $('esHome').addEventListener('click',()=>{if(esSession?.busy)return;esPersistLocal();el.classList.add('hidden');document.body.classList.remove('es-active');window.fzOpenRoleHome();});
+  $('esHome').addEventListener('click',()=>{if(esSession?.busy)return;esPersistLocal();esStopRead();el.classList.add('hidden');document.body.classList.remove('es-active');window.fzOpenRoleHome();});
   $('esTools').addEventListener('click',()=>{const open=$('employeeSheet').classList.toggle('es-controls-open');$('esTools').setAttribute('aria-expanded',String(open));});
   $('esReload').addEventListener('click',()=>window.employeeSheetOpen(esSession?.date,true));
   $('esDate').addEventListener('change',()=>{if(!esSession?.busy)window.employeeSheetOpen($('esDate').value);});
@@ -10667,39 +10667,37 @@ function esChange(input,final){
 }
 window.employeeSheetOpen=async function(date,force=false){
   if(!esAllowed())return;
-  esInit();if(!$('employeeSheet'))return;
-  if(esSession?.busy)return;
+  esInit();if(!$('employeeSheet')||esSession?.busy)return;
   const d=esDateValid(date)?date:esSession?.date||hv1DateValue();
-  if(force && esSession && Object.keys(esSession.dirty).length && !confirm('Reload cloud data? Your current input is kept as a device draft, and can be restored.'))return;
-  esPersistLocal();const token=++esOpenToken,uid=currentUser.uid;
-  esSession={date:d,uid,ready:false,busy:false,rows:[],reports:[],dirty:{},routing:{},baseRouting:{},results:{},errors:{}};
+  if(force && esSession && esHasEdits(esSession) && !confirm('Reload cloud data? Your input remains in a device draft. You can restore it on this screen.'))return;
+  esPersistLocal();esStopRead();
+  const uid=currentUser.uid;
+  esSession={date:d,uid,ready:false,busy:false,rows:[],reports:[],dirty:{},routing:{},baseRouting:{},results:{},errors:{},cloudReady:false};
   $('fzRoleHome')?.classList.add('hidden');$('staffApp')?.classList.remove('hidden');
   document.querySelectorAll('.staffPanel').forEach(x=>x.classList.add('hidden'));
   $('hourlyV1Workspace')?.classList.add('hidden');
   document.body.classList.remove('hourly-v1-mode','hourly-v1-editing','hourly-v1-small-report','hourly-workspace-mode','small-report-fullscreen');
   document.documentElement.classList.remove('small-report-fullscreen');
   $('employeeSheet').classList.remove('hidden');document.body.classList.add('es-active');
-  $('esDate').value=d;$('esDateBadge').textContent=d;$('esRows').innerHTML='';esStatus('Loading the selected work date…');
-  try{
-    const [batchSnap,reportSnap]=await Promise.all([getDoc(doc(db,'hourlyV1Batches',d)),getDocs(query(collection(db,'hourlyReports'),where('date','==',d)))]);
-    if(token!==esOpenToken||!esAllowed()||currentUser.uid!==uid)return;
-    let local={};try{local=JSON.parse(localStorage.getItem(HV1_STORAGE_PREFIX+d)||'{}');}catch(e){}
-    const reports=reportSnap.docs.map(x=>({id:x.id,...x.data()}));
-    const raw=batchSnap.exists()?batchSnap.data():local;
-    const batch=esPrepareBatch(raw,reports,d);const rows=esRowsFromBatch(batch,reports,d);
-    const routing=esRouting(rows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,batch.bar[cp].bartender||''])));
-    Object.assign(esSession,{ready:true,baseBatch:batch,baseRows:esClone(rows),rows,reports,routing,baseRouting:esClone(routing),hadCloud:batchSnap.exists(),rawBase:esClone(raw)});
-    let draft=null;try{draft=JSON.parse(localStorage.getItem(esDraftKey(d,uid))||'null');}catch(e){}
-    if(draft?.date===d && Object.keys(draft.dirty||{}).length && confirm('Restore unfinished Employee Sheet input for '+d+' from this device?')){
-      // Restore the original base for conflict checks; never disguise a stale edit as current.
-      esSession.rows=draft.rows;esSession.dirty=draft.dirty;esSession.baseRows=draft.baseRows||rows;esSession.routing=draft.routing||routing;esSession.baseRouting=draft.baseRouting||routing;
-    }
-    esRecalculate();esRenderRouting();esRenderRows();
-    if(draft){$('esGrid').scrollLeft=draft.scrollLeft||0;$('esGrid').scrollTop=draft.scrollTop||0;}
-    esStatus('Ready. Enter values directly, then Save the row.');
-    refreshEmployeeAccountRoster().then(()=>{if(token===esOpenToken)esRenderRouting();}).catch(()=>{});
-  }catch(e){esStatus('Could not load this date: '+(e.message||e)+'. Tap Reload. No report was changed.',true);}
+  $('esDate').value=d;$('esDateBadge').textContent=d;
+  let local={},draft=null;
+  try{local=JSON.parse(localStorage.getItem(HV1_STORAGE_PREFIX+d)||'{}')||{};}catch(e){}
+  try{draft=JSON.parse(localStorage.getItem(esDraftKey(d,uid))||'null');}catch(e){}
+  // Render what this device already has BEFORE waiting for the network.
+  const reports=latestHourlyReports.filter(r=>r.date===d);
+  const batch=esPrepareBatch(local,reports,d),rows=esRowsFromBatch(batch,reports,d);
+  const routing=esRouting(rows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,batch.bar[cp].bartender||''])));
+  Object.assign(esSession,{ready:true,baseBatch:batch,baseRows:esClone(rows),rows,reports,routing,baseRouting:esClone(routing),hadCloud:false,rawBase:esClone(local)});
+  if(draft?.date===d && Array.isArray(draft.rows) && (Object.keys(draft.dirty||{}).length||JSON.stringify(draft.routing)!==JSON.stringify(draft.baseRouting)) && confirm('Restore unfinished Employee Sheet input for '+d+' from this device?')){
+    esSession.rows=draft.rows;esSession.dirty=draft.dirty||{};esSession.baseRows=draft.baseRows||rows;esSession.routing=draft.routing||routing;esSession.baseRouting=draft.baseRouting||routing;
+  }
+  esRecalculate();esRenderRouting();esRenderRows();esEnsureSyncUI();
+  if(draft){$('esGrid').scrollLeft=draft.scrollLeft||0;$('esGrid').scrollTop=draft.scrollTop||0;}
+  esStatus(rows.length?'Device copy shown. Checking the shared sheet…':'Checking the shared sheet for '+d+'…');
+  esStartRead(esSession);
+  refreshEmployeeAccountRoster().then(()=>{if(esSession?.uid===uid&&esSession.date===d&&esAllowed())esRenderRouting();}).catch(()=>{});
 };
+
 function esSetBusy(busy){
   if(!esSession)return;esSession.busy=busy;
   $('employeeSheet').classList.toggle('es-busy',busy);
@@ -10885,3 +10883,239 @@ window.employeeSheetPrint=async function(name){
 })();
 window.addEventListener('beforeunload',()=>esPersistLocal());
 // Safe no-op for non-staff roles and old pages; the Home card initializes on demand.
+
+/* ES1.1 — progressive device loading + explicit shared draft sync.
+ * Read-only listeners / authenticated read fallback never finalize a report.
+ * Sync Draft writes only the existing hourlyV1Batches document in a transaction.
+ * The original ES1 calculation and Save / Sign / Print implementations remain.
+ */
+let esRead=null;
+const ES_READ_SLOW_MS=8000;
+function esHasEdits(s){return !!s&&(Object.keys(s.dirty||{}).length>0||ES_PERIODS.some(cp=>(s.routing?.[cp]||'')!==(s.baseRouting?.[cp]||'')));}
+function esReadCurrent(c){return !!c&&esRead===c&&esSession===c.session&&esAllowed()&&currentUser.uid===c.session.uid;}
+function esStopRead(){
+  const c=esRead;esRead=null;++esOpenToken;
+  if(!c)return;
+  for(const fn of c.unsubs||[])try{fn();}catch(e){}
+  for(const t of c.timers||[])clearTimeout(t);
+  for(const a of c.aborters||[])try{a.abort();}catch(e){}
+}
+function esEnsureSyncUI(){
+  if($('esSyncBar'))return;
+  const area=$('employeeSheet'),status=$('esStatus');if(!area||!status)return;
+  const bar=document.createElement('div');bar.id='esSyncBar';bar.className='es-syncbar';
+  bar.innerHTML='<div id="esCloudStatus" role="status" aria-live="polite">ES1.1 · Checking shared data…</div><button type="button" id="esSyncDraft" title="Share unfinished rows with your other devices, without creating Daily Reports">Sync Draft</button>';
+  status.insertAdjacentElement('beforebegin',bar);
+  $('esSyncDraft').addEventListener('click',()=>window.employeeSheetSyncDraft());
+  area.addEventListener('focusout',()=>setTimeout(()=>{if(esReadCurrent(esRead)&&esRead.pending)esApplyRead(esRead);},100));
+}
+function esSetReadStatus(c){
+  if(!esReadCurrent(c))return;
+  const s=c.session;s.cloudReady=!!(c.batch.server&&c.reports.server&&!c.batch.error&&!c.reports.error);
+  const error=[c.batch.error,c.reports.error].find(Boolean);
+  let text;
+  if(error)text='Cloud read failed: '+String(error.code||error.message||error)+'. Tap Reload. Your device draft is kept.';
+  else if(s.cloudReady)text=esHasEdits(s)?'Cloud connected · Unsynced device edits. Use Sync Draft or Save.':'Cloud connected · Shared sheet.';
+  else if(c.slow)text='Connection is slow or offline. Showing available data; checking another read connection. Save stays locked until checked.';
+  else text='Checking cloud '+(!c.batch.server?'team / BAR':'Daily Reports')+'… Available rows are shown below.';
+  const el=$('esCloudStatus');if(el){el.textContent=ES_BUILD+' · '+text;el.dataset.error=error?'1':'0';}
+  esReadControls();
+  if(!s.rows.length && $('esRows')){
+    const empty=$('esRows').querySelector('.es-empty');
+    if(empty)empty.textContent=s.cloudReady?'No shared employees for this date. On the laptop with your rows, press Sync Draft. Or use Team / BAR to add an employee.':(error?'Could not read shared employees. Tap Reload; no report was changed.':c.slow?'No copy is available on this device yet. Check your connection, then tap Reload. The laptop draft has not been deleted.':'Waiting for shared employees… This does not mean the sheet is empty.');
+  }
+}
+function esReadControls(){
+  const s=esSession;if(!s?.ready||!s.esReadEnabled)return;
+  const locked=s.busy||!s.cloudReady;
+  for(const b of document.querySelectorAll('#esRows [data-es-action],#esSyncDraft'))b.disabled=locked;
+}
+function esReadStamp(value){
+  if(!value)return 0;if(typeof value.toMillis==='function')return value.toMillis();
+  if(typeof value.seconds==='number')return value.seconds*1000+(Number(value.nanoseconds)||0)/1e6;
+  return Number(value)||0;
+}
+function esAcceptRead(c,kind,value,server=true,origin='sdk'){
+  if(!esReadCurrent(c))return;
+  const old=c[kind];
+  // Never let a late cached/non-server result replace a verified server result.
+  if(old.server&&!server)return;
+  if(kind==='batch'&&server&&old.server&&value.exists&&old.value?.exists){
+    const prior=esReadStamp(old.value.data?.updatedAt),next=esReadStamp(value.data?.updatedAt);
+    if(prior&&next&&next<prior)return;
+  }
+  // REST fallback may win a race against the SDK's initial one-shot request.
+  if(origin==='once'&&old.server)return;
+  c[kind]={value,server,error:null,origin};c.pending=true;
+  if(c.batch.server&&c.reports.server){for(const t of c.timers)clearTimeout(t);c.timers=[];}
+  esApplyRead(c);
+}
+function esRejectRead(c,kind,error){
+  if(!esReadCurrent(c))return;
+  // A permission failure is not an empty query and never enables Save.
+  c[kind].error=error;
+  if(/permission|unauthenticated/i.test(String(error?.code||'')))c[kind].server=false;
+  esSetReadStatus(c);esStatus('Shared data could not be read. Your input is kept. Tap Reload.',true);
+}
+function esApplyRead(c){
+  if(!esReadCurrent(c))return;
+  const s=c.session;esSetReadStatus(c);
+  const focus=document.activeElement;
+  if(s.busy||esSignature||(focus?.matches?.('#employeeSheet input,#employeeSheet select'))){c.pending=true;return;}
+  const batchValue=c.batch.value;
+  const raw=batchValue?.exists?batchValue.data:(batchValue&&c.batch.server?{team:[],drafts:{}}:s.rawBase||{});
+  const remoteReports=(c.reports.value||s.reports||[]).filter(r=>r.date===s.date);
+  try{
+    const batch=esPrepareBatch(raw,remoteReports,s.date),remoteRows=esRowsFromBatch(batch,remoteReports,s.date);
+    const remoteRoute=esRouting(remoteRows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,batch.bar[cp].bartender||''])));
+    // Do not erase a laptop's legacy local-only team if no cloud sheet exists yet.
+    if(batchValue&&!batchValue.exists&&c.batch.server){
+      for(const row of s.rows)if(!remoteRows.some(r=>esKey(r.name)===esKey(row.name))){
+        remoteRows.push(esClone(row));s.dirty[row.name] ||= {__new:true};
+      }
+    }
+    const oldRows=s.rows,oldBase=s.baseRows,oldReports=s.reports;
+    const rows=remoteRows.map(r=>s.dirty[r.name]?esClone(oldRows.find(x=>x.name===r.name)||r):r);
+    for(const row of oldRows)if(s.dirty[row.name]&&!rows.some(r=>r.name===row.name))rows.push(esClone(row));
+    const baseRows=remoteRows.map(r=>s.dirty[r.name]?esClone(oldBase.find(x=>x.name===r.name)||r):esClone(r));
+    // A genuinely new local row keeps NO base. esMergeRows then detects concurrent adds.
+    for(let i=baseRows.length-1;i>=0;i--)if(s.dirty[baseRows[i].name]?.__new&&!oldBase.some(r=>r.name===baseRows[i].name))baseRows.splice(i,1);
+    for(const b of oldBase)if(s.dirty[b.name]&&!baseRows.some(r=>r.name===b.name))baseRows.push(esClone(b));
+    const route={...remoteRoute},baseRoute={...remoteRoute};
+    for(const cp of ES_PERIODS)if((s.routing[cp]||'')!==(s.baseRouting[cp]||'')){route[cp]=s.routing[cp];baseRoute[cp]=s.baseRouting[cp];}
+    // Keep the original report comparison for a dirty row; don't mask remote conflicts.
+    const reports=remoteReports.map(r=>s.dirty[r.employee]?oldReports.find(o=>o.id===r.id)||r:r);
+    for(const r of oldReports)if(s.dirty[r.employee]&&!reports.some(o=>o.id===r.id))reports.push(r);
+    Object.assign(s,{baseBatch:batch,rawBase:esClone(raw),hadCloud:batchValue?batchValue.exists:s.hadCloud,rows,baseRows,reports,routing:route,baseRouting:baseRoute});
+    c.pending=false;
+    esRecalculate();esRenderRouting();esRenderRows();esSetReadStatus(c);
+    if(s.cloudReady&&!c.initialReady){c.initialReady=true;esStatus(esHasEdits(s)?'Your device edits are kept. Sync Draft shares the sheet; Save also updates the selected Daily Report.':'Shared sheet loaded. Edit directly, then Save the row.');}
+    else if(!s.cloudReady&&!c.initialReady&&s.rows.length)esStatus('Available rows shown. The remaining cloud check is still in progress.');
+    if(c.batch.server&&batchValue?.exists&&!esHasEdits(s)){
+      try{localStorage.setItem(HV1_STORAGE_PREFIX+s.date,JSON.stringify(batch));}catch(e){}
+    }
+  }catch(e){esRejectRead(c,'batch',e);}
+}
+function esStartRead(s){
+  esStopRead();s.esReadEnabled=true;s.cloudReady=false;
+  const c={session:s,batch:{server:false,value:null,error:null},reports:{server:false,value:null,error:null},unsubs:[],timers:[],aborters:[],pending:false,slow:false};esRead=c;
+  esSetReadStatus(c);
+  const refs={batch:doc(db,'hourlyV1Batches',s.date),reports:query(collection(db,'hourlyReports'),where('date','==',s.date))};
+  function receive(kind,snap,origin){
+    const server=snap.metadata?.fromCache!==true&&snap.metadata?.hasPendingWrites!==true;
+    const value=kind==='batch'?{exists:snap.exists(),data:snap.exists()?snap.data():{}}:snap.docs.map(x=>({id:x.id,...x.data()}));
+    esAcceptRead(c,kind,value,server,origin);
+  }
+  for(const kind of ['batch','reports']){
+    try{const stop=onSnapshot(refs[kind],{includeMetadataChanges:true},snap=>receive(kind,snap,'listen'),e=>esRejectRead(c,kind,e));if(typeof stop==='function')c.unsubs.push(stop);}catch(e){esRejectRead(c,kind,e);}
+    // Independent reads: a slow report request cannot hide an already loaded team.
+    Promise.resolve().then(()=>kind==='batch'?getDoc(refs[kind]):getDocs(refs[kind])).then(snap=>receive(kind,snap,'once')).catch(e=>{if(!c[kind].server)esRejectRead(c,kind,e);});
+  }
+  c.timers.push(setTimeout(()=>{
+    if(!esReadCurrent(c)||s.cloudReady)return;
+    c.slow=true;esSetReadStatus(c);esStatus('Connection taking too long. Available rows stay visible; retrying the unfinished read.',true);
+    for(const kind of ['batch','reports'])if(!c[kind].server&&!/permission|unauthenticated/i.test(String(c[kind].error?.code||'')))esHttpRead(c,kind);
+  },ES_READ_SLOW_MS));
+}
+function esDecodeFirestore(value){
+  if(!value||typeof value!=='object')return null;
+  if('nullValue' in value)return null;
+  if('stringValue' in value)return value.stringValue;
+  if('booleanValue' in value)return value.booleanValue;
+  if('integerValue' in value)return Number(value.integerValue);
+  if('doubleValue' in value)return Number(value.doubleValue);
+  if('timestampValue' in value){const ms=Date.parse(value.timestampValue);return {seconds:Math.floor(ms/1000),nanoseconds:(ms%1000)*1e6};}
+  if('arrayValue' in value)return (value.arrayValue.values||[]).map(esDecodeFirestore);
+  if('mapValue' in value)return Object.fromEntries(Object.entries(value.mapValue.fields||{}).map(([k,v])=>[k,esDecodeFirestore(v)]));
+  if('referenceValue' in value)return value.referenceValue;
+  if('bytesValue' in value)return value.bytesValue;
+  if('geoPointValue' in value)return value.geoPointValue;
+  throw new Error('Unrecognized Firestore value; no data was applied.');
+}
+async function esHttpRead(c,kind){
+  // Read-only fallback, using the SAME logged-in user and Firebase Security Rules.
+  // No passwords, custom tokens, admin keys, or auth persistence changes.
+  if(!esReadCurrent(c)||typeof currentUser.getIdToken!=='function'||typeof fetch!=='function')return;
+  const controller=new AbortController();c.aborters.push(controller);
+  let timeout;
+  try{
+    const deadline=new Promise((_,reject)=>{timeout=setTimeout(()=>{controller.abort();reject(new Error('Cloud read timed out. Check connection and tap Reload.'));},10000);});
+    const result=await Promise.race([deadline,(async()=>{
+      const token=await currentUser.getIdToken();if(!esReadCurrent(c))throw new Error('Session changed.');
+      const root='https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(FIREBASE_CONFIG.projectId)+'/databases/(default)/documents';
+      const resource='projects/'+FIREBASE_CONFIG.projectId+'/databases/(default)/documents/hourlyV1Batches/'+c.session.date;
+      // Both APIs are read-only POSTs. This also prevents old PWA workers from
+      // reusing or storing an authenticated GET response before they update.
+      const options={method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},cache:'no-store',signal:controller.signal};
+      options.body=JSON.stringify(kind==='batch'?{documents:[resource]}:{structuredQuery:{from:[{collectionId:'hourlyReports'}],where:{fieldFilter:{field:{fieldPath:'date'},op:'EQUAL',value:{stringValue:c.session.date}}}}});
+      const response=await fetch(root+(kind==='batch'?':batchGet':':runQuery'),options);
+      const json=await response.json();
+      if(!response.ok){const e=new Error(json.error?.message||'Cloud read failed');e.code=response.status===403?'permission-denied':response.status===401?'unauthenticated':json.error?.status||String(response.status);throw e;}
+      const decode=d=>esDecodeFirestore({mapValue:{fields:d.fields||{}}});
+      if(kind==='batch'){
+        if(!Array.isArray(json)||json.length!==1)throw new Error('Invalid shared sheet response; no data was applied.');
+        if(json[0].found?.name===resource)return {exists:true,data:decode(json[0].found)};
+        if(json[0].missing===resource)return {exists:false,data:{}};
+        throw new Error('Shared sheet response did not match the requested date.');
+      }
+      if(!Array.isArray(json))throw new Error('Invalid report response; not an empty report list.');
+      if(json.some(r=>r.error))throw new Error('Cloud report query failed; no data was applied.');
+      return json.filter(r=>r.document).map(r=>({id:r.document.name.split('/').pop(),...decode(r.document)}));
+    })()]);
+    if(esReadCurrent(c)&&!c[kind].server)esAcceptRead(c,kind,result,true,'https');
+  }catch(e){if(esReadCurrent(c)&&!c[kind].server)esRejectRead(c,kind,e);}
+  finally{clearTimeout(timeout);}
+}
+window.employeeSheetSyncDraft=async function(){
+  const s=esSession;if(!esAllowed()||!s?.ready||s.busy)return false;
+  if(!s.cloudReady){esStatus('Wait for the cloud check, or tap Reload. No draft was published.',true);return false;}
+  const errors=s.rows.flatMap(r=>esValidateSales(r,s.routing,false).map(e=>r.name+': '+e));
+  if(errors.length){esStatus(errors.join(' '),true);return false;}
+  esPersistLocal();esSetBusy(true);esStatus('Sharing draft with your other devices… Daily Reports are not being finalized.');
+  const draft=esClone({date:s.date,uid:s.uid,rows:s.rows,baseRows:s.baseRows,dirty:s.dirty,routing:s.routing,baseRouting:s.baseRouting,baseBatch:s.baseBatch,reports:s.reports,hadCloud:s.hadCloud});
+  try{
+    const ref=doc(db,'hourlyV1Batches',draft.date);
+    const out=await runTransaction(db,async tx=>{
+      const snap=await tx.get(ref);
+      if(!esAllowed()||currentUser.uid!==draft.uid)throw new Error('Login changed. No draft was shared.');
+      if(!snap.exists()&&draft.hadCloud)throw new Error('The shared sheet was removed on another device. Reload before saving.');
+      const cloud=snap.exists()?snap.data():draft.baseBatch;
+      const remote=esPrepareBatch(cloud,draft.reports,draft.date),remoteRows=esRowsFromBatch(remote,draft.reports,draft.date);
+      const rows=esMergeRows(draft.baseRows,draft.rows,remoteRows,draft.dirty);
+      const route=esRouting(remoteRows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,remote.bar[cp].bartender||''])));
+      for(const cp of ES_PERIODS)if(draft.routing[cp]!==draft.baseRouting[cp]){
+        if(route[cp]!==draft.baseRouting[cp]&&route[cp]!==draft.routing[cp])throw new Error('BAR assignment changed on another device. Your draft is kept; Reload and review.');
+        route[cp]=draft.routing[cp];
+      }
+      const routing=esRouting(rows,route),batch=esBuildBatch(remote,rows,draft.date,routing);
+      for(const name of Object.keys(draft.dirty))if(batch.drafts[name])batch.drafts[name].savedAt=Date.now();
+      tx.set(ref,{...cloud,date:draft.date,team:batch.team,drafts:batch.drafts,bar:batch.bar,barManual:batch.barManual||{},updatedAt:serverTimestamp(),updatedByUid:draft.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});
+      return {batch,routing};
+    });
+    if(esSession!==s||!esAllowed()||currentUser.uid!==s.uid)return false;
+    s.baseBatch=out.batch;s.rawBase=esClone(out.batch);s.hadCloud=true;s.routing=out.routing;s.baseRouting=esClone(out.routing);
+    s.rows=esRowsFromBatch(out.batch,s.reports,s.date);s.baseRows=esClone(s.rows);s.dirty={};
+    try{localStorage.setItem(HV1_STORAGE_PREFIX+s.date,JSON.stringify(out.batch));}catch(e){}
+    esRecalculate();esPersistLocal();esStartRead(s);
+    esStatus('Draft shared. Open the same work date on your phone. Daily Reports were not changed.');return true;
+  }catch(e){esStatus((e.message||String(e))+' Your device draft is kept.',true);return false;}
+  finally{if(esSession===s){esSetBusy(false);esRenderRouting();esRenderRows();esReadControls();}}
+};
+// Guard against writing from a partial/offline load; leave original save math intact.
+(function(){
+  const commit=esCommit,render=esRenderRows,persist=esPersistLocal,setBusy=esSetBusy;
+  esCommit=async function(...args){
+    if(esSession?.esReadEnabled&&!esSession.cloudReady)throw new Error('Cloud data is not fully checked. Tap Reload before Save / Sign / Print. Your input is kept.');
+    const out=await commit(...args);
+    if(esSession?.esReadEnabled&&esAllowed())esStartRead(esSession);
+    return out;
+  };
+  esRenderRows=function(...args){const out=render(...args);esReadControls();return out;};
+  esPersistLocal=function(...args){const out=persist(...args);if(esReadCurrent(esRead))esSetReadStatus(esRead);return out;};
+  esSetBusy=function(busy){setBusy(busy);esReadControls();if(!busy&&esReadCurrent(esRead)&&esRead.pending)setTimeout(()=>{if(esReadCurrent(esRead))esApplyRead(esRead);},0);};
+})();
+window.addEventListener('online',()=>{if(esAllowed()&&esSession?.esReadEnabled&&document.body.classList.contains('es-active')&&!esSession.busy)esStartRead(esSession);});
+window.addEventListener('pagehide',()=>esStopRead());
+window.addEventListener('pageshow',()=>{if(esAllowed()&&esSession?.esReadEnabled&&document.body.classList.contains('es-active')&&!esRead)esStartRead(esSession);});
+// App backgrounding / sign-out must not let an old response affect a new identity.
+try{onAuthStateChanged(auth,user=>{if(esRead&&(!user||user.uid!==esRead.session.uid)){esStopRead();if(esSession?.esReadEnabled){esSession.cloudReady=false;esReadControls();}}});}catch(e){}

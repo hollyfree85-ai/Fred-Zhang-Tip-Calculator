@@ -157,3 +157,11 @@ body.es-active{overflow:hidden!important}
  #employeeSheet .es-table thead th{height:68px}
  #employeeSheet .es-footer{flex:none;min-height:22px}
 }
+
+/* ES1.1: read status and explicit draft share; no table/font scaling changes. */
+#employeeSheet .es-syncbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 10px;padding:10px 12px;border:1px solid #b9d1dd;border-radius:14px;background:#f2f9fc;color:#1b465c}
+#employeeSheet #esCloudStatus{min-width:0;flex:1 1 160px;font-size:16px;line-height:1.4;font-weight:650}
+#employeeSheet #esCloudStatus[data-error="1"]{color:#a33119}
+#employeeSheet #esSyncDraft{flex:0 0 auto;font:inherit;font-weight:850;font-size:17px;min-height:46px;border-radius:12px;padding:9px 16px;border:1px solid #9bbdcb;background:#fff;box-shadow:0 4px 0 #bed2dc;color:#143b4e;cursor:pointer}
+#employeeSheet #esSyncDraft:disabled{opacity:.55;cursor:wait}
+@media(max-width:700px){#employeeSheet #esCloudStatus{font-size:16px;flex-basis:150px}#employeeSheet #esSyncDraft{font-size:18px}}
