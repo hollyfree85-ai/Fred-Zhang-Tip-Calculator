@@ -14,7 +14,7 @@
 <link href="manifest.webmanifest" rel="manifest"/>
 <link href="icon-180.png" rel="apple-touch-icon"/>
 <title>Fred Zhang Tip Calculator</title>
-<script src="./install-app-v13849.js?v=13849-es17"></script>
+<script src="./install-app-v13849.js?v=13849-es18"></script>
 <style>
 :root{--navy:#101a30;--navy2:#1b2946;--gold:#f59e0b;--bg:#f4f6f8;--card:#fff;--line:#dde3ea;--ink:#111827;--muted:#6b7280;--green:#0f9d58;--red:#d93025;--blue:#2563eb}
 *{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Arial,sans-serif}
@@ -1733,10 +1733,10 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 #ownerSalesTable .owner-clock-grid{min-width:0}
 #ownerSalesTable .owner-clock-grid>label{min-width:0}
 </style>
-<link rel="stylesheet" href="employee-sheet-v1.css?v=es17"/>
+<link rel="stylesheet" href="employee-sheet-v1.css?v=es18"/>
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.49 · BAR / EMPLOYEE SALES SYNC + ADJUSTMENT · SINGLE LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.49 · ES1.8 · AM / 2–4 ROUTING · SESSION LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -1786,11 +1786,13 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
     <label class="remember-me-row hidden" id="fzUnifiedRememberRow" style="margin-top:14px">
       <input id="fzUnifiedRemember" type="checkbox"/>
-      <span><b>Remember me on this device</b><small>Manager / Owner can stay signed in until Logout.</small></span>
+      <span><b>Remember username on this device</b><small>Manager / Owner can stay signed in until Logout.</small></span>
     </label>
 
     <div style="height:14px"></div>
-    <button class="btn gold" id="fzUnifiedLoginBtn" type="button" onclick="fzUnifiedLogin()" style="width:100%">LOGIN</button><div id="fzP21AuthNote">Secure login uses the original app authentication and role validation.</div>
+    <button class="btn gold" id="fzUnifiedLoginBtn" type="button" onclick="fzUnifiedLogin()" style="width:100%">LOGIN</button><button class="btn light" id="fz18BiometricLogin" type="button" onclick="es18PasskeyLogin()" style="width:100%;margin-top:10px">Fingerprint / Face ID</button>
+<button class="btn light hidden" id="fz18RetrySession" type="button" onclick="es18RetrySession()" style="width:100%;margin-top:10px">Retry connection</button>
+<div id="fzP21AuthNote">Password / PIN still works. Register a passkey after signing in to use Fingerprint / Face ID. Device PIN may be offered by your device.</div>
   </div>
   <div class="hidden" id="fzUnifiedSignupPanel">
     <div class="login-panel-title">
@@ -1843,7 +1845,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div style="height:10px"></div><label>Password</label><input autocomplete="current-password" id="hostCashierPassword" type="password"/><label class="show-password-row"><input onchange="togglePasswordVisibility('hostCashierPassword',this.checked)" type="checkbox"/><span>Show password</span></label>
 <label class="remember-me-row" style="margin-top:14px">
 <input id="hostCashierRememberMe" type="checkbox"/>
-<span><b>Remember me on this device</b><small>Stay signed in to Host / Cashier Tip.</small></span>
+<span><b>Remember username on this device</b><small>Stay signed in to Host / Cashier Tip.</small></span>
 </label>
 <div style="height:14px"></div><button class="btn green" onclick="loginHostCashierWorkspace()" style="width:100%">Open Host / Cashier Tip</button>
 </div>
@@ -1853,7 +1855,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div style="height:10px"></div><label>Password</label><input autocomplete="current-password" id="hourlyV1Password" type="password"/><label class="show-password-row"><input onchange="togglePasswordVisibility('hourlyV1Password',this.checked)" type="checkbox"/><span>Show password</span></label>
 <label class="remember-me-row" style="margin-top:14px">
 <input id="hourlyV1RememberMe" type="checkbox"/>
-<span><b>Remember me on this device</b><small>Stay signed in to Tip Calculation.</small></span>
+<span><b>Remember username on this device</b><small>Stay signed in to Tip Calculation.</small></span>
 </label>
 <div style="height:14px"></div><button class="btn green" onclick="loginHourlyV1Workspace()" style="width:100%">Open Tip Calculation</button>
 </div>
@@ -1864,7 +1866,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <label class="remember-me-row" style="margin-top:14px">
 <input id="staffRememberMe" type="checkbox"/>
 <span>
-<b>Remember me on this device</b>
+<b>Remember username on this device</b>
 <small>Stay signed in after closing the browser. Logout will still sign you out.</small>
 </span>
 </label>
@@ -2806,7 +2808,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 })();
 </script>
 <script src="hourly-logic-v13840.js?v=13849"></script>
-<script src="app-v13849.js?v=13849-es17" type="module"></script>
+<script src="app-v13849.js?v=13849-es18" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2937,11 +2939,11 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
     if(role==="employee"){$("fzRoleHome")?.classList.add("hidden");$("staffApp")?.classList.add("hidden");$("employeeApp")?.classList.remove("hidden");return}
     if(!["manager","owner"].includes(role))return;
     hideOperational();const home=ensureRoleHome();if(!home)return;const isOwner=role==="owner";
-    home.innerHTML=`<div class="fz-role-home-hero" data-fz-home-role="${role}"><div class="eyebrow">${isOwner?"OWNER ACCESS":"MANAGER ACCESS"}</div><h2>${isOwner?"Owner Home":"Manager Home"}</h2><p>Login once, then move between your authorized workspaces without signing in again.</p></div><div class="fz-role-menu"><button type="button" onclick="fzOpenTodayTeam()"><span class="icon">👥</span><b>Today's Team</b><small>Name, position and shift · Edit Team · Manage Employee.</small></button><button type="button" onclick="employeeSheetOpen()"><span class="icon">▤</span><b>Employee Sheet</b><small>One-page entry · Live calculation · Save, Sign &amp; Print.</small></button><button type="button" onclick="fzOpenFinalReport()"><span class="icon">📊</span><b>Final Report</b><small>Daily reports + Monthly / Period summary · PDF and XLS.</small></button>${isOwner?"":'<button type="button" onclick="fzOpenManagerTools()"><span class="icon">🧾</span><b>Manager Tools</b><small>Approvals, Chart and Setup.</small></button>'}</div>`;
+    home.innerHTML=`<div class="fz-role-home-hero" data-fz-home-role="${role}"><div class="eyebrow">${isOwner?"OWNER ACCESS":"MANAGER ACCESS"}</div><h2>${isOwner?"Owner Home":"Manager Home"}</h2><p>Login once, then move between your authorized workspaces without signing in again.</p></div><div class="fz-role-menu"><button type="button" onclick="fzOpenTodayTeam()"><span class="icon">👥</span><b>Today's Team</b><small>Name, position and shift · Edit Team · Manage Employee.</small></button><button type="button" onclick="employeeSheetOpen()"><span class="icon">▤</span><b>Employee Sheet</b><small>One-page entry · Live calculation · Save, Sign &amp; Print.</small></button><button type="button" onclick="fzOpenFinalReport()"><span class="icon">📊</span><b>Final Report</b><small>Daily reports + Monthly / Period summary · PDF and XLS.</small></button></div>`;
     home.classList.remove("hidden");document.body.classList.add("fz-staff-logged-in");window.scrollTo({top:0,left:0,behavior:"instant"});
   };
   window.fzOpenManagerTools=function(){
-    const role=String(window.__getCurrentRole?.()||"");if(!["manager","owner"].includes(role))return;
+    const role=String(window.__getCurrentRole?.()||"");if(role!=="owner")return;
     $("fzRoleHome")?.classList.add("hidden");document.body.classList.remove("hourly-v1-mode","hourly-v1-editing","hourly-v1-small-report","hourly-workspace-mode");
     $("hourlyV1Workspace")?.classList.add("hidden");$("staffApp")?.classList.remove("hidden");document.querySelectorAll(".staffPanel").forEach(x=>x.classList.add("hidden"));
     const target=document.querySelector('[data-stab="approvals"]');if(target)target.click();else $("approvals")?.classList.remove("hidden");window.scrollTo({top:0,left:0,behavior:"instant"});
@@ -2980,7 +2982,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13849.js?v=13849-es17',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13849.js?v=13849-es18',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -3107,7 +3109,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13840.js?v=13849-es17"></script>
+<script type="module" src="host-cashier-tip-v13840.js?v=13849-es18"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>

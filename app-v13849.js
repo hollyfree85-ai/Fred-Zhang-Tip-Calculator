@@ -7,7 +7,7 @@ window.togglePasswordVisibility=function(inputId,show){
 };
 
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import {getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInAnonymously, setPersistence, inMemoryPersistence, reauthenticateWithCredential, EmailAuthProvider, updatePassword, browserLocalPersistence, browserSessionPersistence} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import {getAuth, initializeAuth, signInWithCustomToken, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInAnonymously, setPersistence, inMemoryPersistence, reauthenticateWithCredential, EmailAuthProvider, updatePassword, browserLocalPersistence, browserSessionPersistence} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, runTransaction} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
 import { getMessaging, getToken, isSupported as isMessagingSupported } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js";
@@ -15,14 +15,10 @@ import { FIREBASE_CONFIG } from "./firebase-config.js";
 import { PUSH_VAPID_PUBLIC_KEY } from "./push-config.js";
 
 const firebaseApp = initializeApp(FIREBASE_CONFIG);
-const auth = getAuth(firebaseApp);
 
-// V13.8.49 THERMAL PRINT RETURN BRIDGE — one-time only.
-// PassPRNT returns to the web app by opening the callback URL again. The normal
-// V11.1 shared-device policy intentionally uses in-memory auth, which would make
-// that callback look like a logout. For a signed thermal print only, preserve the
-// already-authenticated Manager/Owner just long enough to survive that callback,
-// then immediately migrate the restored account back to in-memory persistence.
+// ES1.8: normal authentication belongs to the current browser tab/session.
+// A temporary LOCAL bridge is retained only for the existing Android PassPRNT
+// callback, which may reopen a separate browser activity. No passwords are stored.
 const PASS_PRNT_RETURN_PARAM="fzPassPrntReturn";
 const PASS_PRNT_BRIDGE_KEY="fzPassPrntSessionBridgeV1";
 function readPassPrntReturnBridge(){
@@ -71,49 +67,25 @@ function cleanPassPrntCallbackUrl(){
 }
 const passPrntReturnBridge=readPassPrntReturnBridge();
 
-// V11.1 shared-link security: Owner, Manager, and Employee sessions live only in this tab.
+// Explicit SESSION initialization does not adopt old, indefinitely persisted
+// LOCAL credentials on an ordinary fresh launch. A valid print bridge is the
+// sole exception; the restored user is validated and moved back to SESSION.
+const auth=initializeAuth(firebaseApp,{persistence:passPrntReturnBridge?browserLocalPersistence:browserSessionPersistence});
+let es18LoginAttemptRole=null;
 const authSecurityReady=(async()=>{
   try{
-    if(passPrntReturnBridge){
-      // The PRINT action temporarily persists the current Manager/Owner in
-      // browserLocalPersistence. On return from PassPRNT, let Firebase fully
-      // hydrate that exact user BEFORE moving the session back to memory-only.
-      // This avoids the Android race where the callback page used to see null
-      // for a moment, clear the bridge, and show the login screen.
-      await setPersistence(auth,browserLocalPersistence);
-      if(typeof auth.authStateReady==="function")await auth.authStateReady();
-      if(!auth.currentUser){
-        await new Promise(resolve=>{
-          let finished=false;
-          let stop=()=>{};
-          const timer=setTimeout(()=>{if(finished)return;finished=true;try{stop()}catch(_){};resolve();},8000);
-          stop=onAuthStateChanged(auth,u=>{if(finished||!u)return;finished=true;clearTimeout(timer);try{stop()}catch(_){};resolve();});
-        });
-      }
-      if(auth.currentUser && !auth.currentUser.isAnonymous){
-        // IMPORTANT: keep LOCAL persistence until the callback page has fully
-        // processed onAuthStateChanged + loaded the Manager/Owner profile.
-        // Moving back to memory persistence here is too early on Android and can
-        // race the first auth callback, making the UI fall back to LOGIN even
-        // though the print succeeded. The callback handler below migrates back
-        // to memory-only only AFTER the app/report is visibly restored.
-        cleanPassPrntCallbackUrl();
-        return;
-      }
-      // Do not deliberately sign out here. If hydration is unusually slow,
-      // leave the short-lived bridge intact so the next immediate reload can retry.
-      cleanPassPrntCallbackUrl();
-      return;
-    }
-    await setPersistence(auth,inMemoryPersistence);
-    // Remove any account session left behind by older versions before this page is usable.
-    if(auth.currentUser && !auth.currentUser.isAnonymous){
-      await signOut(auth);
-    }
-  }catch(e){
-    console.warn("Auth security init:",e);
-  }
+    if(typeof auth.authStateReady==='function')await auth.authStateReady();
+    await setPersistence(auth,passPrntReturnBridge?browserLocalPersistence:browserSessionPersistence);
+    if(passPrntReturnBridge)cleanPassPrntCallbackUrl();
+  }catch(e){console.warn('Session initialization:',e);}
 })();
+async function es18PasswordSignIn(email,password){
+  await authSecurityReady;
+  await setPersistence(auth,browserSessionPersistence);
+  es18LoginAttemptRole=String(fzLoginRole||'');
+  try{return await signInWithEmailAndPassword(auth,email,password);}
+  catch(e){es18LoginAttemptRole=null;throw e;}
+}
 
 const db = getFirestore(firebaseApp);
 const functions = getFunctions(firebaseApp, "us-central1");
@@ -789,7 +761,7 @@ window.loginEmployee = async function(){
   if(!username || !pin){ loginMsg("Enter username and PIN."); return; }
   try{
     loginMsg("Signing in...");
-    await signInWithEmailAndPassword(auth, emailFor(username), employeeAuthPassword(pin));
+    await es18PasswordSignIn(emailFor(username), employeeAuthPassword(pin));
   }catch(e){
     console.error("Employee login:", e);
     loginMsg(`Login failed: ${e.code || "invalid-login"}`);
@@ -1698,6 +1670,15 @@ function hv1EnsureBarState(s){
   }
   return s.bar;
 }
+function hv1BarRecipient(key,s){
+  const assigned=String(s?.bar?.[key]?.bartender||'');
+  if(assigned || key!=='2PM_4PM')return assigned;
+  const am=String(s?.bar?.AM?.bartender||'');
+  if(!am)return '';
+  // An explicitly EARLY-only bartender stops at 2 PM; never extend that shift.
+  const shift=hv1DraftShift(s?.drafts?.[am]);
+  return shift===SHIFT_EARLY?'':am;
+}
 function hv1DraftRole(d){return String(employeeWorkProfile(d?.employee||d?.values?.hEmployee)?.position||d?.values?.hPosition||d?.hourlyWizardState?.position||'').toLowerCase()}
 function hv1DraftShift(d){return String(d?.values?.hShift||d?.hourlyWizardState?.shift||'').toUpperCase()}
 function hv1ServerNamesForCheckpoint(key,s){
@@ -1970,8 +1951,10 @@ function hv1ApplyBarAutomation(s){
     ['PM',receivedPM,receivedAM,received24]
   ];
   for(const [key,received,prevAM,prev24] of checkpointInfo){
-    const bartender=bar[key].bartender;
+    const bartender=hv1BarRecipient(key,s);
     if(!bartender)continue;
+    // Do not replace the AM manual form with an empty inherited checkpoint.
+    if(key==='2PM_4PM'&&!bar[key].bartender&&received===0)continue;
     const d=s.drafts[bartender]||hv1BlankDraft(bartender);
     d.values=d.values||{};d.entered=d.entered||{};
     d.values.hPosition='Bartender';d.entered.hPosition=true;
@@ -2562,7 +2545,7 @@ async function hv1MarkFinal(reportId="",sourceSubmissionId="",employee=hv1Editin
 
 const HV1_REMEMBER_KEY='fz_hv1_remember',HV1_USERNAME_KEY='fz_hv1_username';
 function loadHourlyV1Remember(){try{const r=localStorage.getItem(HV1_REMEMBER_KEY)==='1';if($('hourlyV1RememberMe'))$('hourlyV1RememberMe').checked=r;if(r&&$('hourlyV1Username'))$('hourlyV1Username').value=localStorage.getItem(HV1_USERNAME_KEY)||''}catch(e){}}
-window.loginHourlyV1Workspace=async function(){fzLoginRole="hourlyv1";ensureRealtimeAlertAudio();await authSecurityReady;const username=String($('hourlyV1Username')?.value||'').trim(),password=String($('hourlyV1Password')?.value||'');if(!username||!password){loginMsg('Enter Manager / Owner username and password.');return}const remember=!!$('hourlyV1RememberMe')?.checked;try{await setPersistence(auth,remember?browserLocalPersistence:browserSessionPersistence)}catch(e){}try{if(remember){localStorage.setItem(HV1_REMEMBER_KEY,'1');localStorage.setItem(HV1_USERNAME_KEY,username)}else{localStorage.removeItem(HV1_REMEMBER_KEY);localStorage.removeItem(HV1_USERNAME_KEY)}}catch(e){}hourlyV1Requested=true;hourlyWorkspaceRequested=false;try{loginMsg('Signing in...');await signInWithEmailAndPassword(auth,emailFor(username),password)}catch(e){hourlyV1Requested=false;loginMsg(`Login failed: ${e.code||'invalid-login'}`)}};
+window.loginHourlyV1Workspace=async function(){fzLoginRole="hourlyv1";ensureRealtimeAlertAudio();await authSecurityReady;const username=String($('hourlyV1Username')?.value||'').trim(),password=String($('hourlyV1Password')?.value||'');if(!username||!password){loginMsg('Enter Manager / Owner username and password.');return}const remember=!!$('hourlyV1RememberMe')?.checked;try{await setPersistence(auth,browserSessionPersistence)}catch(e){}try{if(remember){localStorage.setItem(HV1_REMEMBER_KEY,'1');localStorage.setItem(HV1_USERNAME_KEY,username)}else{localStorage.removeItem(HV1_REMEMBER_KEY);localStorage.removeItem(HV1_USERNAME_KEY)}}catch(e){}hourlyV1Requested=true;hourlyWorkspaceRequested=false;try{loginMsg('Signing in...');await es18PasswordSignIn(emailFor(username),password)}catch(e){hourlyV1Requested=false;loginMsg(`Login failed: ${e.code||'invalid-login'}`)}};
 setTimeout(loadHourlyV1Remember,0);
 
 let hourlyWorkspaceRequested=false;
@@ -2609,7 +2592,7 @@ function loadHourlyRememberPreference(){
 async function applyHourlyRememberPreference(){
   const remember=!!$("hourlyRememberMe")?.checked;
   try{
-    await setPersistence(auth,remember?browserLocalPersistence:browserSessionPersistence);
+    await setPersistence(auth,browserSessionPersistence);
   }catch(e){console.warn("Hourly auth persistence:",e);}
   try{
     if(remember){
@@ -2641,7 +2624,7 @@ function loadStaffRememberPreference(){
 async function applyStaffRememberPreference(){
   const remember=!!$("staffRememberMe")?.checked;
   try{
-    await setPersistence(auth, remember ? browserLocalPersistence : browserSessionPersistence);
+    await setPersistence(auth,browserSessionPersistence);
   }catch(e){
     console.warn("Auth persistence:",e);
   }
@@ -2676,7 +2659,7 @@ window.loginHostCashierWorkspace=async function(){
   const password=String($("hostCashierPassword")?.value||"");
   if(!username||!password){loginMsg("Enter Manager / Owner username and password.");return;}
   const remember=!!$("hostCashierRememberMe")?.checked;
-  try{await setPersistence(auth,remember?browserLocalPersistence:browserSessionPersistence)}catch(e){}
+  try{await setPersistence(auth,browserSessionPersistence)}catch(e){}
   try{
     if(remember){localStorage.setItem("fzHostCashierRemember","1");localStorage.setItem("fzHostCashierUsername",username)}
     else{localStorage.removeItem("fzHostCashierRemember");localStorage.removeItem("fzHostCashierUsername")}
@@ -2685,7 +2668,7 @@ window.loginHostCashierWorkspace=async function(){
   hostCashierRequested=true;
   try{
     loginMsg("Signing in...");
-    await signInWithEmailAndPassword(auth,emailFor(username),password);
+    await es18PasswordSignIn(emailFor(username),password);
   }catch(e){
     hostCashierRequested=false;
     loginMsg(`Login failed: ${e.code||"invalid-login"}`);
@@ -2702,7 +2685,7 @@ window.loginStaff = async function(){
   if(!username || !password){ loginMsg("Enter username and password."); return; }
   try{
     loginMsg("Signing in...");
-    await signInWithEmailAndPassword(auth, emailFor(username), password);
+    await es18PasswordSignIn(emailFor(username), password);
   }catch(e){
     console.error("Staff login:", e);
     loginMsg(`Login failed: ${e.code || "invalid-login"}`);
@@ -2733,6 +2716,11 @@ function clearSharedDeviceLoginFields(){
 }
 
 window.logout = async function(){
+  es18LoginAttemptRole=null;
+  window.es18ClosePrintPreview?.();
+  window.es18ClosePasskeys?.();
+  try{localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);}catch(e){}
+
   ownerTableSession=null;++ownerTableRequest;$("ownerTableBody").innerHTML="";if($('ownerTableGroups'))$('ownerTableGroups').innerHTML='';
   hv1RestoreSmallReportHome();
   hourlyWorkspaceRequested=false;hourlyV1Requested=false;hostCashierRequested=false;hourlyV1Mode=false;hv1EditingEmployee="";document.body.classList.remove("hourly-v1-mode","hourly-v1-editing","hourly-v1-small-report");
@@ -2937,8 +2925,11 @@ function showApp(){
     document.querySelector('[data-stab="approvals"]')?.click();
   }
 }
-onAuthStateChanged(auth, async user=>{
+let es18AuthSequence=0;
+async function es18HandleAuthUser(user){
+  const sequence=++es18AuthSequence;
   await authSecurityReady;
+  if(!user&&auth.currentUser)user=auth.currentUser;
   // PassPRNT can fire the listener once with the pre-hydration null value.
   // After authSecurityReady finishes, always prefer the CURRENT hydrated user
   // for this one-time print return instead of treating that stale null as logout.
@@ -2946,7 +2937,7 @@ onAuthStateChanged(auth, async user=>{
     user=auth.currentUser;
   }
   // If this callback came from a stale persisted session that was just cleared, ignore it.
-  if(user && !auth.currentUser) return;
+  if(user && (!auth.currentUser || user.uid!==auth.currentUser.uid)) return;
   clearListeners();
   if(!user){
     currentUser=null; currentProfile=null;
@@ -2961,6 +2952,7 @@ onAuthStateChanged(auth, async user=>{
   }
   try{
     const profile=await loadProfile(user.uid);
+    if(sequence!==es18AuthSequence || auth.currentUser?.uid!==user.uid)return;
     if(!profile){
       loginMsg("Account exists but no JUICY TIP profile was found.");
       await signOut(auth); return;
@@ -2977,9 +2969,9 @@ onAuthStateChanged(auth, async user=>{
     // The unified login UI resets its selector to Employee on DOMContentLoaded; using
     // that temporary/default UI value here would incorrectly sign out a restored
     // Manager/Owner immediately after returning from Star PassPRNT.
-    const selected=passPrntReturnBridge?.dailyReport
-      ? String(passPrntReturnBridge.role||fzLoginRole)
-      : fzLoginRole;
+    // The default Employee selector is NOT an authorization requirement on
+    // refresh. Enforce a chosen role only for an explicit sign-in attempt.
+    const selected=es18LoginAttemptRole || (passPrntReturnBridge?.dailyReport?String(passPrntReturnBridge.role||''):'');
     const role=String(profile.role||"");
     if((["manager","owner","employee","cashier"].includes(selected) && role!==selected) || (selected==="hostcashier" && !["manager","owner"].includes(role))){
       await signOut(auth);
@@ -2988,6 +2980,9 @@ onAuthStateChanged(auth, async user=>{
     }
     currentUser=user;
     currentProfile=profile;
+    es18LoginAttemptRole=null;
+    window.es18UpdateBiometricUi?.();
+    $('fz18RetrySession')?.classList.add('hidden');
     loginMsg("");
 
     if((hourlyWorkspaceRequested||hourlyV1Requested) && !["manager","owner"].includes(String(profile.role||""))){
@@ -3029,12 +3024,12 @@ onAuthStateChanged(auth, async user=>{
     if(passPrntReturnBridge?.dailyReport){
       restoreSmallReportAfterPassPrnt(passPrntReturnBridge);
       // Only after the authenticated app is back on screen do we restore the
-      // original shared-device memory-only policy. This keeps the user logged in
+      // tab-scoped session policy. This keeps the user logged in
       // through the PassPRNT callback without changing normal login/logout flow.
       setTimeout(async()=>{
         try{
           if(auth.currentUser && !auth.currentUser.isAnonymous){
-            await setPersistence(auth,inMemoryPersistence);
+            await setPersistence(auth,browserSessionPersistence);
           }
         }catch(e){console.warn("PassPRNT persistence cleanup:",e);}
         try{localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);}catch(e){}
@@ -3043,10 +3038,16 @@ onAuthStateChanged(auth, async user=>{
     }
   }catch(e){
     console.error("Profile load:",e);
-    loginMsg(`Profile load failed: ${e.code || e.message}`);
-    await signOut(auth);
+    // A network/Firestore interruption is not an instruction to log out.
+    // Unknown profiles remain hidden until a successful retry; auth is retained.
+    if(sequence!==es18AuthSequence || auth.currentUser?.uid!==user.uid)return;
+    loginMsg('Session retained. Account connection interrupted. Tap Retry connection.');
+    $('fz18RetrySession')?.classList.remove('hidden');
   }
-});
+}
+onAuthStateChanged(auth,es18HandleAuthUser);
+window.es18RetrySession=()=>es18HandleAuthUser(auth.currentUser);
+window.addEventListener('online',()=>{if(auth.currentUser&&!currentProfile)window.es18RetrySession();});
 
 setTimeout(()=>startGlobalMoneyReadyWatcher(),50);
 
@@ -3321,12 +3322,7 @@ window.submitEmployee=async function(){
     await writeAudit("employee_submit",ref.id,r.employee,{after:r});
     localStorage.removeItem(employeeDraftKey());
     clearEmployeeForm();
-    alert("Employee submission sent. This shared tablet is now signed out.");
-    try{
-      localStorage.removeItem(employeeDraftKey());
-      sessionStorage.clear();
-      await signOut(auth);
-    }catch(e){ console.warn("Post-submit logout:",e); }
+    alert("Employee submission sent. You are still signed in.");
   }catch(e){
     console.error(e);
     alert(`Submit failed: ${e.code || e.message}`);
@@ -6020,7 +6016,14 @@ async function shareReportFile(blob,filename,target){
 }
 
 function downloadBlob(blob,filename){
+  if(blob?.type==='application/pdf' && es18IsAppleMobile()){
+    es18OpenPdfPreview(blob,filename);return;
+  }
+  es18DownloadRaw(blob,filename);
+}
+function es18DownloadRaw(blob,filename){
   const a=document.createElement("a");
+  if(blob?.type==='application/pdf'){a.target='_blank';a.rel='noopener';}
   const url=URL.createObjectURL(blob);
   a.href=url; a.download=filename;
   document.body.appendChild(a); a.click(); a.remove();
@@ -6210,15 +6213,10 @@ function buildSmallReportThermalHtml(r){
   </body></html>`;
 }
 function openSmallReportSystemThermalPrint(r){
-  const w=window.open("","_blank","width=430,height=760");
-  if(!w){alert("Print window was blocked. Allow pop-ups for this app and tap PRINT again.");return false;}
-  w.document.open();
-  w.document.write(buildSmallReportThermalHtml(r));
-  w.document.close();
-  const run=()=>{try{w.focus();w.print();}catch(e){console.error("Thermal print:",e);}};
-  if(w.document.readyState==="complete")setTimeout(run,120);else w.addEventListener("load",()=>setTimeout(run,120),{once:true});
+  es18OpenPrintPreview(buildSmallReportThermalHtml(r),(r.employee||'Employee')+' — Daily Report');
   return true;
 }
+
 async function prepareSmallReportPassPrntReturn(r){
   const bridge={
     startedAt:Date.now(),
@@ -6231,13 +6229,13 @@ async function prepareSmallReportPassPrntReturn(r){
   };
   localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(bridge));
   // Persist only for the few seconds while Android hands the page to PassPRNT.
-  // The callback startup immediately migrates this same user back to memory-only.
+  // The callback validates this same user and migrates back to session persistence.
   await setPersistence(auth,browserLocalPersistence);
   return bridge;
 }
 async function cancelSmallReportPassPrntReturn(){
   try{localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);}catch(e){}
-  try{await setPersistence(auth,inMemoryPersistence);}catch(e){}
+  try{await setPersistence(auth,browserSessionPersistence);}catch(e){}
 }
 function openSmallReportStarPassPrnt(r){
   const html=buildSmallReportThermalHtml(r);
@@ -7958,7 +7956,7 @@ function howAssignedBartenderReceipts(){
   const saved=(latestHourlyReports||[]).find(r=>r.id===currentHourlyReportId && matches(r.employee) && r.date===date);
   let batch;try{batch=JSON.parse(localStorage.getItem(HV1_STORAGE_PREFIX+date)||"null")}catch{batch=null}
   if(batch?.bar){
-    const assigned=["AM","2PM_4PM","PM"].filter(key=>matches(batch.bar[key]?.bartender));
+    const assigned=["AM","2PM_4PM","PM"].filter(key=>matches(hv1BarRecipient(key,batch)));
     const previousAssignment=batch.drafts?.[name]?.barAutoReceived || bartenderReceiptPeriods(saved).length;
     if(assigned.length || previousAssignment){
       const periods=assigned.map(checkpoint=>({checkpoint,amount:hv1BarReceived(checkpoint,batch)}));
@@ -9931,11 +9929,8 @@ window.downloadMonthlyReportXls=function(){
 window.printMonthlyReport=function(){
   if(!["manager","owner"].includes(currentProfile?.role||""))return;
   const rows=monthlyReportSummaries();if(!rows.length){alert("No Monthly Report data for this period.");return;}
-  const w=window.open("","_blank","width=1400,height=900");
-  if(!w){alert("Please allow pop-ups to print the Monthly Report.");return;}
-  try{w.opener=null;}catch(e){}
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>Monthly Report</title><style>@page{size:landscape;margin:8mm}body{font-family:Arial,sans-serif;color:#111;margin:0}h1{font-size:18pt;margin:0 0 4px}p{font-size:9pt;margin:0 0 12px}table{width:100%;border-collapse:collapse;font-size:7.5pt}th,td{border:1px solid #777;padding:4px 5px;text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}th{background:#e9eef5}tfoot td{font-weight:bold;background:#f3f5f8}.fz-monthly-name small,.fz-monthly-total small{display:block;font-size:6.5pt;font-weight:normal}</style></head><body><h1>Fred Zhang Tip Calculator — Monthly / Period Report</h1><p>${esc(monthlyReportPeriodLabel())}</p>${monthlyReportExportTable(rows)}<script>window.onload=()=>{setTimeout(()=>window.print(),150)}<\/script></body></html>`;
-  w.document.open();w.document.write(html);w.document.close();
+  es18OpenPrintPreview(html.replace(/<script[\s\S]*?<\/script>/gi,''),'Monthly / Period Report');
 };
 function initMonthlyReportUi(){
   if(monthlyReportUiReady||$("monthlyReport"))return;
@@ -10267,7 +10262,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.7';
+const ES_BUILD='ES1.8';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10362,6 +10357,11 @@ function esValidateSales(row,route,complete=false){
     let previous=0;
     for(const [field,enabled] of [['totalAM',mask.totalAM],['total24',mask.total24],['grand',true]]){
       const raw=String(row[field]??'').trim();if(!enabled||raw==='')continue;
+      // During an unfinished Double/Long shift the final POS total is still
+      // blank/0. Publish valid AM/2-4 checkpoints now, without inventing a PM
+      // Grand Total. A real final Save/Sign/Print remains strict.
+      if(field==='total24'&&Number(raw)===0&&previous>0)continue;
+      if(!complete&&field==='grand'&&['DOUBLE','LONG'].includes(row.shift)&&Number(raw)===0&&previous>0)continue;
       if(Number(raw)<previous)errors.push(field+' cannot be below the earlier cumulative sales.');
       previous=Math.max(previous,Number(raw)||0);
     }
@@ -10440,7 +10440,7 @@ function esCalculate(row,batch,oldReport=null){
   r.barTipAM=r.amBarTipOut||0;r.barTipPM=r.pmBarTipOut||0;
   Object.assign(r,{bartenderCheckpoints:[],bartenderPeriodReceipts:[],bartenderReceiptsSource:'',bartenderShiftType:'',bartenderServerEntries:[],bartenderServerGrandTotalSummary:0,bartenderGrossBarTipOut:0,bartenderLessAM:0,bartenderLess24:0,bartenderPreviousAMInput:0,bartenderPrevious24Input:0,bartenderBarTipReceived:0});
   if(bt){
-    const periods=ES_PERIODS.filter(cp=>batch.bar[cp].bartender===row.name).map(checkpoint=>({checkpoint,amount:hv1BarReceived(checkpoint,batch)}));
+    const periods=ES_PERIODS.filter(cp=>hv1BarRecipient(cp,batch)===row.name).map(checkpoint=>({checkpoint,amount:hv1BarReceived(checkpoint,batch)}));
     const received=howRoundCent(periods.reduce((sum,p)=>sum+p.amount,0));
     const last=periods.at(-1)?.checkpoint||'AM',period=hv1BarCheckpointTotals(last,batch);
     Object.assign(r,{bartenderCheckpoints:periods.map(p=>p.checkpoint),bartenderPeriodReceipts:periods,bartenderReceiptsSource:'BAR_CENTER',bartenderShiftType:last,bartenderBarTipReceived:received,
@@ -10601,9 +10601,15 @@ function esUpdateSummary(){
   $('esTotals').textContent=`${s.rows.length} employees · Sales ${esMoney(rows.reduce((a,r)=>a+Number(r.grandTotal||0),0))} · Payout ${esMoney(rows.reduce((a,r)=>a+Number(r.totalPaidOut||0),0))}`;
   $('esBusserRule').textContent=isWeekendDate(s.date)?'BUSSER · Sat / Sun: 1.5% all day · Bartender: 0%':'BUSSER · Mon–Fri: AM 0% / PM 1.5% · Bartender: 0%';
 }
+function es18MiddleRouteLabel(rows,route){
+  const am=rows.find(r=>r.name===route.AM&&r.role==='Bartender');
+  if(!am)return 'No separate 2–4 · assign AM bartender';
+  if(am.shift===SHIFT_EARLY)return 'Assign 2–4 bartender · AM ends at 2 PM';
+  return 'No separate 2–4 → '+am.name+' (AM)';
+}
 function esRenderRouting(){
   const s=esSession;if(!s?.ready)return;
-  $('esBarRoutes').innerHTML=ES_PERIODS.map(cp=>`<label>BAR ${bartenderPeriodLabel(cp)} → Bartender<select data-es-route="${cp}">${esOption('','Choose / not assigned',s.routing[cp])}${esPeriodCandidates(s.rows,cp).map(r=>esOption(r.name,r.name,s.routing[cp])).join('')}</select></label>`).join('');
+  $('esBarRoutes').innerHTML=ES_PERIODS.map(cp=>`<label>BAR ${bartenderPeriodLabel(cp)} → Bartender<select data-es-route="${cp}">${esOption('',cp==='2PM_4PM'?es18MiddleRouteLabel(s.rows,s.routing):'Choose / not assigned',s.routing[cp])}${esPeriodCandidates(s.rows,cp).map(r=>esOption(r.name,r.name,s.routing[cp])).join('')}</select></label>`).join('');
   const existing=new Set(s.rows.map(r=>esKey(r.name)));
   $('esAddName').innerHTML='<option value="">Select employee…</option>'+getEmployeeRoster().filter(n=>!existing.has(esKey(n))).map(n=>esOption(n,n,'')).join('');
 }
@@ -10613,7 +10619,7 @@ function esInit(){
   const el=document.createElement('section');el.id='employeeSheet';el.className='staffPanel hidden';
   el.innerHTML=`<div class="es-header"><button type="button" id="esHome" class="es-home">‹ Home</button><div><span class="es-eyebrow">ONE PAGE · LIVE CALCULATION · ${ES_BUILD}</span><h2>Employee Sheet</h2><span id="esDateBadge" class="es-date-badge"></span></div><button type="button" id="esTools" class="es-home" aria-expanded="false">Tools</button><button type="button" id="esReload" class="es-home">Reload</button></div>
     <div class="es-toolbar"><label>Work date<input type="date" id="esDate"></label><label class="es-search">Find employee<input type="search" id="esSearch" placeholder="Search name"></label><details id="esTeamDetails"><summary>＋ Team / BAR</summary><div class="es-team-panel"><div class="es-add"><label>Add employee<select id="esAddName"></select></label><button type="button" id="esAdd">Add</button></div><div id="esBarRoutes"></div><p>Total 2–4 includes AM; Grand Total is the final cumulative amount. One bartender per BAR period. An employee working two positions uses the separate work accounts already in the app.</p></div></details></div>
-    <div class="es-guide"><span id="esBusserRule"></span><details><summary>Sales / Save notes</summary><p>Total 2–4 is cumulative (includes AM). Grand Total is the final total, not extra sales. LONG: Total 2–4 is the existing early/no-busser sales basis on weekdays. A checkbox waives only its own BAR period. BAR Received uses all sales on this sheet; save each employee row to update that employee’s Daily Report. Other input is retained as drafts. Cash Tip is not paid twice; Hourly Adjustment follows the existing acceptance rule.</p></details></div>
+    <div class="es-guide"><span id="esBusserRule"></span><details><summary>Sales / Save notes</summary><p>Total 2–4 is cumulative (includes AM). Grand Total is the final total, not extra sales. LONG: Total 2–4 is the existing early/no-busser sales basis on weekdays. A checkbox waives only its own BAR period. Without a separate 2–4 bartender, that period goes to the AM bartender (except an explicit 10:45–14:00 shift). AM/2–4 fees calculate before the final Grand Total. BAR Received uses all sales on this sheet; save each employee row to update that employee’s Daily Report. Other input is retained as drafts. Cash Tip is not paid twice; Hourly Adjustment follows the existing acceptance rule.</p></details></div>
     <nav class="es-jump" aria-label="Jump to columns">${[['staff','Staff'],['clocks','Clocks'],['sales','Sales'],['busser','Busser'],['bar','BAR'],['tips','Tips / Meal'],['checks','BAR Sales'],['payout','Payout']].map(([key,label])=>`<button type="button" data-es-jump="${key}">${label}</button>`).join('')}</nav>
     <div id="esStatus" class="es-status" role="status" aria-live="polite">Loading…</div>
     <div class="es-grid" id="esGrid" tabindex="0" aria-label="Employee Sheet: scroll right for more columns"><table class="es-table"><colgroup><col class="es-name-col">${ES_COLUMNS.map(([,,width])=>`<col style="width:${width}px">`).join('')}</colgroup><thead><tr><th scope="col" class="es-name">Employee<span>Save · Sign · Print</span></th>${ES_COLUMNS.map(([field,label,,group])=>`<th scope="col" data-es-col="${field}" data-es-group="${group}">${esc(label)}${field==='total24'?'<small>Includes AM</small>':field==='grand'?'<small>Final cumulative</small>':''}</th>`).join('')}</tr></thead><tbody id="esRows"></tbody></table></div>
@@ -10882,7 +10888,7 @@ window.employeeSheetPrint=async function(name){
   if(!esAllowed()||esSession?.busy)return;
   const android=/Android/i.test(navigator.userAgent||'');let popup=null;
   // Open synchronously in the click gesture before awaiting a save.
-  if(!android){popup=window.open('','_blank','width=430,height=760');if(!popup){esStatus('Allow a print pop-up for this app, then press Print again.',true);return;}popup.document.write('<p>Preparing receipt…</p>');}
+  if(!android)popup=es18OpenPrintPreview(null,name+' — Preparing receipt');
   esSetBusy(true);esStatus('Saving current row before printing…');
   try{
     const out=await esCommit(name),r=out.report,html=esThermalHtml(r);
@@ -10892,8 +10898,7 @@ window.employeeSheetPrint=async function(name){
       esPersistLocal();const link=document.createElement('a');link.href=esPassPrntUri(r,html);link.style.display='none';document.body.appendChild(link);link.click();link.remove();
       esStatus('Sent to Star PassPRNT. The saved Daily Report is unchanged by printing.');
     }else{
-      popup.document.open();popup.document.write(html);popup.document.close();
-      setTimeout(()=>{try{popup.focus();popup.print();}catch(e){}},250);esStatus('Receipt opened for printing.');
+      popup?.setHtml(html);esStatus('Receipt ready. Tap Print, then Close / Back to app.');
     }
   }catch(e){if(popup)popup.close();es14HandleError(e);if(android)await cancelSmallReportPassPrntReturn();}
   finally{esSetBusy(false);esRenderRows();esRenderRouting();}
@@ -12430,7 +12435,7 @@ async function hc15Commit(name,signature=null,expected=''){
 }
 async function hc15Action(name,action='save'){
   const s=hc15Session;if(!s||s.busy)return false;let popup=null;
-  const android=/Android/i.test(navigator.userAgent||'');if(action==='print'&&!android){popup=window.open('','_blank','width=430,height=760');if(!popup){s.error='Allow print pop-ups, then retry.';hc15UpdateValues();return false;}popup.document.write('<p>Preparing receipt…</p>');}
+  const android=/Android/i.test(navigator.userAgent||'');if(action==='print'&&!android)popup=es18OpenPrintPreview(null,tt15Label(name)+' — Preparing receipt');
   s.busy=true;hc15Render();
   try{if(action==='save'&&(hc16NeedsDraft(hc15View(s),name)||!s.verified||!es14IsOnline())){await hc16SaveDraft(name);return true;}const report=await hc15Commit(name);if(action==='print')await hc15PrintReport(report,popup);s.error='';esStatus(tt15Label(name)+(action==='print'?' saved · receipt sent to print.':' saved to Final Report.'));return true;}
   catch(e){popup?.close();s.error=e.message||String(e);esStatus(s.error,true);return false;}
@@ -12442,7 +12447,7 @@ async function hc15PrintReport(report,popup){
     try{await prepareSmallReportPassPrntReturn(report);try{const b=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');b.employeeSheet=true;localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(b));}catch(e){}
       const link=document.createElement('a');link.href=esPassPrntUri(report,html);link.style.display='none';document.body.appendChild(link);link.click();link.remove();
     }catch(e){await cancelSmallReportPassPrntReturn();throw e;}
-  }else{popup.document.open();popup.document.write(html);popup.document.close();setTimeout(()=>{try{popup.focus();popup.print();}catch(e){}},250);}
+  }else{popup?.setHtml(html);}
 }
 function hc15Sign(name){
   const s=hc15Session;if(!s?.verified||s.busy)return;
@@ -13078,3 +13083,156 @@ function es17InstallMobileViewport(){
   const init=esInit;
   esInit=function(...args){const result=init(...args);es17InstallMobileViewport();return result;};
 })();
+
+/* ES1.8 — in-app print return and optional server-verified platform passkeys.
+ * No password, PIN, biometric template, or custom token is written to storage.
+ * Financial renderers and legacy Firebase Functions are not replaced.
+ */
+let es18PrintView=null,es18PasskeyBusy=false,es18CredentialAbort=null;
+function es18IsAppleMobile(){return /iPad|iPhone|iPod/i.test(navigator.userAgent||'') || (/Mac/i.test(navigator.platform||'')&&Number(navigator.maxTouchPoints)>1);}
+function es18InstallUiStyles(){
+  if($('fz18UiStyle'))return;
+  const style=document.createElement('style');style.id='fz18UiStyle';style.textContent=`
+  .fz18-dialog{border:0;border-radius:18px;padding:0;width:min(760px,96vw);max-width:96vw;max-height:94vh;max-height:94dvh;color:#17243b;background:white;box-shadow:0 18px 70px #0008;z-index:2147483000}
+  .fz18-dialog::backdrop{background:#0c183bcc}.fz18-dialog[open]{display:flex;flex-direction:column}
+  .fz18-dialog-head{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:14px 16px;background:#142948;color:white;flex-shrink:0}
+  .fz18-dialog-head h2{font-size:18px;line-height:1.25;margin:0;color:white;word-break:break-word}.fz18-dialog button{min-height:44px;white-space:normal;cursor:pointer;font-size:16px}
+  .fz18-dialog button:disabled{opacity:.5;cursor:wait}.fz18-close{border:0;border-radius:10px;padding:10px 15px;background:white;color:#132841;font-weight:800;flex-shrink:0}
+  .fz18-actions{display:flex;gap:10px;padding:12px 16px;flex-wrap:wrap;flex-shrink:0;border-bottom:1px solid #dce3ef}.fz18-actions button{padding:10px 20px;border-radius:10px;border:1px solid #26476f;background:#26476f;color:white;font-weight:700}
+  .fz18-status{padding:9px 16px;background:#f0f5fb;font-size:14px;line-height:1.4;flex-shrink:0;min-height:20px}.fz18-dialog iframe{width:100%;height:65vh;height:65dvh;min-height:200px;border:0;background:white;display:block}
+  .fz18-passkey-body{padding:16px;overflow:auto}.fz18-passkey-body p{font-size:15px;line-height:1.5}.fz18-passkey-body label{display:block;font-weight:700;margin:12px 0 6px}.fz18-passkey-body input{width:100%;box-sizing:border-box;min-height:46px;padding:10px;font-size:17px;border:1px solid #b6c4d8;border-radius:9px}
+  .fz18-key-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid #dce3ef}.fz18-key-row small{display:block;color:#52637d;margin-top:5px}.fz18-key-row button{border:1px solid #c93c43;color:#a0262d;background:white;padding:8px 12px;border-radius:9px}
+  #fz18PrintDialog{width:min(1100px,98vw);max-width:98vw}#fz18PrintDialog .fz18-dialog-head{position:relative;top:0}
+  @media(max-width:600px){.fz18-dialog{max-height:96dvh}.fz18-dialog-head{padding:12px;gap:8px}.fz18-close{max-width:145px}.fz18-dialog iframe{height:64dvh}.fz18-actions{padding:10px 12px}}
+  `;document.head.appendChild(style);
+}
+function es18ShowDialog(dialog){
+  if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');
+}
+function es18OpenPrintPreview(html=null,title='Print preview'){
+  es18InstallUiStyles();window.es18ClosePrintPreview?.();
+  const focus=document.activeElement,dialog=document.createElement('dialog');dialog.id='fz18PrintDialog';dialog.className='fz18-dialog';dialog.setAttribute('aria-label','Report print preview');
+  dialog.innerHTML='<header class="fz18-dialog-head"><h2></h2><button class="fz18-close" type="button">✕ Close / Back to app</button></header><div class="fz18-actions"><button data-print type="button" disabled>Print</button><button data-download type="button" hidden>Download PDF</button></div><div class="fz18-status" role="status">Preparing receipt. Your app stays signed in.</div><iframe title="Report preview"></iframe>';
+  dialog.querySelector('h2').textContent=title;
+  const frame=dialog.querySelector('iframe'),print=dialog.querySelector('[data-print]'),status=dialog.querySelector('[role="status"]');
+  const view={dialog,closed:false,ready:false,objectUrl:'',focus,oldOverflow:document.body.style.overflow,
+    close(){if(view.closed)return;view.closed=true;try{dialog.close?.();}catch(e){}dialog.remove();if(view.objectUrl)URL.revokeObjectURL(view.objectUrl);document.body.style.overflow=view.oldOverflow;if(es18PrintView===view)es18PrintView=null;try{focus?.focus?.({preventScroll:true});}catch(e){}},
+    setHtml(content){if(view.closed)return;view.ready=false;print.disabled=true;if(view.objectUrl){URL.revokeObjectURL(view.objectUrl);view.objectUrl='';}frame.removeAttribute('src');frame.setAttribute('sandbox','allow-same-origin allow-modals');
+      const screen='<style>@media screen{html,body{width:auto!important;max-width:100%!important;overflow:visible!important}body{box-sizing:border-box}}</style>';
+      frame.srcdoc=String(content||'').replace('</head>',screen+'</head>');},
+    setPdf(blob,filename){if(view.closed)return;view.ready=false;print.disabled=true;if(view.objectUrl)URL.revokeObjectURL(view.objectUrl);frame.removeAttribute('sandbox');frame.removeAttribute('srcdoc');view.objectUrl=URL.createObjectURL(blob);frame.src=view.objectUrl;const b=dialog.querySelector('[data-download]');b.hidden=false;b.onclick=()=>es18DownloadRaw(blob,filename);}
+  };
+  frame.onload=()=>{if(view.closed)return;view.ready=true;print.disabled=false;status.textContent='Tap Print. After printing or canceling, use Close / Back to app.';try{frame.contentWindow.addEventListener('afterprint',()=>{if(!view.closed)status.textContent='Print dialog closed. Tap Close / Back to app to return to your report.';});}catch(e){}};
+  print.onclick=()=>{if(!view.ready||view.closed)return;try{status.textContent='Finish or cancel the system print dialog, then tap Close / Back to app.';frame.contentWindow.focus();frame.contentWindow.print();}catch(e){status.textContent='System print is unavailable in this preview. Use Download PDF when available; Close returns to your app.';}};
+  dialog.querySelector('.fz18-close').onclick=()=>view.close();dialog.addEventListener('cancel',e=>{e.preventDefault();view.close();});
+  document.body.appendChild(dialog);document.body.style.overflow='hidden';es18PrintView=view;es18ShowDialog(dialog);
+  if(html!==null)view.setHtml(html);dialog.querySelector('.fz18-close').focus();return view;
+}
+window.es18ClosePrintPreview=function(){es18PrintView?.close();};
+function es18OpenPdfPreview(blob,filename){
+  const view=es18OpenPrintPreview(null,filename||'PDF report');view.setPdf(blob,filename);return view;
+}
+// An external thermal app is not a logout. If Android returns to the original
+// tab instead of opening the callback, remove the temporary LOCAL bridge too.
+window.addEventListener('focus',async()=>{
+  try{if(!auth.currentUser||auth.currentUser.isAnonymous||!localStorage.getItem(PASS_PRNT_BRIDGE_KEY))return;
+    const b=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');if(Date.now()-Number(b.startedAt||0)<1500)return;
+    await setPersistence(auth,browserSessionPersistence);localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);
+  }catch(e){console.warn('Print session resume:',e);}
+});
+function es18PasskeySupported(){return !!(window.isSecureContext&&window.PublicKeyCredential&&navigator.credentials?.create&&navigator.credentials?.get);}
+function es18Decode64(s){const raw=atob(String(s).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
+function es18Encode64(value){const bytes=new Uint8Array(value);let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function es18PublicKeyOptions(options,registration=false){
+  const out={...options,challenge:es18Decode64(options.challenge)};
+  if(registration)out.user={...options.user,id:es18Decode64(options.user.id)};
+  for(const field of ['allowCredentials','excludeCredentials'])if(options[field])out[field]=options[field].map(c=>({...c,id:es18Decode64(c.id)}));
+  return out;
+}
+function es18CredentialJson(credential){
+  if(typeof credential?.toJSON==='function')return credential.toJSON();
+  if(!credential?.rawId||!credential.response)throw new Error('No passkey response was returned.');
+  const r=credential.response,response={clientDataJSON:es18Encode64(r.clientDataJSON)};
+  for(const key of ['attestationObject','authenticatorData','signature'])if(r[key])response[key]=es18Encode64(r[key]);
+  if('userHandle' in r)response.userHandle=r.userHandle?es18Encode64(r.userHandle):null;
+  if(typeof r.getTransports==='function')response.transports=r.getTransports();
+  return {id:credential.id,rawId:es18Encode64(credential.rawId),type:credential.type,response,clientExtensionResults:credential.getClientExtensionResults?.()||{},authenticatorAttachment:credential.authenticatorAttachment||undefined};
+}
+async function es18PasskeyApi(name,data={}){const r=await httpsCallable(functions,name)(data);return r.data;}
+function es18PasskeyError(e){
+  const code=String(e?.code||''),name=String(e?.name||'');
+  if(['NotAllowedError','AbortError'].includes(name))return 'Passkey canceled or unavailable. You can still use your password / PIN.';
+  if(name==='InvalidStateError')return 'This device already has this account’s passkey. Use Fingerprint / Face ID to sign in.';
+  if(code==='functions/not-found'||code==='functions/unavailable'||code==='functions/internal')return 'Fingerprint server is not active or cannot be reached. Password / PIN login still works. Activate BACKEND_PASSKEY once, then retry.';
+  if(code==='functions/unauthenticated')return 'Confirm your current password / PIN, then try again.';
+  return String(e?.message||'Passkey failed. Password / PIN login is still available.').slice(0,240);
+}
+window.es18PasskeyLogin=async function(){
+  if(es18PasskeyBusy)return;if(!es18PasskeySupported()){loginMsg('Passkeys need a compatible secure browser. Open the HTTPS app in Chrome or Safari, or use your password / PIN.');return;}
+  const role=String($('fzUnifiedRole')?.value||'employee'),button=$('fz18BiometricLogin');
+  es18PasskeyBusy=true;if(button)button.disabled=true;const passwordButton=$('fzUnifiedLoginBtn');if(passwordButton)passwordButton.disabled=true;
+  try{
+    await authSecurityReady;es18CredentialAbort=new AbortController();loginMsg('Choose your saved passkey and confirm with your device.');
+    const begin=await es18PasskeyApi('passkeyBeginAuthenticationV1',{role});
+    const credential=await navigator.credentials.get({publicKey:es18PublicKeyOptions(begin.options),signal:es18CredentialAbort.signal});
+    if(!credential)throw new Error('No passkey selected.');
+    const result=await es18PasskeyApi('passkeyFinishAuthenticationV1',{challengeId:begin.challengeId,response:es18CredentialJson(credential)});
+    if(typeof result?.token!=='string'||!result.token)throw new Error('Passkey server returned no sign-in token.');
+    await setPersistence(auth,browserSessionPersistence);es18LoginAttemptRole=role;
+    try{await signInWithCustomToken(auth,result.token);}finally{result.token='';}
+  }catch(e){es18LoginAttemptRole=null;loginMsg(es18PasskeyError(e));}
+  finally{es18CredentialAbort=null;es18PasskeyBusy=false;if(button)button.disabled=false;if(passwordButton)passwordButton.disabled=false;}
+};
+function es18DeviceLabel(){return /iPad/i.test(navigator.userAgent||'')||es18IsAppleMobile()&&/Mac/i.test(navigator.platform||'')?'My iPad':/iPhone/i.test(navigator.userAgent||'')?'My iPhone':/Android/i.test(navigator.userAgent||'')?'My Android phone':'My computer';}
+function es18PasskeyStatus(text){const n=$('fz18PasskeyStatus');if(n)n.textContent=text;}
+async function es18ReauthenticatePasskeys(){
+  const user=auth.currentUser,uid=currentUser?.uid,input=$('fz18PasskeyPassword'),secret=String(input?.value||'');
+  if(!uid||user?.uid!==uid||!user.email)throw new Error('Sign in to your account first.');
+  if(!secret)throw new Error('Enter your current password / PIN to confirm this change.');
+  if(input)input.value='';
+  const password=currentProfile?.role==='employee'?employeeAuthPassword(secret):secret;
+  await reauthenticateWithCredential(user,EmailAuthProvider.credential(user.email,password));await user.getIdToken(true);
+  if(auth.currentUser?.uid!==uid)throw new Error('Account changed. Close this panel and try again.');return uid;
+}
+async function es18RefreshPasskeys(){
+  const uid=auth.currentUser?.uid;if(!uid)return;
+  const result=await es18PasskeyApi('passkeyListV1');if(auth.currentUser?.uid!==uid)return;
+  const list=$('fz18PasskeyList');if(!list)return;list.textContent='';
+  if(!result.credentials?.length){const p=document.createElement('p');p.textContent='No passkey registered for this account yet.';list.appendChild(p);return;}
+  for(const key of result.credentials){
+    const row=document.createElement('div');row.className='fz18-key-row';const text=document.createElement('div'),name=document.createElement('b'),date=document.createElement('small'),revoke=document.createElement('button');
+    name.textContent=key.label||'Passkey';date.textContent='Added '+new Date(key.createdAt).toLocaleDateString()+(key.lastUsedAt?' · Used '+new Date(key.lastUsedAt).toLocaleDateString():'');text.append(name,date);
+    revoke.type='button';revoke.textContent='Revoke';revoke.onclick=async()=>{if(es18PasskeyBusy||!confirm('Revoke '+(key.label||'this passkey')+'? Password / PIN will still work.'))return;es18PasskeyBusy=true;revoke.disabled=true;
+      try{const id=await es18ReauthenticatePasskeys();await es18PasskeyApi('passkeyRevokeV1',{credentialId:key.id});if(auth.currentUser?.uid!==id)return;es18PasskeyStatus('Passkey revoked. Password / PIN still works.');await es18RefreshPasskeys();}
+      catch(e){es18PasskeyStatus(es18PasskeyError(e));}finally{es18PasskeyBusy=false;revoke.disabled=false;}};
+    row.append(text,revoke);list.appendChild(row);
+  }
+}
+window.es18EnrollPasskey=async function(){
+  if(es18PasskeyBusy)return;if(!es18PasskeySupported()){es18PasskeyStatus('This browser does not support platform passkeys. Your password / PIN still works.');return;}
+  const button=$('fz18PasskeyAdd');es18PasskeyBusy=true;if(button)button.disabled=true;
+  try{const uid=await es18ReauthenticatePasskeys();es18CredentialAbort=new AbortController();es18PasskeyStatus('Confirm Fingerprint / Face ID or device PIN when your device asks.');
+    const begin=await es18PasskeyApi('passkeyBeginRegistrationV1');
+    const credential=await navigator.credentials.create({publicKey:es18PublicKeyOptions(begin.options,true),signal:es18CredentialAbort.signal});
+    if(!credential)throw new Error('Registration canceled.');if(auth.currentUser?.uid!==uid)throw new Error('Account changed. Registration was not completed.');
+    await es18PasskeyApi('passkeyFinishRegistrationV1',{challengeId:begin.challengeId,response:es18CredentialJson(credential),label:String($('fz18PasskeyLabel')?.value||es18DeviceLabel()).trim()});
+    es18PasskeyStatus('Passkey registered. Next time choose your role and tap Fingerprint / Face ID. Password / PIN remains available.');await es18RefreshPasskeys();
+  }catch(e){es18PasskeyStatus(es18PasskeyError(e));}finally{es18CredentialAbort=null;es18PasskeyBusy=false;if(button)button.disabled=false;}
+};
+window.es18ClosePasskeys=function(){
+  es18CredentialAbort?.abort();const d=$('fz18PasskeyDialog');if(!d)return;const input=$('fz18PasskeyPassword');if(input)input.value='';try{d.close?.();}catch(e){}d.remove();
+};
+window.es18OpenPasskeys=async function(){
+  if(!auth.currentUser||!['employee','manager','owner','cashier'].includes(currentProfile?.role))return;
+  es18InstallUiStyles();window.es18ClosePasskeys();const d=document.createElement('dialog');d.id='fz18PasskeyDialog';d.className='fz18-dialog';
+  d.innerHTML='<header class="fz18-dialog-head"><h2>Fingerprint / Face ID setup</h2><button class="fz18-close" type="button">✕ Close</button></header><div class="fz18-passkey-body"><p><b>Register only on your personal device.</b> Anyone who can unlock this device may be able to use its passkey. Your device chooses fingerprint, face recognition or its screen-lock PIN; the app never stores biometrics or your password.</p><p id="fz18PasskeyAccount"></p><label for="fz18PasskeyPassword">Current password / employee PIN</label><input id="fz18PasskeyPassword" type="password" autocomplete="current-password"><label for="fz18PasskeyLabel">Device name</label><input id="fz18PasskeyLabel" maxlength="60"><div class="fz18-actions"><button id="fz18PasskeyAdd" type="button">Register this device</button></div><p id="fz18PasskeyStatus" role="status">Loading registered passkeys…</p><div id="fz18PasskeyList"></div></div>';
+  d.querySelector('.fz18-close').onclick=window.es18ClosePasskeys;d.addEventListener('cancel',e=>{e.preventDefault();window.es18ClosePasskeys();});document.body.appendChild(d);
+  $('fz18PasskeyAccount').textContent='Account: '+(currentProfile.displayName||currentProfile.username||auth.currentUser.email)+' · '+currentProfile.role.toUpperCase();$('fz18PasskeyLabel').value=es18DeviceLabel();$('fz18PasskeyAdd').onclick=window.es18EnrollPasskey;es18ShowDialog(d);
+  try{await es18RefreshPasskeys();es18PasskeyStatus('Confirm your password / PIN before registering or revoking a passkey.');}catch(e){es18PasskeyStatus(es18PasskeyError(e));}
+};
+window.es18UpdateBiometricUi=function(){
+  if(!document.body)return;es18InstallUiStyles();let b=$('fz18PasskeySetup');const top=$('top');
+  if(!b&&top){const logout=[...top.querySelectorAll('button')].find(x=>/logout/i.test(x.textContent||''));if(logout){b=document.createElement('button');b.id='fz18PasskeySetup';b.type='button';b.className='btn light';b.textContent='Fingerprint Setup';b.onclick=window.es18OpenPasskeys;logout.parentNode.style.flexWrap='wrap';logout.parentNode.style.justifyContent='flex-end';logout.parentNode.insertBefore(b,logout);}}
+  if(b)b.classList.toggle('hidden',!['employee','manager','owner','cashier'].includes(currentProfile?.role));
+};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.es18UpdateBiometricUi(),{once:true});else window.es18UpdateBiometricUi();
