@@ -1,0 +1,159 @@
+/* Employee Sheet ES1 — scoped only to the new workspace. */
+#employeeSheet{--es-ink:#15354a;--es-navy:#102b40;--es-blue:#147196;--es-line:#c8d9e5;--es-name-w:230px;--es-font:18px;position:fixed;inset:0;z-index:21000;background:#eaf2f7;color:var(--es-ink);padding:14px;display:flex;flex-direction:column;gap:10px;box-sizing:border-box;height:100vh;height:100dvh;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;font-size:var(--es-font);isolation:isolate}
+#employeeSheet.hidden{display:none!important}
+#employeeSheet *{box-sizing:border-box}
+body.es-active{overflow:hidden!important}
+#employeeSheet .es-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-radius:18px;background:linear-gradient(130deg,#0b253b,#155d78);color:white;box-shadow:0 5px 0 #0b2234,0 12px 20px rgba(16,43,64,.15);flex:none}
+#employeeSheet .es-header>div{flex:1;min-width:0}
+#employeeSheet h2{font-size:30px!important;line-height:1.15;margin:4px 0!important;color:inherit!important}
+#employeeSheet .es-eyebrow{font-size:13px;font-weight:800;letter-spacing:.1em;color:#9cdcee}
+#employeeSheet button,#employeeSheet select,#employeeSheet input{font-family:inherit;font-size:var(--es-font)!important;line-height:1.2;min-width:0;max-width:100%;border-radius:10px;outline-offset:3px}
+#employeeSheet button:focus-visible,#employeeSheet select:focus-visible,#employeeSheet input:focus-visible{outline:3px solid #0f8fca!important}
+#employeeSheet button{font-weight:800;min-height:46px;padding:9px 12px;cursor:pointer;border:1px solid #bbd0df;background:linear-gradient(#fff,#edf4fa);color:var(--es-ink);box-shadow:0 3px 0 #b7cad8,0 5px 10px rgba(26,63,88,.08)}
+#employeeSheet button:active{transform:translateY(2px);box-shadow:0 1px 0 #b7cad8}
+#employeeSheet button:disabled{cursor:default;opacity:.55}
+#employeeSheet .es-home{min-width:88px;background:#eaf6fc;color:#163e53;border-color:#90c7dc}
+#employeeSheet .es-toolbar{display:flex;align-items:flex-end;gap:12px;padding:4px 2px 0;flex:none}
+#employeeSheet label{display:block;margin:0;font-size:16px!important;font-weight:800;color:#284d63}
+#employeeSheet .es-toolbar>label{width:202px;flex:none}
+#employeeSheet .es-toolbar .es-search{width:300px;flex:1;max-width:450px}
+#employeeSheet input,#employeeSheet select{min-height:48px;background:#fff!important;border:1px solid #b8cedd!important;padding:10px!important;color:#15354a!important;box-shadow:inset 0 2px 5px rgba(19,57,82,.06),0 2px 0 rgba(255,255,255,.95)!important;width:100%;font-variant-numeric:tabular-nums}
+#employeeSheet .es-toolbar input{margin-top:5px}
+#employeeSheet input:disabled,#employeeSheet select:disabled{background:#edf1f4!important;color:#546e80!important;-webkit-text-fill-color:#546e80;opacity:1!important;box-shadow:none!important}
+#employeeSheet #esTeamDetails{margin-left:auto}
+#employeeSheet summary{cursor:pointer;font-weight:800;min-height:36px;line-height:1.4}
+#employeeSheet #esTeamDetails>summary{min-height:48px;padding:12px 16px;border:1px solid #abc6d7;background:#fff;border-radius:12px;box-shadow:0 3px 0 #c1d4e0;white-space:nowrap}
+#employeeSheet .es-team-panel{position:absolute;right:16px;top:182px;z-index:25;max-height:65dvh;overflow:auto;width:min(700px,calc(100vw - 32px));padding:22px;background:#fff;border:1px solid #a6c6d7;border-radius:16px;box-shadow:0 24px 64px rgba(10,37,58,.26)}
+#employeeSheet .es-team-panel p{font-size:16px;line-height:1.5;margin:16px 0 0;color:#4d6475}
+#employeeSheet .es-add{display:flex;align-items:flex-end;gap:10px;margin-bottom:18px}
+#employeeSheet .es-add label{flex:1}
+#employeeSheet .es-add select,#employeeSheet #esBarRoutes select{margin-top:6px}
+#employeeSheet #esBarRoutes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+#employeeSheet .es-guide{display:flex;align-items:baseline;gap:16px;padding:0 2px;flex:none;font-size:15px;line-height:1.45;color:#345c73}
+#employeeSheet .es-guide>span{font-weight:800}
+#employeeSheet .es-guide details{margin-left:auto;max-width:600px}
+#employeeSheet .es-guide p{margin:4px 0 8px}
+#employeeSheet .es-guide summary{min-height:24px}
+#employeeSheet .es-jump{display:flex;gap:8px;padding:3px 2px 5px;overflow-x:auto;flex:none;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+#employeeSheet .es-jump button{flex:none;min-height:40px;padding:7px 15px;font-size:16px!important}
+#employeeSheet .es-jump button:last-child{background:#d9f0e7;color:#155244}
+#employeeSheet .es-status{min-height:23px;font-size:16px;line-height:1.4;padding:0 3px;flex:none;max-height:64px;overflow:auto;color:#325d72}
+#employeeSheet .es-status[data-error="1"]{color:#972e26;background:#fff0e9;border-radius:8px;padding:8px 10px}
+#employeeSheet .es-grid{position:relative;overflow:auto;flex:1;min-height:160px;background:white;border:1px solid #b5cddc;border-radius:15px;box-shadow:0 5px 0 #b6cedd,0 12px 22px rgba(42,76,98,.12);-webkit-overflow-scrolling:touch;overscroll-behavior:contain;scrollbar-width:auto;scroll-padding-left:calc(var(--es-name-w) + 8px);scroll-padding-top:104px}
+#employeeSheet .es-table{width:calc(4035px + var(--es-name-w));table-layout:fixed;border-collapse:separate;border-spacing:0;margin:0;font-size:var(--es-font);background:white}
+#employeeSheet .es-name-col{width:var(--es-name-w)}
+#employeeSheet .es-table th,#employeeSheet .es-table td{border-bottom:1px solid var(--es-line);border-right:1px solid #d8e5ee;text-align:left;white-space:normal;padding:12px 10px;vertical-align:middle;overflow-wrap:anywhere;font-size:var(--es-font)!important;background:#fff}
+#employeeSheet .es-table thead th{position:sticky;top:0;z-index:5;height:88px;padding:14px 10px;background:linear-gradient(#eaf4fb,#dceaf4);color:#173e57;font-weight:900;line-height:1.3;border-bottom:2px solid #94b8d0;box-shadow:0 3px 0 rgba(33,70,98,.08)}
+#employeeSheet .es-table .es-name{position:sticky;left:0;z-index:4;width:var(--es-name-w);background:linear-gradient(110deg,#f5fbff,#edf5fb);border-right:2px solid #89acc3;box-shadow:5px 0 8px rgba(39,73,95,.08)}
+#employeeSheet .es-table thead .es-name{z-index:8;background:linear-gradient(#c7deee,#b8d4e7)}
+#employeeSheet .es-name>b{display:block;font-size:20px;line-height:1.3;word-break:normal;overflow-wrap:break-word}
+#employeeSheet thead .es-name>span{display:block;margin-top:4px;font-size:15px;font-weight:650;color:#325974}
+#employeeSheet .es-table tbody tr:nth-child(even) td{background:#f7fbfd}
+#employeeSheet .es-table tbody tr:nth-child(even) th.es-name{background:linear-gradient(110deg,#ecf6fd,#e5f1f8)}
+#employeeSheet .es-row-actions{display:flex;gap:6px;margin-top:10px}
+#employeeSheet .es-row-actions button{flex:1;font-size:16px!important;padding:8px 5px;min-height:43px}
+#employeeSheet .es-row-actions [data-es-action="save"]{color:white;background:linear-gradient(#2189ac,#146489);border-color:#146489;box-shadow:0 3px 0 #103f5a}
+#employeeSheet .es-row-actions [data-es-action="sign"]{background:linear-gradient(#e3f7ef,#cdeade);color:#205342;border-color:#a4cdbb;box-shadow:0 3px 0 #92bdaa}
+#employeeSheet .es-state{display:block;font-size:14px;line-height:1.3;margin-top:6px;color:#587186;font-weight:700}
+#employeeSheet .es-state[data-kind="signed"],#employeeSheet .es-state[data-kind="saved"]{color:#1f7657}
+#employeeSheet .es-state[data-kind="dirty"]{color:#8b5b17}
+#employeeSheet .es-state[data-kind="error"]{color:#a23028}
+#employeeSheet .es-table input{text-align:right}
+#employeeSheet .es-table input::placeholder{color:#8a9aa7;opacity:1}
+#employeeSheet .es-check{display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center}
+#employeeSheet .es-check input[type="checkbox"]{appearance:auto;-webkit-appearance:checkbox;width:29px;height:29px;min-height:29px;padding:0!important;accent-color:#177498;box-shadow:none!important;cursor:pointer}
+#employeeSheet .es-check span{font-size:16px}
+#employeeSheet .es-auto{font-size:16px;font-weight:800;color:#22654e}
+#employeeSheet .es-computed{font-size:20px;font-weight:850;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+#employeeSheet .es-payout .es-computed{font-size:25px;color:#14634d}
+#employeeSheet .es-payout{background:#e6f4ed!important}
+#employeeSheet .es-received-parts{display:block;text-align:right;font-size:16px;font-weight:600;line-height:1.6;margin-top:8px;color:#426778}
+#employeeSheet .es-applied{display:block;font-size:15px;margin-top:8px;color:#22654e}
+#employeeSheet [data-es-out="adjustmentAmount"]{font-size:16px;font-weight:750;margin-bottom:7px}
+#employeeSheet .es-empty{height:160px;color:#567587;font-size:20px!important;text-align:left!important}
+#employeeSheet .es-footer{display:flex;flex-wrap:wrap;justify-content:space-between;gap:5px 20px;flex:none;padding:4px 3px 2px;font-size:15px;line-height:1.4;color:#365c70}
+#employeeSheet #esTotals{font-weight:800}
+#employeeSheet.es-busy .es-grid{opacity:.78}
+#employeeSheet .es-modal{position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;background:rgba(8,29,45,.76);padding:20px}
+#employeeSheet .es-modal.hidden{display:none!important}
+#employeeSheet .es-sign-card{width:min(800px,100%);max-height:94dvh;overflow:auto;padding:24px;border-radius:22px;background:white;box-shadow:0 28px 70px #06182c66}
+#employeeSheet .es-sign-card h3{font-size:25px;margin:0 0 10px;color:#15384f}
+#employeeSheet .es-sign-card p{font-size:18px;line-height:1.5;margin:10px 0}
+#employeeSheet #esSignatureCanvas{display:block;width:100%;height:240px;max-width:100%;background:#fff;border:2px solid #a2c3d9;border-radius:12px;touch-action:none}
+#employeeSheet .es-sign-actions{display:flex;gap:10px;margin-top:16px}
+#employeeSheet .es-sign-actions button{flex:1}
+#employeeSheet #esSignSave{color:#fff;background:linear-gradient(#2288a8,#125f81);border-color:#125f81}
+@media(min-width:1600px){#employeeSheet{--es-font:20px;--es-name-w:260px;padding:18px;gap:12px}#employeeSheet .es-table input,#employeeSheet .es-table select{min-height:52px}#employeeSheet .es-name>b{font-size:22px}}
+@media(max-width:1100px){#employeeSheet{--es-name-w:200px;--es-font:18px;padding:10px;gap:8px}#employeeSheet .es-header{padding:12px 16px}#employeeSheet .es-guide{font-size:14px}#employeeSheet .es-guide details{max-width:45%}#employeeSheet .es-row-actions{gap:4px}#employeeSheet .es-row-actions button{font-size:16px!important}#employeeSheet .es-team-panel{top:168px}}
+@media(max-width:600px){
+ #employeeSheet{--es-name-w:148px;--es-font:18px;padding:8px;gap:7px;padding-top:max(8px,env(safe-area-inset-top));padding-bottom:max(6px,env(safe-area-inset-bottom))}
+ #employeeSheet .es-header{padding:10px;gap:9px;border-radius:14px}
+ #employeeSheet h2{font-size:23px!important}
+ #employeeSheet .es-eyebrow{font-size:11px;letter-spacing:.035em;display:block}
+ #employeeSheet .es-home{min-width:64px;min-height:44px;font-size:16px!important;padding:7px}
+ #employeeSheet #esReload{min-width:64px}
+ #employeeSheet .es-toolbar{display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:end}
+ #employeeSheet .es-toolbar>label,#employeeSheet .es-toolbar .es-search{width:auto;max-width:none;min-width:0}
+ #employeeSheet label{font-size:15px!important}
+ #employeeSheet .es-toolbar input{font-size:18px!important;padding:10px 8px!important;min-height:46px}
+ #employeeSheet #esTeamDetails{grid-column:1/-1;margin:0}
+ #employeeSheet #esTeamDetails>summary{padding:6px 12px;min-height:36px;font-size:16px}
+ #employeeSheet .es-team-panel{top:230px;left:10px;right:10px;width:auto;padding:16px;max-height:calc(100dvh - 240px)}
+ #employeeSheet #esBarRoutes{grid-template-columns:1fr;gap:12px}
+ #employeeSheet .es-guide{display:none}
+ #employeeSheet .es-jump{gap:6px;padding:2px 0 4px}
+ #employeeSheet .es-jump button{padding:8px 12px;min-height:40px;font-size:16px!important}
+ #employeeSheet .es-status{font-size:14px;line-height:1.4;max-height:40px;min-height:20px;padding:0 2px}
+ #employeeSheet .es-grid{min-height:160px;border-radius:12px;scroll-padding-top:98px}
+ #employeeSheet .es-table th,#employeeSheet .es-table td{padding:11px 8px;font-size:18px!important}
+ #employeeSheet .es-table thead th{height:88px;font-size:17px!important;padding:12px 8px}
+ #employeeSheet .es-name>b{font-size:18px;line-height:1.35}
+ #employeeSheet .es-state{font-size:13px;line-height:1.35}
+ #employeeSheet thead .es-name>span{font-size:13px;line-height:1.4}
+ #employeeSheet .es-row-actions{display:grid;grid-template-columns:1fr;gap:7px;margin-top:9px}
+ #employeeSheet .es-row-actions button{min-height:42px;font-size:17px!important;padding:8px}
+ #employeeSheet .es-table input,#employeeSheet .es-table select{min-height:50px;font-size:19px!important}
+ #employeeSheet .es-computed{font-size:20px}
+ #employeeSheet .es-footer{font-size:13px;padding:3px 1px 0;gap:3px}
+ #employeeSheet .es-footer>span{width:100%}
+ #employeeSheet .es-modal{padding:10px}
+ #employeeSheet .es-sign-card{padding:18px;border-radius:16px}
+ #employeeSheet .es-sign-card h3{font-size:22px}
+ #employeeSheet .es-sign-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+ #employeeSheet #esSignSave{grid-column:1/-1}
+ #employeeSheet #esSignatureCanvas{height:200px}
+}
+@media(max-height:550px){#employeeSheet .es-header{padding:6px 12px}#employeeSheet h2{font-size:24px!important}#employeeSheet .es-eyebrow{display:none}#employeeSheet .es-guide{display:none}#employeeSheet .es-toolbar{padding:0}#employeeSheet .es-status{max-height:23px}#employeeSheet .es-team-panel{top:138px;max-height:calc(100dvh - 160px)}#employeeSheet .es-table thead th{height:72px}#employeeSheet .es-footer{padding:0}#employeeSheet .es-grid{min-height:120px}}
+@media(prefers-reduced-motion:reduce){#employeeSheet *{scroll-behavior:auto!important;transition:none!important}}
+
+/* Final scoped typography guards against inherited legacy table styles. */
+#employeeSheet .es-table thead th{background:linear-gradient(#1b4564,#102e49)!important;color:#fff!important}
+#employeeSheet .es-table thead .es-name{background:linear-gradient(#1b4564,#102e49)!important}
+#employeeSheet thead .es-name>span,#employeeSheet .es-table thead small{display:block;font-size:14px!important;font-weight:650;color:#c2dbea!important;margin-top:5px;line-height:1.3}
+#employeeSheet .es-footer,#employeeSheet .es-footer>span{font-size:16px!important;line-height:1.4}
+#employeeSheet .es-date-badge,#employeeSheet #esTools{display:none}
+@media(max-width:600px){
+ #employeeSheet .es-eyebrow{display:none}
+ #employeeSheet .es-row-actions{grid-template-columns:1fr 1fr;gap:7px}
+ #employeeSheet .es-row-actions [data-es-action="print"]{grid-column:1/-1}
+ #employeeSheet .es-row-actions button{font-size:16px!important;min-height:44px}
+ #employeeSheet .es-footer,#employeeSheet .es-footer>span{font-size:15px!important}
+ #employeeSheet .es-footer>span:last-child{font-size:13px!important}
+}
+@media(max-height:550px){
+ #employeeSheet{gap:6px;padding:6px}
+ #employeeSheet .es-header{padding:7px 12px}
+ #employeeSheet .es-header h2{font-size:23px!important;margin:0!important}
+ #employeeSheet .es-home{min-height:40px;padding:7px}
+ #employeeSheet #esTools{display:block}
+ #employeeSheet .es-date-badge{display:block;font-size:14px!important;color:#c2dbea;font-weight:750}
+ #employeeSheet .es-toolbar,#employeeSheet .es-jump,#employeeSheet .es-guide,#employeeSheet .es-status,#employeeSheet #esReload{display:none}
+ #employeeSheet .es-footer>span:last-child{display:none}
+ #employeeSheet.es-controls-open .es-toolbar{display:flex}
+ #employeeSheet.es-controls-open .es-jump{display:flex}
+ #employeeSheet.es-controls-open #esReload{display:block}
+ #employeeSheet .es-status[data-error="1"]{display:block;max-height:48px;min-height:0;font-size:15px;overflow:auto}
+ #employeeSheet .es-grid{min-height:100px}
+ #employeeSheet .es-table thead th{height:68px}
+ #employeeSheet .es-footer{flex:none;min-height:22px}
+}

@@ -10133,8 +10133,7 @@ initMonthlyReportUi();
     // Name / scope strip
     c+="0.94 0.97 1 rg 34 642 544 26 re f\n";
     c+="0.76 0.84 0.91 RG 0.8 w 34 642 544 26 re S\n0 G\n";
-    c+="0.055 0.14 0.25 rg\n"; // Reset fill color after the pale name-strip background.
-    c+=monthlyPdfCellText("F2",14,46,650,520,isAll?"SUMMARY: ALL EMPLOYEES":`EMPLOYEE: ${summary.name}`,"left");
+    c+=monthlyPdfCellText("F2",11,46,650,520,isAll?"SUMMARY: ALL EMPLOYEES":`EMPLOYEE: ${summary.name}`,"left");
 
     const xL=34,xR=314,w=264,h=68,gap=10,top=626;
     for(let i=0;i<5;i++){
@@ -10146,7 +10145,6 @@ initMonthlyReportUi();
     // Footer note
     c+="0.975 0.98 0.985 rg 34 116 544 76 re f\n";
     c+="0.82 0.85 0.89 RG 0.7 w 34 116 544 76 re S\n0 G\n";
-    c+="0.055 0.14 0.25 rg\n"; // Keep report notes readable after their pale background.
     c+=monthlyPdfText("F2",8.6,48,171,"REPORT NOTES");
     c+=monthlyPdfText("F1",8,48,153,"Paid Tip Before Meal = Paid Tip + Cash Tip.");
     c+=monthlyPdfText("F1",8,48,138,"Sales = Grand Total sales for the selected period.");
@@ -10173,9 +10171,7 @@ initMonthlyReportUi();
     const rows=monthlyReportSummaries();
     if(!rows.length){alert("No Monthly Report data for this period.");return;}
     const range=monthlyReportRange(),safeFrom=range.from||"all",safeTo=range.to||"all";
-    const employeeName=String($("monthlyReportEmployee")?.value||"All Employees").trim();
-    const safeEmployee=employeeName.normalize("NFKD").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"")||"Employee";
-    downloadBlob(monthlyReportPdfBlob(rows),`Fred_Zhang_Monthly_Report_${safeEmployee}_${safeFrom}_to_${safeTo}.pdf`);
+    downloadBlob(monthlyReportPdfBlob(rows),`Fred_Zhang_Monthly_Report_${safeFrom}_to_${safeTo}.pdf`);
   };
 
   // Replace old render listeners with the simplified renderer. Menu click uses window.renderMonthlyReport dynamically.
@@ -10262,3 +10258,630 @@ initMonthlyReportUi();
   };
 })();
 // V13.8.49 ADD-ONLY — Monthly Report Home card.
+
+/* ================================================================
+ * EMPLOYEE SHEET ES1 — additive Manager/Owner workspace.
+ * Baseline: MONTHLY_PDF_PRO_ONE_PAGE / 13.8.49.
+ * Original calculation engine and original workflows are unchanged.
+ * All edits remain drafts until a row is saved to hourlyReports.
+ * ================================================================ */
+const ES_BUILD='ES1';
+const ES_PERIODS=['AM','2PM_4PM','PM'];
+const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
+const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
+let esSession=null,esOpenToken=0,esSignature=null;
+const esClone=x=>JSON.parse(JSON.stringify(x));
+const esKey=name=>normalizeEmployeeNameKey(name);
+function esAllowed(){return !!currentUser && !currentUser.isAnonymous && ['manager','owner'].includes(currentProfile?.role||'');}
+function esDateValid(date){if(!/^\d{4}-\d{2}-\d{2}$/.test(date||''))return false;const d=new Date(date+'T12:00:00Z');return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===date;}
+function esDraftKey(date,uid=currentUser?.uid||''){return 'fz_employee_sheet_es1_'+uid+'_'+date;}
+function esMoney(v){return fmtMoney(Number(v)||0);}
+function esStatus(text,error=false){const el=$('esStatus');if(el){el.textContent=text;el.dataset.error=error?'1':'0';}}
+function esFixedRole(name){return employeeWorkProfile(name)?.position||'';}
+function esNormalizeClock(v){return ownerTableFormatClock(String(v||''));}
+function esDefaults(name,date){return {name,shift:'',role:esFixedRole(name)||'Server',clockIn:'',clockOut:'',clockIn2:'',clockOut2:'',totalAM:'',total24:'',grand:'',paid:'',cardFee:'0',cash:'0',meal:'0',barAM:true,bar24:true,barPM:true,adjustmentDecision:''};}
+function esFindReport(reports,name){
+  const list=reports.filter(r=>esKey(r.employee)===esKey(name));
+  return list.length===1?list[0]:null;
+}
+function esPrepareBatch(source,reports,date){
+  const s=esClone(source||{});s.date=date;s.team=Array.isArray(s.team)?s.team:[];s.drafts ||= {};hv1EnsureBarState(s);
+  for(const r of reports){
+    if(r.date!==date || !r.employee)continue;
+    const name=s.team.find(n=>esKey(n)===esKey(r.employee))||r.employee;
+    if(!s.team.includes(name))s.team.push(name);
+    if(!s.drafts[name] || !s.drafts[name].values?.hShift){
+      s.drafts[name]=hv1DraftFromFinalizedReport(r,name,date);
+    }
+    const d=s.drafts[name];
+    if(!d.hourlyReportId)d.hourlyReportId=r.id;
+    if(String(r.position).toLowerCase()==='bartender'){
+      for(const p of bartenderReceiptPeriods(r))if(!s.bar[p.checkpoint].bartender)s.bar[p.checkpoint].bartender=name;
+    }else if(r.barBreakdown){
+      for(const [cp,key] of [['AM','amGrandTotal'],['2PM_4PM','grandTotal24'],['PM','pmGrandTotal']]){
+        if(s.bar[cp].entries[name]===undefined && Number(r.barBreakdown[key])>0)s.bar[cp].entries[name]=String(r.barBreakdown[key]);
+      }
+    }
+  }
+  s.team=[...new Set(s.team)];return s;
+}
+function esRowsFromBatch(s,reports=[],date=s.date||hv1DateValue()){
+  return (s.team||[]).map(name=>{
+    const d=s.drafts?.[name]||{},v=d.values||{},r=esFindReport(reports,name);
+    const row={...esDefaults(name,date),...ownerTableRow(s,name)};
+    row.role=esFixedRole(name)||v.hPosition||row.role||'Server';
+    row.role=row.role==='Bartender'?'Bartender':'Server';
+    row.adjustmentDecision=d.employeeSheetAdjustmentDecision||r?.adjustmentDecision||'';
+    for(const f of ['paid','cardFee','cash','meal'])if(row[f]==='' && !d.entered?.[OWNER_TABLE_MONEY[f]] && ['cardFee','cash','meal'].includes(f))row[f]='0';
+    for(const [field,cp] of [['barAM','AM'],['bar24','2PM_4PM'],['barPM','PM']]){
+      if(s.bar?.[cp]?.excluded?.[name]===undefined && !d.entered?.[hv1BarChoiceField(cp,s,name)])row[field]=true;
+    }
+    return row;
+  });
+}
+function esPeriodCandidates(rows,cp){
+  return rows.filter(r=>r.role==='Bartender' && (
+    cp==='AM'?['AM','DOUBLE',SHIFT_EARLY].includes(r.shift):
+    cp==='2PM_4PM'?['DOUBLE','LONG',SHIFT_MIDDLE].includes(r.shift):['PM','DOUBLE','LONG'].includes(r.shift)));
+}
+function esRouting(rows,old={}){
+  const route={};
+  for(const cp of ES_PERIODS){
+    const candidates=esPeriodCandidates(rows,cp);
+    const selected=String(old[cp]||'');
+    route[cp]=candidates.some(r=>r.name===selected)?selected:(candidates.length===1?candidates[0].name:'');
+  }
+  return route;
+}
+function esSalesMask(row,route){
+  if(row.role==='Bartender')return {totalAM:['DOUBLE','LONG'].includes(row.shift),total24:false,grand:true};
+  return {totalAM:['AM','DOUBLE',SHIFT_EARLY].includes(row.shift),total24:['DOUBLE','LONG',SHIFT_MIDDLE].includes(row.shift)||(row.shift==='AM'&&!!route['2PM_4PM']),grand:true};
+}
+function esBarMask(row,route){
+  if(row.role==='Bartender')return {barAM:false,bar24:false,barPM:false};
+  return {barAM:['AM','DOUBLE',SHIFT_EARLY].includes(row.shift),bar24:['LONG','DOUBLE',SHIFT_MIDDLE].includes(row.shift)||(row.shift==='AM'&&!!route['2PM_4PM']),barPM:['PM','DOUBLE','LONG'].includes(row.shift)};
+}
+function esLinkSales(row,field,route){
+  if(row.role==='Bartender')return;
+  let linked='';
+  if(row.shift===SHIFT_EARLY || (row.shift==='AM'&&!route['2PM_4PM']))linked='totalAM';
+  if(row.shift===SHIFT_MIDDLE || (row.shift==='AM'&&route['2PM_4PM']))linked='total24';
+  if(linked){if(field===linked)row.grand=row[linked];else if(field==='grand' || field==='shift')row[linked]=row.grand;}
+}
+function esValidateSales(row,route,complete=false){
+  const errors=[];const mask=esSalesMask(row,route);
+  for(const field of ES_MONEY){
+    if(field==='totalAM'&&!mask.totalAM || field==='total24'&&!mask.total24)continue;
+    const raw=String(row[field]??'').trim();
+    if(raw && (!/^\d+(?:\.\d{0,2})?$/.test(raw)||!Number.isFinite(Number(raw))))errors.push(field+' must be 0 or more, with at most 2 decimals.');
+  }
+  if(row.role==='Server'){
+    let previous=0;
+    for(const [field,enabled] of [['totalAM',mask.totalAM],['total24',mask.total24],['grand',true]]){
+      const raw=String(row[field]??'').trim();if(!enabled||raw==='')continue;
+      if(Number(raw)<previous)errors.push(field+' cannot be below the earlier cumulative sales.');
+      previous=Math.max(previous,Number(raw)||0);
+    }
+  }else if(['DOUBLE','LONG'].includes(row.shift) && Number(row.totalAM)>Number(row.grand))errors.push('Total AM cannot exceed Grand Total.');
+  if(complete){
+    if(!TIP_SHIFTS.includes(row.shift))errors.push('Choose a shift.');
+    for(const f of ['grand','paid','cardFee','cash','meal'])if(String(row[f]??'').trim()==='')errors.push('Enter '+f+' (use 0 if none).');
+    if(row.shift==='DOUBLE' && String(row.totalAM??'').trim()==='')errors.push('Enter Total AM (use 0 if none).');
+    if(row.shift==='LONG' && String(row[row.role==='Server'?'total24':'totalAM']??'').trim()==='')errors.push('Enter early sales (use 0 if none).');
+    const clocks=row.shift==='DOUBLE'?['clockIn','clockOut','clockIn2','clockOut2']:['clockIn','clockOut'];
+    for(const f of clocks)if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(row[f]||''))errors.push('Enter '+f+' as HH:MM, e.g. 21:00.');
+    const hours=esHours(row),L=window.FredTipCalculatorLogic;
+    if(!(L.calculateTotalMinutes(row.shift,hours)>0))errors.push('Working hours must be greater than zero.');
+    if(row.shift==='DOUBLE' && clocks.every(f=>/^([01]\d|2[0-3]):[0-5]\d$/.test(row[f]||''))){
+      const mins=v=>Number(v.slice(0,2))*60+Number(v.slice(3));
+      const first=mins(row.clockIn),firstEnd=mins(row.clockOut)+(mins(row.clockOut)<first?1440:0);
+      let second=mins(row.clockIn2);if(second<first)second+=1440;
+      let secondEnd=mins(row.clockOut2);while(secondEnd<second)secondEnd+=1440;
+      if(second<firstEnd)errors.push('Clock pair 2 overlaps clock pair 1.');
+      if(secondEnd-first>1440)errors.push('Both clock pairs must fit within one 24-hour work day.');
+    }
+    if(row.role==='Bartender' && !ES_PERIODS.some(cp=>route[cp]===row.name))errors.push('Choose this bartender in the BAR routing on this sheet.');
+  }
+  return [...new Set(errors)];
+}
+function esHours(row){return row.shift==='DOUBLE'?{hourInAM:row.clockIn,hourOutAM:row.clockOut,hourInPM:row.clockIn2,hourOutPM:row.clockOut2}:{hourIn:row.clockIn,hourOut:row.clockOut};}
+function esBuildBatch(source,rows,date,route){
+  const s=esClone(source||{});s.date=date;s.team=rows.map(r=>r.name);s.drafts ||= {};hv1EnsureBarState(s);
+  for(const cp of ES_PERIODS)s.bar[cp].bartender=route[cp]||'';
+  for(const row of rows){
+    const name=row.name,d=s.drafts[name] ||= {employee:name,date,values:{},entered:{},skippedPages:[]};
+    d.employee=name;d.date=date;d.values ||= {};d.entered ||= {};
+    const put=(key,value)=>{d.values[key]=String(value??'');d.entered[key]=String(value??'').trim()!=='';};
+    const fixed=esFixedRole(name);
+    if(fixed && fixed!==row.role)throw new Error(name+' is a '+fixed+' work account. Use the matching work account for the other position.');
+    put('hEmployee',name);put('hDate',date);put('hPosition',row.role);put('hShift',row.shift);
+    put('hBusserAM',isWeekendDate(date)?'WITH':'WITHOUT');
+    d.hourlyWizardState={...(d.hourlyWizardState||{}),position:row.role,shift:row.shift,busserAM:isWeekendDate(date)?'WITH':'WITHOUT'};
+    const clocks=row.shift==='DOUBLE'?{hAmIn:row.clockIn,hAmOut:row.clockOut,hPmIn:row.clockIn2,hPmOut:row.clockOut2}:{hIn:row.clockIn,hOut:row.clockOut};
+    for(const [key,value] of Object.entries(clocks))put(key,value);
+    for(const [field,key] of Object.entries(OWNER_TABLE_MONEY))put(key,row[field]);
+    d.employeeSheetAdjustmentDecision=row.adjustmentDecision||'';
+    d.editHydratedFromFinalV13811=true;
+    if(row.role==='Server'){
+      const mask=esSalesMask(row,route),barMask=esBarMask(row,route);
+      const amount={AM:mask.totalAM?row.totalAM:'','2PM_4PM':mask.total24?row.total24:'',PM:barMask.barPM?row.grand:''};
+      if(row.shift===SHIFT_EARLY || (row.shift==='AM'&&!route['2PM_4PM']))amount.AM=row.grand;
+      if(row.shift===SHIFT_MIDDLE || (row.shift==='AM'&&route['2PM_4PM']))amount['2PM_4PM']=row.grand;
+      for(const [cp,field] of [['AM','barAM'],['2PM_4PM','bar24'],['PM','barPM']]){
+        s.bar[cp].entries[name]=String(amount[cp]??'');
+        s.bar[cp].excluded ||= {};s.bar[cp].excluded[name]=!barMask[field]||!row[field];
+        s.barManual ||= {};s.barManual[name] ||= {};s.barManual[name][cp]=true;
+      }
+      // Baseline bridge maps cumulative checkpoints into hGrandTotal/hTotalAM.
+      delete d.barSalesLinks;
+      hv1SyncBarSalesToDraft(s,name);hv1SyncLongBusserDraft(s,name);
+      const amCP=row.shift==='AM'&&route['2PM_4PM']?'2PM_4PM':'AM';
+      put('hAmBar',s.bar[amCP].excluded[name]?'no':'yes');
+      put('hPmBar',s.bar[row.shift===SHIFT_MIDDLE?'2PM_4PM':'PM'].excluded[name]?'no':'yes');
+    }else{
+      for(const cp of ES_PERIODS){delete s.bar[cp].entries[name];if(s.bar[cp].excluded)delete s.bar[cp].excluded[name];}
+      put('hAmBar','no');put('hPmBar','no');
+    }
+  }
+  // These are the same, unchanged BAR functions as the existing Team Board.
+  hv1ApplyBarAutomation(s);return s;
+}
+function esCalculate(row,batch,oldReport=null){
+  const L=window.FredTipCalculatorLogic,d=batch.drafts[row.name],v=d.values,bt=row.role==='Bartender';
+  const hours=esHours(row);
+  const r=L.calculateReport({date:batch.date,employee:row.name,position:row.role,shift:row.shift,busserAM:v.hBusserAM,hours,grandTotal:v.hGrandTotal,totalAM:v.hTotalAM,paidTip:row.paid,cardFee:row.cardFee,cashTip:row.cash,meal:row.meal,amBarSales:v.hAmBar==='yes',pmBarSales:v.hPmBar==='yes'});
+  r.barTipAM=r.amBarTipOut||0;r.barTipPM=r.pmBarTipOut||0;
+  Object.assign(r,{bartenderCheckpoints:[],bartenderPeriodReceipts:[],bartenderReceiptsSource:'',bartenderShiftType:'',bartenderServerEntries:[],bartenderServerGrandTotalSummary:0,bartenderGrossBarTipOut:0,bartenderLessAM:0,bartenderLess24:0,bartenderPreviousAMInput:0,bartenderPrevious24Input:0,bartenderBarTipReceived:0});
+  if(bt){
+    const periods=ES_PERIODS.filter(cp=>batch.bar[cp].bartender===row.name).map(checkpoint=>({checkpoint,amount:hv1BarReceived(checkpoint,batch)}));
+    const received=howRoundCent(periods.reduce((sum,p)=>sum+p.amount,0));
+    const last=periods.at(-1)?.checkpoint||'AM',period=hv1BarCheckpointTotals(last,batch);
+    Object.assign(r,{bartenderCheckpoints:periods.map(p=>p.checkpoint),bartenderPeriodReceipts:periods,bartenderReceiptsSource:'BAR_CENTER',bartenderShiftType:last,bartenderBarTipReceived:received,
+      bartenderServerEntries:hv1ServerNamesForCheckpoint(last,batch).filter(n=>!hv1BarExcluded(last,batch,n)).map((name,i)=>({slot:i+1,name,grandTotal:hv1BarNumber(batch.bar[last].entries[name])})),
+      bartenderServerGrandTotalSummary:period.summary,bartenderGrossBarTipOut:period.gross,bartenderLessAM:period.lessAM,bartenderLess24:period.less24,bartenderPreviousAMInput:period.lessAM,bartenderPrevious24Input:period.less24});
+    r.totalBeforeMeal=Number(r.totalBeforeMeal||0)+received;
+  }else{
+    const b=hv1ServerBarFees(row.name,batch),delta=b.totalFee-Number(r.barTipOut||0);
+    Object.assign(r,{barTipAM:b.amFee,barTip24:b.fee24,barTipPM:b.fee24+b.pmFee,barTipOut:b.totalFee,
+      barBreakdown:{amGrandTotal:b.amGT,grandTotal24:b.gt24,pmGrandTotal:b.pmGT,amFee:b.amFee,fee24:b.fee24,pmFee:b.pmFee}});
+    r.totalBeforeMeal=Number(r.totalBeforeMeal||0)-delta;
+  }
+  // Identical split of the engine's existing busser total (not a new deduction).
+  const totalBusser=Math.max(0,Number(r.busserTipOut||0));let am=0,pm=0;
+  if(!bt){
+    if(row.shift==='PM')pm=totalBusser;
+    else if(['DOUBLE','LONG'].includes(row.shift)){
+      const expected=v.hBusserAM==='WITH'?Math.max(0,Number(r.totalAM||0)*Number(r.busserRate||0)/100):0;
+      am=Math.min(totalBusser,expected);pm=Math.max(0,totalBusser-am);
+    }else am=totalBusser;
+  }
+  r.busserTipOutAM=am;r.busserTipOutPM=pm;
+  r.grandTotalTip=L.roundCent(r.totalBeforeMeal+r.cashTip);
+  const choice=row.adjustmentDecision,changedChoice=choice && choice!==oldReport?.adjustmentDecision;
+  const override=changedChoice?null:(oldReport&&Object.prototype.hasOwnProperty.call(oldReport,'adjustmentOverride')?oldReport.adjustmentOverride:oldReport?.adjustmentDecision==='ACCEPTED'?oldReport.adjustmentSalaryHourly:null);
+  const adjustment=L.calculateHourlyAdjustment({...r,adjustmentDecision:choice||oldReport?.adjustmentDecision,adjustmentOverride:override});
+  Object.assign(r,adjustment);
+  r.adjustmentOverride=override;r.adjustmentPayoutVersion='13.8.29';r.formulaVersion='13.8.29';r.payoutFormula='Total Before Meal - Meal + Accepted Adjustment';
+  r.grandTotalAfterAdjustment=L.roundCent(r.grandTotalTip+adjustment.adjustmentSalaryHourly);
+  r.totalPaidOutBeforeAdjustment=L.roundCent(Math.max(0,r.totalBeforeMeal-r.meal));
+  r.totalPaidOut=L.roundCent(Math.max(0,r.totalBeforeMeal-r.meal+adjustment.adjustmentSalaryHourly));
+  r.hours={...hours};r.cardFee=L.parseMoney(row.cardFee);r.payCardTipFee=r.cardFee;
+  if(row.shift==='LONG'&&!bt){r.busserSalesThrough4PM=r.totalAM;r.salesWithoutBusser=isWeekendDate(batch.date)?0:r.totalAM;r.busserSalesBasis=isWeekendDate(batch.date)?r.grandTotal:r.totalPM;r.busserPolicyVersion='LONG_MON_FRI_BAR_2_4_V1';}
+  const profile=employeeWorkProfile(row.name);if(profile){r.personName=profile.personName;r.workProfile=profile.name;}
+  return reportForWorkPosition(r);
+}
+function esFingerprint(r){
+  if(!r)return '';
+  const money=['grandTotal','totalAM','totalPM','paidTip','payCardTipFee','cashTip','meal','busserTipOut','busserTipOutAM','busserTipOutPM','barTipOut','bartenderBarTipReceived','totalPaidOut','adjustmentSalaryHourly'];
+  return JSON.stringify({employee:esKey(r.employee),date:r.date,position:r.position,shift:r.shift,hours:r.hours||{hourIn:r.hourIn||'',hourOut:r.hourOut||'',hourInAM:r.hourInAM||'',hourOutAM:r.hourOutAM||'',hourInPM:r.hourInPM||'',hourOutPM:r.hourOutPM||''},minutes:r.totalMinutesWork,...Object.fromEntries(money.map(k=>[k,howRoundCent(Number(r[k]||0))])),receipts:bartenderReceiptPeriods(r)});
+}
+function esCompareValue(a,b){return String(a??'')===String(b??'');}
+function esMergeRows(baseRows,editedRows,remoteRows,dirty){
+  const out=esClone(remoteRows),conflicts=[];
+  for(const row of editedRows){
+    const changes=dirty[row.name];if(!changes)continue;
+    const base=baseRows.find(r=>r.name===row.name),remote=out.find(r=>r.name===row.name);
+    if(changes.__new){if(remote && base===undefined)throw new Error(row.name+' was added on another device. Reload the sheet first.');if(!remote){out.push(esClone(row));continue;}}
+    if(!remote)throw new Error(row.name+' was removed on another device. Reload before saving.');
+    for(const field of ES_FIELDS){
+      if(!changes[field]&&!changes.__new)continue;
+      if(base && !esCompareValue(remote[field],base[field]) && !esCompareValue(remote[field],row[field]))conflicts.push(row.name+' / '+field);
+      else remote[field]=row[field];
+    }
+  }
+  if(conflicts.length)throw new Error('Changed on another device: '+conflicts.join(', ')+'. Your draft is kept. Reload and review before saving.');
+  return out;
+}
+function esRecalculate(){
+  const s=esSession;if(!s||!s.ready)return;
+  try{
+    s.routing=esRouting(s.rows,s.routing);
+    s.working=esBuildBatch(s.baseBatch,s.rows,s.date,s.routing);
+    s.results={};s.errors={};
+    for(const row of s.rows){
+      s.errors[row.name]=esValidateSales(row,s.routing,false);
+      s.results[row.name]=esCalculate(row,s.working,esFindReport(s.reports,row.name));
+    }
+  }catch(e){esStatus(e.message,true);}
+}
+function esPersistLocal(){
+  const s=esSession;if(!s?.ready)return;
+  try{localStorage.setItem(esDraftKey(s.date,s.uid),JSON.stringify({date:s.date,rows:s.rows,dirty:s.dirty,routing:s.routing,baseRows:s.baseRows,baseRouting:s.baseRouting,savedAt:Date.now(),scrollLeft:$('esGrid')?.scrollLeft||0,scrollTop:$('esGrid')?.scrollTop||0}));}catch(e){esStatus('Device draft storage is full. Use Save before leaving.',true);}
+}
+const ES_COLUMNS=[
+ ['shift','Shift',145,'staff'],['clockIn','Clock In 1',130,'clocks'],['clockOut','Clock Out 1',130,'clocks'],['clockIn2','Clock In 2',130,'clocks'],['clockOut2','Clock Out 2',130,'clocks'],['hours','Total Hours',135,'clocks'],['role','Position',150,'staff'],
+ ['totalAM','Total AM',165,'sales'],['total24','Total 2–4',165,'sales'],['grand','Grand Total',175,'sales'],['busserRate','Busser Tip Out %',155,'busser'],['busserAM','Busser AM',155,'busser'],['busserPM','Busser PM',155,'busser'],
+ ['barTipAM','BAR Tip Out AM',160,'bar'],['barTip24','BAR Tip Out 2–4',160,'bar'],['barTipPM','BAR Tip Out PM',160,'bar'],['received','BAR Tip Out Received',220,'bar'],
+ ['paid','Paid Tip',160,'tips'],['cardFee','Pay Card Tip Fee',160,'tips'],['cash','Cash Tip',155,'tips'],['meal','Meal',145,'tips'],['barAM','AM BAR Sales',125,'checks'],['bar24','2–4 BAR Sales',125,'checks'],['barPM','PM BAR Sales',125,'checks'],
+ ['adjustmentDecision','Hourly Adjustment',230,'payout'],['payout','Paid Tip Out',190,'payout']
+];
+function esOption(value,label,selected){return `<option value="${esc(value)}"${String(value)===String(selected)?' selected':''}>${esc(label)}</option>`;}
+function esInput(row,field,label){
+  const mask=esSalesMask(row,esSession.routing),barMask=esBarMask(row,esSession.routing),idx=esSession.rows.indexOf(row);
+  const attr=`data-es-row="${idx}" data-es-field="${field}" aria-label="${esc(row.name+' — '+label)}"`;
+  if(field==='shift')return `<select ${attr}>${esOption('','Select shift',row.shift)}${TIP_SHIFTS.map(x=>esOption(x,x==='DOUBLE'?'Double':x==='LONG'?'Long':x===SHIFT_EARLY?'10:45–2 PM':x===SHIFT_MIDDLE?'2–4 PM':x,row.shift)).join('')}</select>`;
+  if(field==='role')return `<select ${attr}${esFixedRole(row.name)?' disabled title="Position follows this work account"':''}>${['Server','Bartender'].map(x=>esOption(x,x,row.role)).join('')}</select>`;
+  if(['barAM','bar24','barPM'].includes(field)){
+    const cp=field==='barAM'?'AM':field==='bar24'?'2PM_4PM':'PM';
+    if(row.role==='Bartender')return `<span class="es-auto">${esSession.routing[cp]===row.name?'✓ Receives':'—'}</span>`;
+    return `<label class="es-check"><input type="checkbox" ${attr}${row[field]&&barMask[field]?' checked':''}${!barMask[field]?' disabled':''}><span>${barMask[field]?'Sales':'N/A'}</span></label>`;
+  }
+  if(field==='adjustmentDecision'){
+    const r=esSession.results[row.name]||{};
+    return `<div data-es-out="adjustmentAmount">${esMoney(r.adjustmentCandidate||0)} available</div><select ${attr}><option value="">Use saved / Pending</option>${esOption('ACCEPTED','ACCEPT adjustment',row.adjustmentDecision)}${esOption('DECLINED','DECLINE adjustment',row.adjustmentDecision)}</select><small class="es-applied" data-es-out="adjustmentApplied">Applied ${esMoney(r.adjustmentSalaryHourly)}</small>`;
+  }
+  const clock=field.startsWith('clock');
+  const disabled=(clock&&field.endsWith('2')&&row.shift!=='DOUBLE')||(field==='totalAM'&&!mask.totalAM)||(field==='total24'&&!mask.total24);
+  return `<input ${attr} type="text" inputmode="${clock?'numeric':'decimal'}" autocomplete="off" spellcheck="false"${clock?' maxlength="5"':''} value="${esc(disabled?'':row[field])}" placeholder="${disabled?'—':clock?'HH:MM':'0.00'}"${disabled?' disabled':''}>`;
+}
+function esOutput(row,field){
+  const r=esSession.results[row.name]||{};
+  if(field==='hours')return r.totalMinutesWork==null?'—':`${Math.floor(r.totalMinutesWork/60)}h ${r.totalMinutesWork%60}m`;
+  if(field==='busserRate')return Number(r.busserRate||0).toFixed(3)+'%';
+  if(field==='received'){
+    if(row.role!=='Bartender')return '—';
+    return `<strong>${esMoney(r.bartenderBarTipReceived)}</strong><span class="es-received-parts">${bartenderReceiptPeriods(r).map(p=>`BAR ${bartenderPeriodLabel(p.checkpoint)}: ${esMoney(p.amount)}`).join('<br>')||'Choose BAR routing'}</span>`;
+  }
+  const values={busserAM:r.busserTipOutAM,busserPM:r.busserTipOutPM,barTipAM:r.barBreakdown?.amFee,barTip24:r.barBreakdown?.fee24,barTipPM:r.barBreakdown?.pmFee,payout:r.totalPaidOut};
+  return esMoney(values[field]);
+}
+function esRowStatus(row){
+  const s=esSession,old=esFindReport(s.reports,row.name),r=s.results[row.name];
+  if(s.errors[row.name]?.length)return {text:'Check input',kind:'error'};
+  if(!old)return {text:'Draft · not saved',kind:'draft'};
+  if(esFingerprint(r)!==esFingerprint(old))return {text:'Changed · Save again',kind:'dirty'};
+  return smallReportHasPickupSignature(old)?{text:'Saved · Signed',kind:'signed'}:{text:'Saved · Unsigned',kind:'saved'};
+}
+function esRenderRows(){
+  const s=esSession;if(!s?.ready)return;
+  const body=$('esRows');if(!body)return;
+  const needle=String($('esSearch')?.value||'').trim().toLowerCase();
+  body.innerHTML=s.rows.map((row,idx)=>{
+    const state=esRowStatus(row),show=!needle||row.name.toLowerCase().includes(needle);
+    return `<tr data-es-index="${idx}"${!show?' hidden':''}><th scope="row" class="es-name"><b>${esc(row.name)}</b><span class="es-state" data-kind="${state.kind}">${esc(state.text)}</span><div class="es-row-actions">${['Save','Sign','Print'].map(action=>`<button type="button" data-es-action="${action.toLowerCase()}" data-es-row="${idx}" aria-label="${action} ${esc(row.name)}">${action}</button>`).join('')}</div><span class="es-row-message"></span></th>${ES_COLUMNS.map(([field,label,,group])=>`<td data-es-col="${field}" class="es-cell es-${group}${field==='payout'?' es-payout':''}">${ES_FIELDS.includes(field)?esInput(row,field,label):`<div class="es-computed" data-es-out="${field}">${esOutput(row,field)}</div>`}</td>`).join('')}</tr>`;
+  }).join('');
+  if(!s.rows.length)body.innerHTML=`<tr><td colspan="27" class="es-empty">Start with Team / BAR → select an employee → Add. No need to open individual forms.</td></tr>`;
+  esUpdateSummary();
+}
+function esUpdateComputed(){
+  if(!esSession?.ready)return;
+  document.querySelectorAll('#esRows tr[data-es-index]').forEach(tr=>{
+    const row=esSession.rows[Number(tr.dataset.esIndex)];if(!row)return;
+    tr.querySelectorAll('[data-es-out]').forEach(el=>{
+      const f=el.dataset.esOut,r=esSession.results[row.name];
+      if(f==='adjustmentAmount')el.textContent=esMoney(r.adjustmentCandidate)+' available';
+      else if(f==='adjustmentApplied')el.textContent='Applied '+esMoney(r.adjustmentSalaryHourly);
+      else el.innerHTML=esOutput(row,f);
+    });
+    const st=esRowStatus(row),status=tr.querySelector('.es-state');status.textContent=st.text;status.dataset.kind=st.kind;
+  });esUpdateSummary();
+}
+function esUpdateSummary(){
+  const s=esSession,rows=Object.values(s.results||{});
+  $('esTotals').textContent=`${s.rows.length} employees · Sales ${esMoney(rows.reduce((a,r)=>a+Number(r.grandTotal||0),0))} · Payout ${esMoney(rows.reduce((a,r)=>a+Number(r.totalPaidOut||0),0))}`;
+  $('esBusserRule').textContent=isWeekendDate(s.date)?'BUSSER · Sat / Sun: 1.5% all day · Bartender: 0%':'BUSSER · Mon–Fri: AM 0% / PM 1.5% · Bartender: 0%';
+}
+function esRenderRouting(){
+  const s=esSession;if(!s?.ready)return;
+  $('esBarRoutes').innerHTML=ES_PERIODS.map(cp=>`<label>BAR ${bartenderPeriodLabel(cp)} → Bartender<select data-es-route="${cp}">${esOption('','Choose / not assigned',s.routing[cp])}${esPeriodCandidates(s.rows,cp).map(r=>esOption(r.name,r.name,s.routing[cp])).join('')}</select></label>`).join('');
+  const existing=new Set(s.rows.map(r=>esKey(r.name)));
+  $('esAddName').innerHTML='<option value="">Select employee…</option>'+getEmployeeRoster().filter(n=>!existing.has(esKey(n))).map(n=>esOption(n,n,'')).join('');
+}
+function esInit(){
+  if($('employeeSheet'))return;
+  const parent=$('staffApp');if(!parent)return;
+  const el=document.createElement('section');el.id='employeeSheet';el.className='staffPanel hidden';
+  el.innerHTML=`<div class="es-header"><button type="button" id="esHome" class="es-home">‹ Home</button><div><span class="es-eyebrow">ONE PAGE · LIVE CALCULATION · ${ES_BUILD}</span><h2>Employee Sheet</h2><span id="esDateBadge" class="es-date-badge"></span></div><button type="button" id="esTools" class="es-home" aria-expanded="false">Tools</button><button type="button" id="esReload" class="es-home">Reload</button></div>
+    <div class="es-toolbar"><label>Work date<input type="date" id="esDate"></label><label class="es-search">Find employee<input type="search" id="esSearch" placeholder="Search name"></label><details id="esTeamDetails"><summary>＋ Team / BAR</summary><div class="es-team-panel"><div class="es-add"><label>Add employee<select id="esAddName"></select></label><button type="button" id="esAdd">Add</button></div><div id="esBarRoutes"></div><p>Total 2–4 includes AM; Grand Total is the final cumulative amount. One bartender per BAR period. An employee working two positions uses the separate work accounts already in the app.</p></div></details></div>
+    <div class="es-guide"><span id="esBusserRule"></span><details><summary>Sales / Save notes</summary><p>Total 2–4 is cumulative (includes AM). Grand Total is the final total, not extra sales. LONG: Total 2–4 is the existing early/no-busser sales basis on weekdays. A checkbox waives only its own BAR period. BAR Received uses all sales on this sheet; save each employee row to update that employee’s Daily Report. Other input is retained as drafts. Cash Tip is not paid twice; Hourly Adjustment follows the existing acceptance rule.</p></details></div>
+    <nav class="es-jump" aria-label="Jump to columns">${[['staff','Staff'],['clocks','Clocks'],['sales','Sales'],['busser','Busser'],['bar','BAR'],['tips','Tips / Meal'],['checks','BAR Sales'],['payout','Payout']].map(([key,label])=>`<button type="button" data-es-jump="${key}">${label}</button>`).join('')}</nav>
+    <div id="esStatus" class="es-status" role="status" aria-live="polite">Loading…</div>
+    <div class="es-grid" id="esGrid" tabindex="0" aria-label="Employee Sheet: scroll right for more columns"><table class="es-table"><colgroup><col class="es-name-col">${ES_COLUMNS.map(([,,width])=>`<col style="width:${width}px">`).join('')}</colgroup><thead><tr><th scope="col" class="es-name">Employee<span>Save · Sign · Print</span></th>${ES_COLUMNS.map(([field,label,,group])=>`<th scope="col" data-es-col="${field}" data-es-group="${group}">${esc(label)}${field==='total24'?'<small>Includes AM</small>':field==='grand'?'<small>Final cumulative</small>':''}</th>`).join('')}</tr></thead><tbody id="esRows"></tbody></table></div>
+    <footer class="es-footer"><span id="esTotals"></span><span>⇄ Slide columns · Name + header stay fixed</span></footer>
+    <div id="esSignatureModal" class="es-modal hidden" role="dialog" aria-modal="true" aria-labelledby="esSignatureTitle"><div class="es-sign-card"><h3 id="esSignatureTitle">Employee signature</h3><p id="esSignSummary"></p><canvas id="esSignatureCanvas" width="1000" height="320"></canvas><div class="es-sign-actions"><button type="button" id="esSignCancel">Cancel</button><button type="button" id="esSignClear">Clear</button><button type="button" id="esSignSave">Save signature</button></div><p id="esSignStatus" role="status"></p></div></div>`;
+  parent.appendChild(el);
+  $('esHome').addEventListener('click',()=>{if(esSession?.busy)return;esPersistLocal();el.classList.add('hidden');document.body.classList.remove('es-active');window.fzOpenRoleHome();});
+  $('esTools').addEventListener('click',()=>{const open=$('employeeSheet').classList.toggle('es-controls-open');$('esTools').setAttribute('aria-expanded',String(open));});
+  $('esReload').addEventListener('click',()=>window.employeeSheetOpen(esSession?.date,true));
+  $('esDate').addEventListener('change',()=>{if(!esSession?.busy)window.employeeSheetOpen($('esDate').value);});
+  $('esSearch').addEventListener('input',()=>{const q=$('esSearch').value.toLowerCase();document.querySelectorAll('#esRows tr[data-es-index]').forEach(tr=>tr.hidden=!esSession.rows[+tr.dataset.esIndex].name.toLowerCase().includes(q));});
+  $('esAdd').addEventListener('click',()=>{
+    const s=esSession,name=$('esAddName').value;if(!s?.ready||s.busy||!name)return;
+    s.rows.push(esDefaults(name,s.date));s.dirty[name]={__new:true};esRecalculate();esRenderRouting();esRenderRows();esPersistLocal();esStatus('Employee added. Choose a shift and enter the row.');
+  });
+  el.addEventListener('input',e=>{const field=e.target.dataset?.esField;if(field && e.target.tagName==='INPUT'&&e.target.type!=='checkbox')esChange(e.target,false);});
+  el.addEventListener('change',e=>{
+    if(e.target.dataset?.esField)esChange(e.target,true);
+    if(e.target.dataset?.esRoute && esSession?.ready&&!esSession.busy){esSession.routing[e.target.dataset.esRoute]=e.target.value;esRecalculate();esRenderRouting();esRenderRows();esPersistLocal();}
+  });
+  el.addEventListener('click',e=>{
+    const jump=e.target.closest('[data-es-jump]');if(jump){const target=el.querySelector('thead [data-es-group="'+jump.dataset.esJump+'"]');if(target)$('esGrid').scrollTo({left:Math.max(0,target.offsetLeft-el.querySelector('thead .es-name').offsetWidth),behavior:'smooth'});return;}
+    const button=e.target.closest('[data-es-action]');if(!button||esSession?.busy)return;
+    const name=esSession.rows[+button.dataset.esRow]?.name;
+    if(button.dataset.esAction==='save')window.employeeSheetSave(name);
+    if(button.dataset.esAction==='sign')window.employeeSheetSign(name);
+    if(button.dataset.esAction==='print')window.employeeSheetPrint(name);
+  });
+  $('esGrid').addEventListener('keydown',e=>{
+    if(e.key!=='Enter'||!e.target.dataset?.esField||e.target.tagName==='BUTTON')return;e.preventDefault();
+    const row=Number(e.target.dataset.esRow),field=e.target.dataset.esField;
+    const next=el.querySelector(`[data-es-row="${row+1}"][data-es-field="${field}"]:not(:disabled)`);next?.focus();next?.select?.();
+  });
+  $('esGrid').addEventListener('focusin',e=>{
+    if(!e.target.dataset?.esField)return;
+    const grid=$('esGrid'),box=grid.getBoundingClientRect(),input=e.target.getBoundingClientRect(),frozen=el.querySelector('thead .es-name').offsetWidth;
+    if(input.left<box.left+frozen)grid.scrollLeft-=box.left+frozen-input.left+8;
+    else if(input.right>box.right)grid.scrollLeft+=input.right-box.right+8;
+  });
+  esInitSignature();
+}
+function esChange(input,final){
+  const s=esSession;if(!s?.ready||s.busy)return;
+  const row=s.rows[+input.dataset.esRow],f=input.dataset.esField;if(!row||!ES_FIELDS.includes(f))return;
+  if(f==='role'&&esFixedRole(row.name))return;
+  const before=esClone(row);let value=input.type==='checkbox'?input.checked:input.value;
+  if(f.startsWith('clock')){value=esNormalizeClock(value);if(input.value!==value)input.value=value;}
+  row[f]=value;
+  if(f==='shift'){
+    const old=before.shift;
+    if(value==='DOUBLE'&&old!=='DOUBLE'){row.clockIn2='';row.clockOut2='';}
+    if(value!==old){
+      if(!['AM','DOUBLE',SHIFT_EARLY].includes(value) && row.role==='Server')row.totalAM='';
+      if(!['AM','DOUBLE','LONG',SHIFT_MIDDLE].includes(value))row.total24='';
+      if(isShortShift(value)){const [a,b]=shortShiftTimes(value);row.clockIn ||= a;row.clockOut ||= b;}
+    }
+  }
+  if(f==='role' && value==='Bartender'){row.barAM=false;row.bar24=false;row.barPM=false;}
+  if(f==='role' && value==='Server'){row.barAM=true;row.bar24=true;row.barPM=true;}
+  s.routing=esRouting(s.rows,s.routing);esLinkSales(row,f,s.routing);
+  s.dirty[row.name] ||= {};
+  for(const key of ES_FIELDS)if(!esCompareValue(before[key],row[key]))s.dirty[row.name][key]=true;
+  esRecalculate();
+  if(['shift','role'].includes(f)){esRenderRouting();esRenderRows();}
+  else{
+    for(const key of ['totalAM','total24','grand'])if(key!==f){const twin=$('employeeSheet').querySelector(`[data-es-row="${input.dataset.esRow}"][data-es-field="${key}"]`);if(twin&&!twin.disabled)twin.value=row[key];}
+    esUpdateComputed();
+  }
+  esPersistLocal();
+  const errors=s.errors[row.name]||[];esStatus(errors.length?row.name+': '+errors.join(' '):'Live preview updated — Save this row.',!!errors.length);
+}
+window.employeeSheetOpen=async function(date,force=false){
+  if(!esAllowed())return;
+  esInit();if(!$('employeeSheet'))return;
+  if(esSession?.busy)return;
+  const d=esDateValid(date)?date:esSession?.date||hv1DateValue();
+  if(force && esSession && Object.keys(esSession.dirty).length && !confirm('Reload cloud data? Your current input is kept as a device draft, and can be restored.'))return;
+  esPersistLocal();const token=++esOpenToken,uid=currentUser.uid;
+  esSession={date:d,uid,ready:false,busy:false,rows:[],reports:[],dirty:{},routing:{},baseRouting:{},results:{},errors:{}};
+  $('fzRoleHome')?.classList.add('hidden');$('staffApp')?.classList.remove('hidden');
+  document.querySelectorAll('.staffPanel').forEach(x=>x.classList.add('hidden'));
+  $('hourlyV1Workspace')?.classList.add('hidden');
+  document.body.classList.remove('hourly-v1-mode','hourly-v1-editing','hourly-v1-small-report','hourly-workspace-mode','small-report-fullscreen');
+  document.documentElement.classList.remove('small-report-fullscreen');
+  $('employeeSheet').classList.remove('hidden');document.body.classList.add('es-active');
+  $('esDate').value=d;$('esDateBadge').textContent=d;$('esRows').innerHTML='';esStatus('Loading the selected work date…');
+  try{
+    const [batchSnap,reportSnap]=await Promise.all([getDoc(doc(db,'hourlyV1Batches',d)),getDocs(query(collection(db,'hourlyReports'),where('date','==',d)))]);
+    if(token!==esOpenToken||!esAllowed()||currentUser.uid!==uid)return;
+    let local={};try{local=JSON.parse(localStorage.getItem(HV1_STORAGE_PREFIX+d)||'{}');}catch(e){}
+    const reports=reportSnap.docs.map(x=>({id:x.id,...x.data()}));
+    const raw=batchSnap.exists()?batchSnap.data():local;
+    const batch=esPrepareBatch(raw,reports,d);const rows=esRowsFromBatch(batch,reports,d);
+    const routing=esRouting(rows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,batch.bar[cp].bartender||''])));
+    Object.assign(esSession,{ready:true,baseBatch:batch,baseRows:esClone(rows),rows,reports,routing,baseRouting:esClone(routing),hadCloud:batchSnap.exists(),rawBase:esClone(raw)});
+    let draft=null;try{draft=JSON.parse(localStorage.getItem(esDraftKey(d,uid))||'null');}catch(e){}
+    if(draft?.date===d && Object.keys(draft.dirty||{}).length && confirm('Restore unfinished Employee Sheet input for '+d+' from this device?')){
+      // Restore the original base for conflict checks; never disguise a stale edit as current.
+      esSession.rows=draft.rows;esSession.dirty=draft.dirty;esSession.baseRows=draft.baseRows||rows;esSession.routing=draft.routing||routing;esSession.baseRouting=draft.baseRouting||routing;
+    }
+    esRecalculate();esRenderRouting();esRenderRows();
+    if(draft){$('esGrid').scrollLeft=draft.scrollLeft||0;$('esGrid').scrollTop=draft.scrollTop||0;}
+    esStatus('Ready. Enter values directly, then Save the row.');
+    refreshEmployeeAccountRoster().then(()=>{if(token===esOpenToken)esRenderRouting();}).catch(()=>{});
+  }catch(e){esStatus('Could not load this date: '+(e.message||e)+'. Tap Reload. No report was changed.',true);}
+};
+function esSetBusy(busy){
+  if(!esSession)return;esSession.busy=busy;
+  $('employeeSheet').classList.toggle('es-busy',busy);
+  // A fieldset-like pointer/keyboard lock prevents edits to a transaction snapshot.
+  $('employeeSheet').setAttribute('aria-busy',busy?'true':'false');
+  for(const el of document.querySelectorAll('#employeeSheet input,#employeeSheet select,#employeeSheet button')){
+    if(busy){el.dataset.esWasDisabled=el.disabled?'1':'0';el.disabled=true;}
+    else{el.disabled=el.dataset.esWasDisabled==='1';delete el.dataset.esWasDisabled;}
+  }
+}
+function esSignaturePatch(before,calculated,signature){
+  if(signature)return {pickupSignature:signature,signatureStatus:'SIGNED'};
+  if(before && esFingerprint(before)!==esFingerprint(calculated) && smallReportHasPickupSignature(before))return {pickupSignature:null,signatureStatus:'PENDING',pickupStatus:'',pickedUpBy:'',pickedUpAt:null,pickedUpProcessedBy:'',signatureInvalidatedReason:'Employee Sheet values changed; employee must re-sign.'};
+  return {};
+}
+async function esCommit(name,signature=null,expectedSignatureFingerprint=''){
+  const session=esSession;
+  if(!esAllowed()||!session?.ready||session.uid!==currentUser.uid)throw new Error('Manager / Owner session required.');
+  const selected=session.rows.find(r=>r.name===name);if(!selected)throw new Error('Employee row not found.');
+  const errors=esValidateSales(selected,session.routing,true);
+  for(const row of session.rows)for(const e of esValidateSales(row,session.routing,false))errors.push(row.name+': '+e);
+  if(errors.length)throw new Error(errors.join('\n'));
+  const duplicates=session.reports.filter(r=>esKey(r.employee)===esKey(name));
+  if(duplicates.length>1 && !session.baseBatch.drafts?.[name]?.hourlyReportId)throw new Error('Multiple Daily Reports exist for '+name+'. Open the intended original report before using this row.');
+  const s=esClone({date:session.date,uid:session.uid,rows:session.rows,baseRows:session.baseRows,dirty:session.dirty,routing:session.routing,baseRouting:session.baseRouting,baseBatch:session.baseBatch,reports:session.reports});
+  const batchRef=doc(db,'hourlyV1Batches',s.date),newRef=doc(collection(db,'hourlyReports'));
+  const result=await runTransaction(db,async tx=>{
+    const snap=await tx.get(batchRef);
+    if(!esAllowed()||currentUser.uid!==s.uid)throw new Error('Login changed. Nothing was saved.');
+    const cloud=snap.exists()?snap.data():s.baseBatch;
+    const remoteBatch=esPrepareBatch(cloud,s.reports,s.date),remoteRows=esRowsFromBatch(remoteBatch,s.reports,s.date);
+    const rows=esMergeRows(s.baseRows,s.rows,remoteRows,s.dirty);
+    const remoteRouting=esRouting(remoteRows,Object.fromEntries(ES_PERIODS.map(cp=>[cp,remoteBatch.bar[cp].bartender||''])));
+    for(const cp of ES_PERIODS){
+      if(s.routing[cp]!==s.baseRouting[cp]){
+        if(remoteRouting[cp]!==s.baseRouting[cp] && remoteRouting[cp]!==s.routing[cp])throw new Error('BAR '+bartenderPeriodLabel(cp)+' assignment changed on another device. Reload and review.');
+        remoteRouting[cp]=s.routing[cp];
+      }
+    }
+    const route=esRouting(rows,remoteRouting),batch=esBuildBatch(remoteBatch,rows,s.date,route);
+    const row=rows.find(r=>r.name===name);if(!row)throw new Error('Employee no longer exists on this work date.');
+    const problems=esValidateSales(row,route,true);if(problems.length)throw new Error(problems.join('\n'));
+    for(const server of rows)if(server.role==='Server'){
+      const salesErrors=esValidateSales(server,route,false);if(salesErrors.length)throw new Error(server.name+': '+salesErrors.join(' '));
+    }
+    const linked=remoteBatch.drafts?.[name]?.hourlyReportId||esFindReport(s.reports,name)?.id||'';
+    const reportRef=linked?doc(db,'hourlyReports',linked):newRef;
+    const reportSnap=linked?await tx.get(reportRef):null;
+    const before=reportSnap?.exists()?reportSnap.data():null;
+    if(before&&!hourlyReportBelongsTo(before,name,s.date))throw new Error('Saved report belongs to a different employee/date. Nothing was overwritten.');
+    const known=s.reports.find(r=>r.id===linked);
+    if(before&&known&&esFingerprint(before)!==esFingerprint(known))throw new Error('Daily Report changed on another device. Reload before replacing it.');
+    const calculated=esCalculate(row,batch,before);
+    if(signature&&expectedSignatureFingerprint!==esFingerprint(calculated))throw new Error('Amounts changed while signing. Review the latest payout and sign again.');
+    const sourceId=before?.sourceSubmissionId||batch.drafts[name].sourceSubmissionId||'';
+    const subRef=sourceId?doc(db,'submissions',sourceId):null,subSnap=subRef?await tx.get(subRef):null;
+    const source=subSnap?.exists()?subSnap.data():null;
+    const validSource=hourlyReportBelongsTo(source,name,s.date)?sourceId:'';
+    const sigPatch=esSignaturePatch(before,calculated,signature);
+    const payload={...calculated,...sigPatch,sourceSubmissionId:validSource,status:'money_ready',employeeKey:fzEmployeeIdentityKey(name),reportIdentityVersion:'13.8.28',employeeSheetBuild:ES_BUILD,updatedAt:serverTimestamp(),updatedBy:currentProfile.displayName||currentProfile.username||''};
+    if(validSource&&source.employeeUid)payload.employeeUid=source.employeeUid;
+    if(before)tx.update(reportRef,payload);
+    else tx.set(reportRef,{...payload,createdAt:serverTimestamp(),createdByUid:s.uid,createdBy:currentProfile.displayName||currentProfile.username||''});
+    if(validSource){
+      tx.update(subRef,{status:'money_ready',hourlyStatus:'finalized',hourlyReportId:reportRef.id,finalReport:{...calculated},...(signature?{pickupSignature:signature,signatureStatus:'SIGNED'}:sigPatch.pickupSignature===null?{pickupSignature:null,signatureStatus:'PENDING'}:{}),updatedAt:serverTimestamp()});
+    }
+    for(const n of Object.keys(s.dirty)){if(batch.drafts[n])batch.drafts[n].savedAt=Date.now();}
+    Object.assign(batch.drafts[name],{hourlyReportId:reportRef.id,sourceSubmissionId:validSource,finalized:true,finalizedAt:Date.now(),savedAt:Date.now()});
+    tx.set(batchRef,{...cloud,date:s.date,team:batch.team,drafts:batch.drafts,bar:batch.bar,barManual:batch.barManual||{},updatedAt:serverTimestamp(),updatedByUid:s.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});
+    return {batch,report:{...(before||{}),...payload,id:reportRef.id},before,route};
+  });
+  if(esSession!==session)return result;
+  session.baseBatch=result.batch;session.rawBase=result.batch;session.hadCloud=true;session.routing=result.route;session.baseRouting=esClone(result.route);
+  session.reports=[result.report,...session.reports.filter(r=>r.id!==result.report.id)];
+  session.rows=esRowsFromBatch(result.batch,session.reports,session.date);session.baseRows=esClone(session.rows);session.dirty={};
+  latestHourlyReports=[result.report,...latestHourlyReports.filter(r=>r.id!==result.report.id)];
+  try{localStorage.setItem(HV1_STORAGE_PREFIX+session.date,JSON.stringify(result.batch));}catch(e){}
+  esRecalculate();esPersistLocal();
+  try{await writeAudit(signature?'employee_sheet_sign':'employee_sheet_save',result.report.id,name,{date:session.date,before:result.before||null,after:result.report,signatureReplaced:!!result.before?.pickupSignature});}catch(e){console.warn('Employee Sheet audit:',e);}
+  return result;
+}
+window.employeeSheetSave=async function(name){
+  if(!esAllowed()||esSession?.busy)return false;
+  esSetBusy(true);esStatus('Saving '+name+' to Daily Report…');
+  try{const out=await esCommit(name);esStatus(name+' saved to Daily Report'+(smallReportHasPickupSignature(out.report)?' · SIGNED.':' · signature can be added later.'));return true;}
+  catch(e){esStatus(e.message||String(e),true);return false;}
+  finally{esSetBusy(false);esRenderRows();esRenderRouting();}
+};
+function esSerializeSignature(strokes){
+  let budget=4096;const out=[];
+  for(const stroke of strokes.slice(0,64)){
+    if(stroke.length<2||budget<2)continue;
+    const count=Math.min(192,stroke.length,budget),points=[];
+    for(let i=0;i<count;i++){const p=stroke[Math.round(i*(stroke.length-1)/(count-1))];points.push({x:Math.round(Math.max(0,Math.min(1,p.x))*10000)/10000,y:Math.round(Math.max(0,Math.min(1,p.y))*10000)/10000});}
+    out.push({points});budget-=points.length;
+  }
+  return {strokes:out,signedAtLocal:new Date().toISOString()};
+}
+function esInitSignature(){
+  const canvas=$('esSignatureCanvas');if(!canvas)return;
+  const draw=()=>{
+    const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);ctx.strokeStyle='#10233f';ctx.lineWidth=3.4;ctx.lineCap='round';ctx.lineJoin='round';
+    for(const stroke of esSignature?.strokes||[]){ctx.beginPath();stroke.forEach((p,i)=>ctx[i?'lineTo':'moveTo'](p.x*canvas.width,p.y*canvas.height));ctx.stroke();}
+  };
+  const point=e=>{const rect=canvas.getBoundingClientRect();return {x:Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width)),y:Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height))};};
+  canvas.addEventListener('pointerdown',e=>{if(!esSignature||esSession?.busy)return;e.preventDefault();canvas.setPointerCapture(e.pointerId);esSignature.current=[point(e)];esSignature.strokes.push(esSignature.current);draw();});
+  canvas.addEventListener('pointermove',e=>{if(!esSignature?.current)return;e.preventDefault();if(esSignature.current.length<800)esSignature.current.push(point(e));draw();});
+  const stop=()=>{if(esSignature)esSignature.current=null;};canvas.addEventListener('pointerup',stop);canvas.addEventListener('pointercancel',stop);
+  const close=()=>{if(esSession?.busy)return;esSignature=null;$('esSignatureModal').classList.add('hidden');};
+  $('esSignCancel').addEventListener('click',close);
+  $('esSignClear').addEventListener('click',()=>{if(esSignature){esSignature.strokes=[];draw();}});
+  $('esSignSave').addEventListener('click',async()=>{
+    if(!esSignature||esSession?.busy)return;
+    if(esSignature.strokes.reduce((n,s)=>n+s.length,0)<4){$('esSignStatus').textContent='Please sign inside the box first.';return;}
+    const sign=esSignature;
+    const payload=esSerializeSignature(sign.strokes);
+    esSetBusy(true);$('esSignStatus').textContent='Saving report and signature…';
+    try{await esCommit(sign.name,payload,sign.fingerprint);esSignature=null;$('esSignatureModal').classList.add('hidden');esStatus(sign.name+' saved · signature is attached to Daily Report.');}
+    catch(e){$('esSignStatus').textContent=e.message||String(e);}
+    finally{esSetBusy(false);esRenderRows();esRenderRouting();}
+  });
+  $('esSignatureModal').addEventListener('keydown',e=>{
+    if(e.key==='Escape'){e.preventDefault();close();}
+    if(e.key==='Tab'){const focus=[...$('esSignatureModal').querySelectorAll('button:not(:disabled)')];if(e.shiftKey&&document.activeElement===focus[0]){e.preventDefault();focus.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===focus.at(-1)){e.preventDefault();focus[0]?.focus();}}
+  });
+  window.addEventListener('resize',draw);
+}
+window.employeeSheetSign=function(name){
+  if(!esAllowed()||esSession?.busy)return;
+  const row=esSession.rows.find(r=>r.name===name);if(!row)return;
+  const errors=esValidateSales(row,esSession.routing,true);if(errors.length){esStatus(name+': '+errors.join(' '),true);return;}
+  const r=esSession.results[name];esSignature={name,fingerprint:esFingerprint(r),strokes:[],current:null};
+  $('esSignatureTitle').textContent=name+' — Employee Signature';
+  $('esSignSummary').textContent=esSession.date+' · '+row.shift+' · Paid Tip Out '+esMoney(r.totalPaidOut);
+  $('esSignStatus').textContent='Save signature updates this Daily Report. Any later change to the amounts requires a new signature.';
+  $('esSignatureCanvas').getContext('2d').clearRect(0,0,1000,320);
+  $('esSignatureModal').classList.remove('hidden');$('esSignCancel').focus();
+};
+function esThermalHtml(report){
+  // Reuse the exact receipt renderer, including the large disclaimer and signature.
+  // The new Sheet permits unsigned print; the original Daily Report gate is unchanged.
+  const html=buildSmallReportThermalHtml(report);
+  return smallReportHasPickupSignature(report)?html:html.replace('<div class="signed">SIGNED</div>','<div class="signed">NOT SIGNED</div>');
+}
+function esPassPrntUri(report,html){
+  const back=new URL(window.location.href);
+  back.searchParams.set(PASS_PRNT_RETURN_PARAM,'1');back.searchParams.set('fzPrntRole',String(currentProfile?.role||''));
+  back.searchParams.set('fzPrntReport',String(report.id));back.searchParams.set('fzPrntDate',report.date);back.searchParams.set('fzPrntExpires',String(Date.now()+5*60*1000));
+  back.searchParams.set('fzEmployeeSheetReturn','1');back.searchParams.delete('passprnt_code');back.searchParams.delete('passprnt_message');
+  return 'starpassprnt://v1/print/nopreview?back='+encodeURIComponent(back.href)+'&size=576&cut=partial&popup=enable&html='+encodeURIComponent(html);
+}
+window.employeeSheetPrint=async function(name){
+  if(!esAllowed()||esSession?.busy)return;
+  const android=/Android/i.test(navigator.userAgent||'');let popup=null;
+  // Open synchronously in the click gesture before awaiting a save.
+  if(!android){popup=window.open('','_blank','width=430,height=760');if(!popup){esStatus('Allow a print pop-up for this app, then press Print again.',true);return;}popup.document.write('<p>Preparing receipt…</p>');}
+  esSetBusy(true);esStatus('Saving current row before printing…');
+  try{
+    const out=await esCommit(name),r=out.report,html=esThermalHtml(r);
+    if(android){
+      await prepareSmallReportPassPrntReturn(r);
+      try{const bridge=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');bridge.employeeSheet=true;localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(bridge));}catch(e){}
+      esPersistLocal();const link=document.createElement('a');link.href=esPassPrntUri(r,html);link.style.display='none';document.body.appendChild(link);link.click();link.remove();
+      esStatus('Sent to Star PassPRNT. The saved Daily Report is unchanged by printing.');
+    }else{
+      popup.document.open();popup.document.write(html);popup.document.close();
+      setTimeout(()=>{try{popup.focus();popup.print();}catch(e){}},250);esStatus('Receipt opened for printing.');
+    }
+  }catch(e){if(popup)popup.close();esStatus(e.message||String(e),true);if(android)await cancelSmallReportPassPrntReturn();}
+  finally{esSetBusy(false);esRenderRows();esRenderRouting();}
+};
+// Additive return route only. Existing Daily Report printing keeps its old route.
+(function(){
+  const original=restoreSmallReportAfterPassPrnt;
+  restoreSmallReportAfterPassPrnt=function(state){
+    let sheet=state?.employeeSheet;
+    try{sheet ||= new URL(window.location.href).searchParams.get('fzEmployeeSheetReturn')==='1';}catch(e){}
+    if(!sheet)return original(state);
+    if(!esAllowed())return;
+    setTimeout(()=>window.employeeSheetOpen(state?.date),500);
+    try{const u=new URL(window.location.href);u.searchParams.delete('fzEmployeeSheetReturn');history.replaceState(history.state,'',u.pathname+u.search+u.hash);}catch(e){}
+  };
+})();
+window.addEventListener('beforeunload',()=>esPersistLocal());
+// Safe no-op for non-staff roles and old pages; the Home card initializes on demand.
