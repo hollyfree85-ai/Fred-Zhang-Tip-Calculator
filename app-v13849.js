@@ -10133,7 +10133,8 @@ initMonthlyReportUi();
     // Name / scope strip
     c+="0.94 0.97 1 rg 34 642 544 26 re f\n";
     c+="0.76 0.84 0.91 RG 0.8 w 34 642 544 26 re S\n0 G\n";
-    c+=monthlyPdfCellText("F2",11,46,650,520,isAll?"SUMMARY: ALL EMPLOYEES":`EMPLOYEE: ${summary.name}`,"left");
+    c+="0.055 0.14 0.25 rg\n"; // Reset fill color after the pale name-strip background.
+    c+=monthlyPdfCellText("F2",14,46,650,520,isAll?"SUMMARY: ALL EMPLOYEES":`EMPLOYEE: ${summary.name}`,"left");
 
     const xL=34,xR=314,w=264,h=68,gap=10,top=626;
     for(let i=0;i<5;i++){
@@ -10145,6 +10146,7 @@ initMonthlyReportUi();
     // Footer note
     c+="0.975 0.98 0.985 rg 34 116 544 76 re f\n";
     c+="0.82 0.85 0.89 RG 0.7 w 34 116 544 76 re S\n0 G\n";
+    c+="0.055 0.14 0.25 rg\n"; // Keep report notes readable after their pale background.
     c+=monthlyPdfText("F2",8.6,48,171,"REPORT NOTES");
     c+=monthlyPdfText("F1",8,48,153,"Paid Tip Before Meal = Paid Tip + Cash Tip.");
     c+=monthlyPdfText("F1",8,48,138,"Sales = Grand Total sales for the selected period.");
@@ -10171,7 +10173,9 @@ initMonthlyReportUi();
     const rows=monthlyReportSummaries();
     if(!rows.length){alert("No Monthly Report data for this period.");return;}
     const range=monthlyReportRange(),safeFrom=range.from||"all",safeTo=range.to||"all";
-    downloadBlob(monthlyReportPdfBlob(rows),`Fred_Zhang_Monthly_Report_${safeFrom}_to_${safeTo}.pdf`);
+    const employeeName=String($("monthlyReportEmployee")?.value||"All Employees").trim();
+    const safeEmployee=employeeName.normalize("NFKD").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_+|_+$/g,"")||"Employee";
+    downloadBlob(monthlyReportPdfBlob(rows),`Fred_Zhang_Monthly_Report_${safeEmployee}_${safeFrom}_to_${safeTo}.pdf`);
   };
 
   // Replace old render listeners with the simplified renderer. Menu click uses window.renderMonthlyReport dynamically.
