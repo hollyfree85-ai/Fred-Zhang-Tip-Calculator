@@ -6147,6 +6147,12 @@ function thermalReportPaidOut(r){
     ? paidTip + barTipReceived - meal
     : paidTip - barTipOut - meal);
 }
+// ES1.8.2 receipt-only informational totals. Cash is never paid twice.
+function thermalReportTipBeforeMeal(r){
+  const paid=Number(r?.paidTip||0),bar=Number(r?.barTipOut||0),received=Number(r?.bartenderBarTipReceived||0);
+  return howRoundCent(String(r?.position||'').toLowerCase()==='bartender'?paid+received:paid-bar);
+}
+function thermalReportGrandTotalTip(r){return howRoundCent(thermalReportTipBeforeMeal(r)+Number(r?.cashTip||0));}
 function thermalReceiptMoney(v){
   return Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
 }
@@ -6174,6 +6180,7 @@ function buildSmallReportThermalHtml(r){
     ["Bar Tip Out",thermalReceiptMoney(r.barTipOut)]
   ];
   if(bartender)rows.push(["Bar Tip Out Received",thermalReceiptMoney(r.bartenderBarTipReceived)]);
+  rows.push(["Total Tip Before Meal",thermalReceiptMoney(thermalReportTipBeforeMeal(r))]);
   rows.push(["Meal",thermalReceiptMoney(r.meal)]);
   const rowHtml=rows.map(([label,value])=>`<div class="row"><span>${thermalReceiptSafe(label)}</span><b>${thermalReceiptSafe(value)}</b></div>`).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=576,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="format-detection" content="telephone=no"><title>Daily Tip Report</title><style>
@@ -6188,6 +6195,9 @@ function buildSmallReportThermalHtml(r){
     .row span{flex:1 1 auto;min-width:0}.row b{flex:0 0 auto;text-align:right;max-width:285px;word-break:break-word;font-weight:900}
     .total{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;font-weight:900;font-size:31px;line-height:1.1;padding:10px 0}
     .total span{white-space:nowrap}.total b{text-align:right}
+    .payout-note,.tip-note{font-size:18px;line-height:1.3;text-align:center;font-weight:700;margin:4px 0 7px}
+    .tip-grand{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;font-size:28px;line-height:1.15;font-weight:900;padding:7px 0}
+    .tip-grand span{flex:1;min-width:0}.tip-grand b{flex:0 0 auto;text-align:right}
     .signature-title{text-align:center;font-weight:900;font-size:22px;margin:14px 0 2px}
     .signature{width:100%;height:164px;display:flex;align-items:center;justify-content:center;overflow:hidden}
     .signature svg{display:block;width:500px!important;height:160px!important;max-width:100%}
@@ -6197,7 +6207,7 @@ function buildSmallReportThermalHtml(r){
       html,body{width:80mm;max-width:80mm}
       body{padding:3mm 3mm 5mm;font-size:14pt}
       .title{font-size:20pt}.sub{font-size:12pt}.row{font-size:14pt;padding:1.2mm 0}
-      .total{font-size:18pt}.signature-title{font-size:13pt}.signed{font-size:11pt}
+      .total{font-size:16pt;gap:6px}.total span{white-space:normal;min-width:0;flex:1}.total b,.tip-grand b{max-width:48%;overflow-wrap:anywhere}.row b{max-width:48%}.tip-grand{font-size:16pt}.payout-note,.tip-note{font-size:10pt}.signature-title{font-size:13pt}.signed{font-size:11pt}
       .receipt-note{font-size:16pt;line-height:1.38;margin-top:3.5mm}
       .signature{height:23mm}.signature svg{width:68mm!important;height:22mm!important}
     }
@@ -6208,6 +6218,11 @@ function buildSmallReportThermalHtml(r){
     ${rowHtml}
     <div class="rule"></div>
     <div class="total"><span>TOTAL PAID OUT</span><b>${thermalReceiptSafe(thermalReceiptMoney(thermalReportPaidOut(r)))}</b></div>
+    <div class="payout-note">Cash Tip is NOT included in Total Paid Out.</div>
+    <div class="rule"></div>
+    <div class="row"><span>Cash Tip (already received)</span><b>${thermalReceiptSafe(thermalReceiptMoney(r.cashTip))}</b></div>
+    <div class="tip-grand"><span>GRAND TOTAL TIP</span><b>${thermalReceiptSafe(thermalReceiptMoney(thermalReportGrandTotalTip(r)))}</b></div>
+    <div class="tip-note">Total Tip Before Meal + Cash Tip<br>Before meal deduction; not an extra payout.</div>
     <div class="rule"></div>
     <div class="signature-title">EMPLOYEE SIGNATURE</div>
     <div class="signature">${signature}</div>
@@ -10266,7 +10281,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.1';
+const ES_BUILD='ES1.8.2';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10549,7 +10564,7 @@ function esInput(row,field,label){
   }
   const clock=field.startsWith('clock');
   const disabled=(clock&&field.endsWith('2')&&row.shift!=='DOUBLE')||(field==='totalAM'&&!mask.totalAM)||(field==='total24'&&!mask.total24);
-  return `<input ${attr} type="text" inputmode="${clock?'numeric':'decimal'}" autocomplete="off" spellcheck="false"${clock?' maxlength="5"':''} value="${esc(disabled?'':row[field])}" placeholder="${disabled?'—':clock?'HH:MM':'0.00'}"${disabled?' disabled':''}>`;
+  return `<input ${attr} type="text" inputmode="numeric"${clock?'':' data-es182-money="1" title="Type digits: 2000 = 20.00"'} autocomplete="off" spellcheck="false"${clock?' maxlength="5"':''} value="${esc(disabled?'':clock?row[field]:es182MoneyDisplay(row[field]))}" placeholder="${disabled?'—':clock?'HH:MM':'0.00'}"${disabled?' disabled':''}>`;
 }
 function esOutput(row,field){
   const r=esSession.results[row.name]||{};
@@ -10676,7 +10691,7 @@ function esChange(input,final){
   if(f==='role'&&esFixedRole(row.name))return;
   const before=esClone(row);let value=input.type==='checkbox'?input.checked:input.value;
   if(f.startsWith('clock')){value=esNormalizeClock(value);if(input.value!==value)input.value=value;}
-  if(final&&ES_MONEY.includes(f)&&es14MoneyValid(value)&&String(value).trim()!==''){value=es14MoneyText(value);input.value=value;}
+  if(final&&ES_MONEY.includes(f)&&es14MoneyValid(value)&&String(value).trim()!==''){value=es14MoneyText(value);input.value=es182MoneyDisplay(value);}
   row[f]=value;
   if(f==='shift'){
     const old=before.shift;
@@ -10691,11 +10706,11 @@ function esChange(input,final){
   if(f==='role' && value==='Server'){row.barAM=true;row.bar24=true;row.barPM=true;}
   s.routing=esRouting(s.rows,s.routing);esLinkSales(row,f,s.routing);
   s.dirty[row.name] ||= {};
-  for(const key of ES_FIELDS)if(!esCompareValue(before[key],row[key]))s.dirty[row.name][key]=true;
+  for(const key of ES_FIELDS)if(!es14Same(key,before[key],row[key]))s.dirty[row.name][key]=true;
   esRecalculate();
   if(['shift','role'].includes(f)){esRenderRouting();esRenderRows();}
   else{
-    for(const key of ['totalAM','total24','grand'])if(key!==f){const twin=$('employeeSheet').querySelector(`[data-es-row="${input.dataset.esRow}"][data-es-field="${key}"]`);if(twin&&!twin.disabled)twin.value=row[key];}
+    for(const key of ['totalAM','total24','grand'])if(key!==f){const twin=$('employeeSheet').querySelector(`[data-es-row="${input.dataset.esRow}"][data-es-field="${key}"]`);if(twin&&!twin.disabled)twin.value=es182MoneyDisplay(row[key]);}
     esUpdateComputed();
   }
   esPersistLocal();
@@ -10848,16 +10863,7 @@ function esInitSignature(){
   const close=()=>{if(esSession?.busy)return;esSignature=null;$('esSignatureModal').classList.add('hidden');};
   $('esSignCancel').addEventListener('click',close);
   $('esSignClear').addEventListener('click',()=>{if(esSignature){esSignature.strokes=[];draw();}});
-  $('esSignSave').addEventListener('click',async()=>{
-    if(!esSignature||esSession?.busy)return;
-    if(esSignature.strokes.reduce((n,s)=>n+s.length,0)<4){$('esSignStatus').textContent='Please sign inside the box first.';return;}
-    const sign=esSignature;
-    const payload=esSerializeSignature(sign.strokes);
-    esSetBusy(true);$('esSignStatus').textContent='Saving report and signature…';
-    try{await esCommit(sign.name,payload,sign.fingerprint);esSignature=null;$('esSignatureModal').classList.add('hidden');esStatus(sign.name+' saved and signed · Final Report updated.');}
-    catch(e){es14HandleError(e);$('esSignStatus').textContent=e.message||String(e);if(e.esAmountsChanged)$('esSignReview')?.classList.remove('hidden');}
-    finally{esSetBusy(false);esRenderRows();esRenderRouting();if(!esSignature)es14RestoreScroll(sign.scroll,sign.name);}
-  });
+  $('esSignSave').addEventListener('click',es182SaveSignature);
   $('esSignatureModal').addEventListener('keydown',e=>{
     if(e.key==='Escape'){e.preventDefault();close();}
     if(e.key==='Tab'){const focus=[...$('esSignatureModal').querySelectorAll('button:not(:disabled)')];if(e.shiftKey&&document.activeElement===focus[0]){e.preventDefault();focus.at(-1)?.focus();}else if(!e.shiftKey&&document.activeElement===focus.at(-1)){e.preventDefault();focus[0]?.focus();}}
@@ -11543,6 +11549,7 @@ function es14Patch(baseRows,editedRows,remoteRows,dirty,route,skipInvalid=true){
       const value=ES_MONEY.includes(field)&&es14MoneyValid(edited[field])?es14MoneyText(edited[field]):edited[field];
       if(skipInvalid&&((ES_MONEY.includes(field)&&!es14MoneyValid(value))||(['totalAM','total24','grand'].includes(field)&&salesErrors.length))){skipped.push({name:edited.name,field});continue;}
       const original=base?.[field]??esDefaults(edited.name,'')[field];
+      if(base&&es14Same(field,value,original))continue; // No remaining local edit.
       if(!es14Same(field,target[field],original)&&!es14Same(field,target[field],value)){
         // An existing concurrently-added row is not reset to new-row defaults.
         if(changes.__new&&!base&&!changes[field])continue;
@@ -11582,6 +11589,7 @@ function es14Rebase(s,raw,reports,ack=null){
     for(const f of ES_FIELDS)if(changes[f]||changes.__new){
       if(es14Same(f,local[f],target[f]))continue;
       const prior=original?.[f]??esDefaults(local.name,s.date)[f];
+      if(original&&es14Same(f,local[f],prior))continue; // Adopt newer value after an undone/equivalent edit.
       if(!es14Same(f,target[f],prior))conflicts.push(es14Conflict(local.name,f,prior,local[f],target[f]));
       target[f]=local[f];b[f]=prior;(nextDirty[local.name] ||= {})[f]=true;
     }
@@ -11602,9 +11610,12 @@ function es14Paint(force=false){
   for(const tr of trs){
     const name=tr.querySelector('.es-name>b')?.textContent,row=s.rows.find(r=>r.name===name);if(!row)continue;
     for(const input of tr.querySelectorAll('[data-es-field]')){
-      const f=input.dataset.esField;if(input===focus&&(s.dirty[row.name]?.[f]||s.dirty[row.name]?.__new))continue;
+      const f=input.dataset.esField;
+      // An acknowledged formatting-only refresh must not move the typing caret.
+      // A genuinely newer remote value still paints into a focused, unedited cell.
+      if(input===focus&&(s.dirty[row.name]?.[f]||es14Same(f,input.type==='checkbox'?input.checked:input.value,row[f])))continue;
       if(input.type==='checkbox')input.checked=!!row[f]&&!!esBarMask(row,s.routing)[f];
-      else if(!input.disabled)input.value=String(row[f]??'');
+      else if(!input.disabled)input.value=ES_MONEY.includes(f)?es182MoneyDisplay(row[f]):String(row[f]??'');
     }
   }
   esUpdateComputed();es14ConflictUI();
@@ -11714,7 +11725,9 @@ esCommit=async function(name,signature=null,expectedSignatureFingerprint=''){
   if(session.esReadEnabled)await es14AutoFlush(session);
   const selected=session.rows.find(r=>r.name===name);if(!selected)throw new Error('Employee row not found.');
   const errors=esValidateSales(selected,session.routing,true);if(errors.length)throw new Error(name+': '+errors.join(' '));
-  const conflicts=(session.conflicts||[]).filter(c=>c.name===name||c.name==='BAR routing');if(conflicts.length)throw es14ConflictError(conflicts);
+  // Previously displayed conflicts may already have converged. Re-evaluate
+  // against authoritative batch/report reads inside the transaction below.
+  // Real simultaneous edits still throw before any write.
   const duplicate=session.reports.filter(r=>esKey(r.employee)===esKey(name));
   if(duplicate.length>1&&!session.baseBatch.drafts?.[name]?.hourlyReportId)throw new Error('Multiple reports exist for this work account. Open the intended report in Final Report.');
   const s=es14DraftSnapshot(session),ref=doc(db,'hourlyV1Batches',s.date),newRef=doc(collection(db,'hourlyReports'));
@@ -11758,9 +11771,10 @@ esCommit=async function(name,signature=null,expectedSignatureFingerprint=''){
   });
   if(esSession===session&&es14AllowedSession(session)){
     const reports=[result.report,...session.reports.filter(r=>r.id!==result.report.id)];
-    es14AcceptCommit(session,result.batch,reports,{rows:result.rows,fields:result.fields,routing:result.route});
+    try{es14AcceptCommit(session,result.batch,reports,{rows:result.rows,fields:result.fields,routing:result.route});}
+    catch(e){session.reports=reports;console.warn('Report saved; sheet refresh will retry:',e);if(esReadCurrent(esRead))esRead.pending=true;}
     latestHourlyReports=[result.report,...latestHourlyReports.filter(r=>r.id!==result.report.id)];
-    frRenderIfOpen();
+    try{frRenderIfOpen();}catch(e){console.warn('Report saved; Final Report view refresh:',e);}
   }
   // Logging must not keep the signature modal open after the report transaction
   // has succeeded. It is deliberately not on the user's critical save path.
@@ -12363,7 +12377,7 @@ function hc15Init(){
   if($('hc15Section')||!$('esGrid'))return;
   const section=document.createElement('section');section.id='hc15Section';section.className='hc15-section';
   section.innerHTML=`<div class="hc15-heading"><h3>Host / Cashier</h3><button type="button" id="hc15EditTeam">Edit Team</button></div><div id="hc15Status" class="hc15-status" role="status"></div>
-    <div id="hc15Pools" class="hc15-pools"><table><thead><tr><th>Shift</th><th>Cash</th><th>Credit</th><th>Pool / Staff</th></tr></thead><tbody>${['AM','PM'].map(cp=>`<tr><th>${cp}</th><td><input data-hc15-pool="cash${cp}" inputmode="decimal" type="text" aria-label="Host Cashier Cash ${cp}" placeholder="0.00"></td><td><input data-hc15-pool="credit${cp}" inputmode="decimal" type="text" aria-label="Host Cashier Credit ${cp}" placeholder="0.00"><button class="hc15-accounts" data-hc15-credit="${cp}" type="button">Accounts +</button></td><td id="hc15Pool${cp}">—</td></tr>`).join('')}</tbody></table></div>
+    <div id="hc15Pools" class="hc15-pools"><table><thead><tr><th>Shift</th><th>Cash</th><th>Credit</th><th>Pool / Staff</th></tr></thead><tbody>${['AM','PM'].map(cp=>`<tr><th>${cp}</th><td><input data-hc15-pool="cash${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Cash ${cp}" placeholder="0.00"></td><td><input data-hc15-pool="credit${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Credit ${cp}" placeholder="0.00"><button class="hc15-accounts" data-hc15-credit="${cp}" type="button">Accounts +</button></td><td id="hc15Pool${cp}">—</td></tr>`).join('')}</tbody></table></div>
     <div id="hc15Conflict" class="hidden"><p>Another device changed the same field. Choose which values to keep.</p><button type="button" id="hc15UseCloud">Use latest</button><button type="button" id="hc15KeepMine">Keep this device</button></div>
     <table class="es-table hc15-table"><colgroup><col class="es-name-col"><col style="width:145px"><col style="width:170px">${Array(4).fill('<col style="width:150px">').join('')}<col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:200px"></colgroup><thead><tr><th class="es-name">Host / Cashier<span>Save · Sign · Print</span></th>${['Shift','Position','Clock In 1','Clock Out 1','Clock In 2','Clock Out 2','Total Hours','Tip AM','Tip PM','Paid Tip Out'].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody id="hc15Rows"></tbody></table>
     <p class="hc15-footnote">Cash + Credit is split equally within each shift, using the existing cent-rounding rule. Double receives AM + PM. Clock fields are optional; they do not change the split.</p>`;
@@ -12481,7 +12495,7 @@ function hc15OpenCredit(cp){
   hc15Credit={cp,rows:tt15Copy(rows.length?rows:[{label:'Account 1',amount:data['credit'+cp]||0}])};$('hc15CreditTitle').textContent='Credit '+cp+' — Accounts';$('hc15CreditStatus').textContent='';$('hc15CreditModal').classList.remove('hidden');hc15CreditRender();
 }
 function hc15CreditRender(){
-  if(!hc15Credit)return;$('hc15CreditRows').innerHTML=hc15Credit.rows.map((r,i)=>`<div class="hc15-credit-row"><input data-hc15-account="${i}" data-key="label" value="${esc(r.label||'')}" placeholder="Account name" maxlength="80" aria-label="Account ${i+1}"><input data-hc15-account="${i}" data-key="amount" value="${esc(r.amount)}" inputmode="decimal" aria-label="Amount ${i+1}"><button type="button" data-hc15-remove="${i}" aria-label="Remove account ${i+1}">✕</button></div>`).join('');hc15CreditTotal();
+  if(!hc15Credit)return;$('hc15CreditRows').innerHTML=hc15Credit.rows.map((r,i)=>`<div class="hc15-credit-row"><input data-hc15-account="${i}" data-key="label" value="${esc(r.label||'')}" placeholder="Account name" maxlength="80" aria-label="Account ${i+1}"><input data-hc15-account="${i}" data-key="amount" data-es182-money="1" value="${esc(es182MoneyDisplay(r.amount))}" inputmode="numeric" aria-label="Amount ${i+1}"><button type="button" data-hc15-remove="${i}" aria-label="Remove account ${i+1}">✕</button></div>`).join('');hc15CreditTotal();
 }
 function hc15CreditTotal(){if(hc15Credit)$('hc15CreditTotal').textContent='Total '+esMoney(hc15Credit.rows.reduce((sum,r)=>sum+Math.round((Number(r.amount)||0)*100),0)/100);}
 function hc15BindCredit(){
@@ -12535,9 +12549,16 @@ try{onAuthStateChanged(auth,user=>{if(!user||!esAllowed()){tt15Close();hc15Stop(
  */
 function es16RawSource(batch,name){
   const d=batch?.drafts?.[name]||{};
-  return JSON.stringify([d.values||{},d.entered||{},ES_PERIODS.map(cp=>[batch.bar?.[cp]?.entries?.[name]??null,batch.bar?.[cp]?.excluded?.[name]??null])]);
+  return es182StableJson([d.values||{},d.entered||{},ES_PERIODS.map(cp=>[batch.bar?.[cp]?.entries?.[name]??null,batch.bar?.[cp]?.excluded?.[name]??null])]);
 }
-function es16RawValid(d,batch,name){return !!d?.employeeSheetRawRow&&d.employeeSheetRawRow.name===name&&d.employeeSheetRawSource===es16RawSource(batch,name);}
+function es16RawValid(d,batch,name){
+  if(!d?.employeeSheetRawRow||d.employeeSheetRawRow.name!==name)return false;
+  const current=es16RawSource(batch,name);
+  if(d.employeeSheetRawSource===current)return true;
+  // Firestore maps can return in a different key order. Compare legacy source
+  // snapshots semantically; an actual values/entered/BAR change still invalidates.
+  try{return es182StableJson(JSON.parse(d.employeeSheetRawSource))===current;}catch(e){return false;}
+}
 function es16RowMatches(a,b){return !!a&&!!b&&a.name===b.name&&ES_FIELDS.every(f=>es14Same(f,a[f],b[f]));}
 function es16KeepDraft(s,name){
   const previous=s.draftSaves?.[name];s.draftSaves ||= {};
@@ -13022,6 +13043,173 @@ window.fzOpenOwnerTools=async function(section='recovery'){
 })();
 
 
+/* ES1.8.2 — fixed-cents money entry and acknowledged signature close.
+ * No changes to authentication, permissions, payroll engines or stored units.
+ * Stored monetary values remain DOLLARS, not cents. Formatting is input-only.
+ */
+function es182StableJson(value){
+  const order=v=>Array.isArray(v)?v.map(order):v&&typeof v==='object'?Object.fromEntries(Object.keys(v).sort().map(k=>[k,order(v[k])])):v;
+  return JSON.stringify(order(value));
+}
+function es182MoneyDisplay(value){
+  const text=String(value??'').trim();
+  return text===''?'':es14MoneyValid(text)?Number(text).toFixed(2):text;
+}
+function es182CentsDisplay(digits){
+  let text=String(digits||'0').replace(/^0+(?=\d)/,'');
+  if(!/^\d+$/.test(text)||text.length>14)return null;
+  text=text.padStart(3,'0');return text.slice(0,-2)+'.'+text.slice(-2);
+}
+function es182MoneyPaste(text){
+  text=String(text??'').trim();
+  if(/^\d+$/.test(text))return es182CentsDisplay(text);
+  // An explicitly formatted dollar amount keeps its value. Do not strip a
+  // minus, letters, an extra decimal or exponent and turn it into different money.
+  if(!/^\$?\s*(?:\d{1,3}(?:,\d{3})+|\d+|)(?:\.\d{1,2})?$/.test(text)||!/[\d]/.test(text))return null;
+  const clean=text.replace(/[$,\s]/g,'');
+  if(!es14MoneyValid(clean))return null;
+  const [whole,part='']=clean.split('.');return es182CentsDisplay((whole||'0')+part.padEnd(2,'0'));
+}
+function es182MoneyEdit(value,type,data,start,end,replace=false){
+  value=String(value??'');start=Math.max(0,Number(start)||0);end=Math.max(start,Number(end)||0);
+  const digits=value.replace(/\D/g,''),a=value.slice(0,start).replace(/\D/g,'').length,b=value.slice(0,end).replace(/\D/g,'').length;
+  let result;
+  if(type==='insertText'||type==='insertReplacementText'||type==='insertCompositionText'){
+    if(!/^\d+$/.test(String(data??'')))return null;
+    result=replace?String(data):digits.slice(0,a)+String(data)+digits.slice(b);
+  }else if(type==='deleteContentBackward')result=replace?'':a!==b?digits.slice(0,a)+digits.slice(b):digits.slice(0,Math.max(0,a-1))+digits.slice(a);
+  else if(type==='deleteContentForward')result=replace?'':a!==b?digits.slice(0,a)+digits.slice(b):digits.slice(0,a)+digits.slice(a+1);
+  else if(type==='deleteByCut')result=replace?'':digits.slice(0,a)+digits.slice(b);
+  else return null;
+  return es182CentsDisplay(result);
+}
+const es182MoneyStates=new WeakMap();
+function es182IsMoneyInput(el){
+  if(!el||el.tagName!=='INPUT'||el.disabled||el.readOnly)return false;
+  return ES_MONEY.includes(el.dataset?.esField)||!!el.dataset?.hc15Pool||(el.hasAttribute?.('data-hc15-account')&&el.dataset.key==='amount');
+}
+function es182MoneyState(el){
+  let state=es182MoneyStates.get(el);
+  if(!state){state={replaceNext:false,before:null};es182MoneyStates.set(el,state);}return state;
+}
+function es182MoneySnapshot(el,state){return {value:el.value,start:el.selectionStart??el.value.length,end:el.selectionEnd??el.value.length,replace:state.replaceNext};}
+function es182SetMoneyInput(el,value,notify=true){
+  el.value=value;const state=es182MoneyState(el);state.replaceNext=false;state.before=null;
+  try{el.setSelectionRange(value.length,value.length);}catch(e){}
+  if(notify){const event=new Event('input',{bubbles:true});event.fz182MoneyReady=true;el.dispatchEvent(event);}
+}
+function es182InstallMoneyInputs(){
+  if(window.__fz182MoneyInstalled)return;window.__fz182MoneyInstalled=true;
+  document.addEventListener('focusin',e=>{
+    const el=e.target;if(!es182IsMoneyInput(el))return;
+    el.inputMode='numeric';el.setAttribute('data-es182-money','1');el.value=es182MoneyDisplay(el.value);
+    const state=es182MoneyState(el);state.replaceNext=true;state.before=null;
+    try{el.select();}catch(e){}
+    if(el.dataset.esField)esStatus('Money: type digits only — 2000 = 20.00, 200 = 2.00. First digit replaces the old amount.');
+  },true);
+  document.addEventListener('beforeinput',e=>{
+    const el=e.target;if(!es182IsMoneyInput(el)||e.isComposing)return;
+    const state=es182MoneyState(el),snap=es182MoneySnapshot(el,state);state.before=snap;
+    if(e.inputType==='insertFromPaste'||e.inputType==='insertFromDrop')return;
+    const value=es182MoneyEdit(snap.value,e.inputType,e.data,snap.start,snap.end,snap.replace);
+    if(!e.cancelable)return; // Samsung/IME fallback is handled by the input event.
+    if(value!==null){e.preventDefault();es182SetMoneyInput(el,value);}
+    else if(/^insert/.test(e.inputType||'')||/^delete/.test(e.inputType||'')){e.preventDefault();state.before=null;}
+  },true);
+  document.addEventListener('input',e=>{
+    const el=e.target;if(!es182IsMoneyInput(el)||e.fz182MoneyReady)return;
+    const state=es182MoneyState(el),snap=state.before;state.before=null;
+    if(e.isComposing){e.stopImmediatePropagation();return;}
+    let value=snap?es182MoneyEdit(snap.value,e.inputType,e.data,snap.start,snap.end,snap.replace):null;
+    if(value===null)value=es182MoneyPaste(el.value);
+    if(el.value==='')value='0.00';
+    if(value===null){el.value=snap?.value??'';e.stopImmediatePropagation();esStatus('Enter digits only, or paste an amount such as 20.00.',true);return;}
+    es182SetMoneyInput(el,value,false);
+  },true);
+  document.addEventListener('paste',e=>{
+    const el=e.target;if(!es182IsMoneyInput(el))return;
+    const text=e.clipboardData?.getData('text');if(text==null)return;
+    e.preventDefault();const value=es182MoneyPaste(text);
+    if(value===null){esStatus('Amount not pasted. Use digits or an amount such as 20.00; no negative values.',true);return;}
+    es182SetMoneyInput(el,value);
+  },true);
+  document.addEventListener('compositionend',e=>{
+    const el=e.target;if(!es182IsMoneyInput(el))return;
+    const value=es182MoneyPaste(el.value);if(value!==null)es182SetMoneyInput(el,value);
+  },true);
+  document.addEventListener('focusout',e=>{
+    const el=e.target;if(!es182IsMoneyInput(el))return;
+    es182MoneyState(el).before=null;el.value=es182MoneyDisplay(el.value);
+  },true);
+}
+async function es182PrepareSignature(name){
+  const s=esSession;
+  if(!es14AllowedSession(s)||!s.ready)throw new Error('Manager / Owner session required.');
+  if(!s.cloudReady||!es14IsOnline())throw new Error('Reconnect before signing. Your input stays on this device.');
+  clearTimeout(s.autoTimer);await es14AutoFlush(s);
+  if(esSession!==s||!es14AllowedSession(s))throw new Error('Login or work date changed.');
+  const ref=doc(db,'hourlyV1Batches',s.date),reports=esClone(s.reports);
+  const latest=await runTransaction(db,async tx=>{
+    const snap=await tx.get(ref);
+    if(!es14AllowedSession(s)||esSession!==s)throw new Error('Login or work date changed.');
+    if(!snap.exists()&&s.hadCloud)throw new Error('This work date was removed. Your draft is kept.');
+    const raw=snap.exists()?snap.data():s.baseBatch;
+    const id=raw.drafts?.[name]?.hourlyReportId||esFindReport(reports,name)?.id;
+    if(!id)return {raw,reports,exists:snap.exists()};
+    const reportRef=doc(db,'hourlyReports',id),reportSnap=await tx.get(reportRef);
+    if(!reportSnap.exists())return {raw,reports,exists:snap.exists()};
+    const report={...reportSnap.data(),id};
+    if(!hourlyReportBelongsTo(report,name,s.date))throw new Error('Saved report belongs to a different employee/date.');
+    return {raw,reports:[report,...reports.filter(r=>r.id!==id)],exists:snap.exists()};
+  });
+  if(esSession!==s||!es14AllowedSession(s))throw new Error('Login or work date changed.');
+  if(latest.exists)es14AcceptCommit(s,latest.raw,latest.reports,null);
+  else es14Rebase(s,latest.raw,latest.reports);
+  const conflicts=(s.conflicts||[]).filter(c=>c.name===name||c.name==='BAR routing');
+  if(conflicts.length)throw es14ConflictError(conflicts);
+  esRecalculate();
+}
+async function es182SaveSignature(){
+  if(!esSignature||esSession?.busy)return false;
+  if(esSignature.strokes.reduce((n,s)=>n+s.length,0)<4){$('esSignStatus').textContent='Please sign inside the box first.';return false;}
+  const sign=esSignature,payload=esSerializeSignature(sign.strokes);
+  esSetBusy(true);$('esSignStatus').textContent='Saving report and signature…';
+  let saved=false;
+  try{
+    await esCommit(sign.name,payload,sign.fingerprint);
+    // This point is reached ONLY after the report + signature transaction is
+    // acknowledged. Never close merely because a stroke was drawn or queued.
+    saved=true;esSignature=null;$('esSignatureModal').classList.add('hidden');
+    $('esConflictModal')?.classList.add('hidden');
+    esStatus(sign.name+' saved and signed · Final Report updated.');return true;
+  }catch(e){
+    es14HandleError(e);$('esSignStatus').textContent=e.message||String(e);
+    if(e.esAmountsChanged)$('esSignReview')?.classList.remove('hidden');return false;
+  }finally{
+    esSetBusy(false);esRenderRows();esRenderRouting();
+    if(saved)es14RestoreScroll(sign.scroll,sign.name);
+  }
+}
+(function(){
+  const originalSign=window.employeeSheetSign;
+  window.employeeSheetSign=async function(name){
+    if(!esAllowed()||esSession?.busy||esSignature)return;
+    let ready=false;esSetBusy(true);esStatus('Checking latest amounts before signature…');
+    try{await es182PrepareSignature(name);ready=true;}
+    catch(e){es14HandleError(e);}
+    finally{esSetBusy(false);es14Paint();esRenderRouting();}
+    if(ready)originalSign(name);
+  };
+  const hostPaint=hc15UpdateValues;
+  hc15UpdateValues=function(...args){
+    const result=hostPaint(...args);
+    for(const input of document.querySelectorAll('[data-hc15-pool]'))if(input!==document.activeElement){input.inputMode='numeric';input.value=es182MoneyDisplay(input.value);}
+    return result;
+  };
+  es182InstallMoneyInputs();
+})();
+
+
 /* ES1.7 — keep the real mobile table headers above the software keyboard.
  * Chrome/Android can pan its visual viewport while the layout viewport and
  * 100dvh stay tall. Fit the sheet to the visible rectangle instead of cloning
@@ -13278,3 +13466,4 @@ window.es18UpdateBiometricUi=function(){
   if(b)b.classList.toggle('hidden',!['employee','manager','owner','cashier'].includes(currentProfile?.role));
 };
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.es18UpdateBiometricUi(),{once:true});else window.es18UpdateBiometricUi();
+
