@@ -5538,6 +5538,7 @@ function reportRowsForExport(){
     shift:r.shift||"",
     reportKind:r.reportKind||"",hostCashierReport:r.hostCashierReport===true,
     hostCashierTipAM:r.hostCashierTipAM??null,hostCashierTipPM:r.hostCashierTipPM??null,
+    ...(es16ExportIsHost(r)?{hostCashierPoolSummary:r.hostCashierPoolSummary??null,hostCashierPoolAM:r.hostCashierPoolAM??null,hostCashierPoolPM:r.hostCashierPoolPM??null,hostCashierCountAM:r.hostCashierCountAM??null,hostCashierCountPM:r.hostCashierCountPM??null}:{}),
     busserAM:r.busserAM==="N/A"?"-":(r.busserAM||"-"),
     hourInAM:r.hourInAM||r.hours?.hourInAM||"",
     hourOutAM:r.hourOutAM||r.hours?.hourOutAM||"",
@@ -10287,7 +10288,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.4';
+const ES_BUILD='ES1.8.5';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12367,6 +12368,8 @@ function hc15Report(data,name){
     totalBeforeMeal:total,grandTotalTip:total,grandTotalAfterAdjustment:total,totalPaidOutBeforeAdjustment:total,totalPaidOut:total,
     hourlyRate:0,hourlyMinimum:0,adjustmentCandidate:0,adjustmentEligible:false,adjustmentSalaryHourly:0,adjustmentDecision:'NONE',
     hostCashierNoClock:true,
+    // Snapshot only: the same committed pool used for this employee's payout.
+    hostCashierPoolSummary:hc185PoolSummaryFromData(data,m),
     hostCashierTipAM:am,hostCashierTipPM:pm,hostCashierPoolAM:m.poolAM,hostCashierPoolPM:m.poolPM,hostCashierCountAM:m.countAM,hostCashierCountPM:m.countPM,
     hostCashierRounding:'Whole cents; remainder in alphabetical employee order',
     hostCashierCashTreatment:'Paid Tip is the combined cash + credit pool share. Cash Tip is 0 because it is not a separately retained personal cash tip.'};
@@ -13328,7 +13331,8 @@ async function hc184CompleteSavedRows(rows,date,guard=()=>{}){
     if(r.date!==date||!es16ExportIsHost(r)||tt15Key(r.employee)!==key)throw new Error('Host / Cashier report identity mismatch. No partial download was created.');
     map.set(id,r);
   }
-  const output=[...map.values()];
+  // Read-only enrichment for older saved reports; never changes a payout or signature.
+  const output=[...map.values()].map(r=>hc185WithPoolSummary(r,{...data,date:data.date||date}));
   es184ExportMissing=tt15TeamRows({},data).filter(member=>!output.some(r=>r.employee===member.name)).map(member=>tt15Label(member.name));
   if(hc15Session?.date===date&&hc15Session.uid===currentUser.uid&&!hc15Session.busy)hc15Accept(hc15Session,data,true);
   const ids=new Set(output.map(r=>r.id));latestHourlyReports=[...output,...latestHourlyReports.filter(r=>!ids.has(r.id))];
@@ -13373,33 +13377,120 @@ function hc184TipAmount(r,period){
   if(shift==='AM'||/10:45|14:00\s*-\s*16:00/.test(shift))return period==='AM'?smallReportPaidOut(r):0;
   return null;
 }
+/* ES1.8.5 - per-employee Host / Cashier PDF pool summary.
+ * New reports retain an immutable, date-scoped pool snapshot at final Save.
+ * An old report may use fresh server data only when that period's saved pool,
+ * count and personal allocation all match. No inferred Cash/Credit zeros and
+ * no count based on the number of reports selected for export.
+ */
+function hc185MoneyCents(value){
+  if(!['number','string'].includes(typeof value)||(typeof value==='string'&&!value.trim()))return null;
+  const n=Number(value);if(!Number.isFinite(n)||n<0)return null;
+  const cents=Math.round(n*100+1e-7);return Number.isSafeInteger(cents)?cents:null;
+}
+function hc185Count(value){
+  if(!['number','string'].includes(typeof value)||(typeof value==='string'&&!value.trim()))return null;
+  const n=Number(value);return Number.isSafeInteger(n)&&n>=0?n:null;
+}
+function hc185PoolSummaryFromData(data,metrics=hc15Math(data)){
+  const summary={version:1,date:String(data.date||'')};
+  for(const cp of ['AM','PM']){
+    const cash=hc185MoneyCents(data['cash'+cp]??0),credit=hc185MoneyCents(data['credit'+cp]??0);
+    if(cash===null||credit===null)throw new Error('Enter a valid Host / Cashier '+cp+' pool amount.');
+    summary[cp]={cash:cash/100,credit:credit/100,total:metrics['pool'+cp],employeeCount:metrics['count'+cp],source:'saved'};
+  }
+  return summary;
+}
+function hc185SavedPoolPeriod(r,cp){
+  const total=hc185MoneyCents(r['hostCashierPool'+cp]),count=hc185Count(r['hostCashierCount'+cp]);
+  const raw=r.hostCashierPoolSummary;
+  const p=raw?.version===1&&raw.date===r.date?raw[cp]:null;
+  if(p){
+    const cash=hc185MoneyCents(p.cash),credit=hc185MoneyCents(p.credit),sum=hc185MoneyCents(p.total),n=hc185Count(p.employeeCount);
+    if(cash!==null&&credit!==null&&sum!==null&&n!==null&&cash+credit===sum&&(total===null||sum===total)&&(count===null||n===count))
+      return {cash:cash/100,credit:credit/100,total:sum/100,employeeCount:n,complete:true,source:p.source==='matched-date'?'matched-date':'saved'};
+  }
+  return {cash:null,credit:null,total:total===null?null:total/100,employeeCount:count,complete:false};
+}
+function hc185WithPoolSummary(r,data){
+  if(!es16ExportIsHost(r)||!data||data.date!==r.date)return r;
+  const missing=['AM','PM'].filter(cp=>!hc185SavedPoolPeriod(r,cp).complete);if(!missing.length)return r;
+  let m;try{m=hc15Math(data);}catch(e){return r;}
+  let fresh;try{fresh=hc185PoolSummaryFromData(data,m);}catch(e){return r;}
+  const summary={version:1,date:r.date};let changed=false;
+  for(const cp of ['AM','PM']){
+    const saved=hc185SavedPoolPeriod(r,cp);
+    if(saved.complete){summary[cp]={cash:saved.cash,credit:saved.credit,total:saved.total,employeeCount:saved.employeeCount,source:saved.source};continue;}
+    const sameTotal=hc185MoneyCents(saved.total)!==null&&hc185MoneyCents(saved.total)===hc185MoneyCents(m['pool'+cp]);
+    const sameCount=saved.employeeCount!==null&&saved.employeeCount===m['count'+cp];
+    const own=hc184TipAmount(r,cp),allocation=m['amounts'+cp]?.[r.employee]??0;
+    const sameShare=hc185MoneyCents(own)!==null&&hc185MoneyCents(own)===hc185MoneyCents(allocation);
+    if(sameTotal&&sameCount&&sameShare){summary[cp]={...fresh[cp],source:'matched-date'};changed=true;}
+  }
+  return changed?{...r,hostCashierPoolSummary:summary}:r;
+}
+function hc185PoolPerEmployee(period){
+  const cents=hc185MoneyCents(period.total),n=hc185Count(period.employeeCount);
+  if(cents===null||n===null)return {text:'Not recorded',rounding:false};
+  if(n===0)return {text:'N/A (no employees)',rounding:false};
+  const base=Math.floor(cents/n),extra=cents%n;
+  return {text:extra?pdfMoney(base/100)+' - '+pdfMoney((base+1)/100):pdfMoney(base/100),rounding:extra>0};
+}
+// Standard Helvetica width metrics; no embedded font or external PDF library.
+const HC185_PDF_WIDTHS={"F1":[278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584],"F2":[278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584]};
+function hc185PdfWidth(font,size,value){return [...String(value)].reduce((n,ch)=>n+(HC185_PDF_WIDTHS[font]?.[ch.charCodeAt(0)-32]??556),0)*size/1000;}
+function hc185PdfText(font,size,x,y,value,maxWidth=548,right=false){
+  let v=String(value??''),width=hc185PdfWidth(font,size,v);
+  if(width>maxWidth){size=Math.max(8,size*maxWidth/width);width=hc185PdfWidth(font,size,v);}
+  if(width>maxWidth){while(v&&hc185PdfWidth(font,size,v+'...')>maxWidth)v=v.slice(0,-1);v+='...';width=hc185PdfWidth(font,size,v);}
+  return `BT /${font} ${size.toFixed(2)} Tf ${(right?x-width:x).toFixed(2)} ${y} Td (${pdfEscape(v)}) Tj ET\n`;
+}
 function hc184PdfReportContent(r,index,total){
-  const text=(font,size,x,y,t)=>`BT /${font} ${size} Tf ${x} ${y} Td (${pdfEscape(t)}) Tj ET\n`;
-  const line=(y)=>`0.80 0.86 0.85 RG 0.65 w 32 ${y} m 580 ${y} l S\n0 0 0 RG\n`;
+  const text=hc185PdfText;
   const box=(x,y,w,h,color)=>`${color} rg ${x} ${y} ${w} ${h} re f\n0 0 0 rg\n`;
+  const line=(y)=>`0.80 0.86 0.85 RG 0.65 w 32 ${y} m 580 ${y} l S\n0 0 0 RG\n`;
   const tip=cp=>{const n=hc184TipAmount(r,cp);return n===null?'Not available':pdfMoney(n);};
-  let c=box(0,694,612,98,'0.06 0.20 0.17')+'1 1 1 rg\n';
-  c+=text('F2',20,32,755,'FRED ZHANG TIP CALCULATOR');
-  c+=text('F1',12,32,731,'HOST / CASHIER - DAILY TIP REPORT');
-  c+=text('F1',10,455,710,`REPORT ${index+1} / ${total}`)+'0 0 0 rg\n';
-  const name=String(r.employeeDisplayName||r.employee||'Employee');
-  c+=text('F2',name.length>36?18:24,32,649,name);
-  c+=text('F1',12,32,622,'Work date: '+String(r.date||'-'));
-  c+=text('F1',12,32,600,String(r.position||'Host / Cashier')+'  |  Shift: '+String(r.shift||'-'));
-  c+=line(578);
-  c+=text('F2',13,32,546,'TIP ALLOCATION');
-  c+=text('F1',15,44,507,'Tip AM');c+=text('F2',17,420,507,tip('AM'));
-  c+=line(489);c+=text('F1',15,44,459,'Tip PM');c+=text('F2',17,420,459,tip('PM'));
-  c+=box(32,357,548,69,'0.88 0.95 0.92');
-  c+=text('F2',18,46,386,'TOTAL PAID OUT');c+=text('F2',23,409,383,pdfMoney(smallReportPaidOut(r)));
-  c+=text('F1',10,32,332,'Cash + credit pool share, split equally per shift. Double receives AM + PM.');
-  c+=text('F1',10,32,314,'This report does not require clock-in / clock-out times.');
-  c+=text('F2',12,32,259,'EMPLOYEE SIGNATURE');
-  c+='0.80 0.86 0.85 RG 0.65 w 32 104 548 141 re S\n0 0 0 RG\n';
-  c+=pdfSignatureCommands(r.pickupSignature,43,114,526,115);
-  if(!smallReportHasPickupSignature(r))c+=text('F1',12,222,165,'PENDING SIGNATURE');
-  c+=text('F2',10,32,83,smallReportHasPickupSignature(r)?'SIGNED':'NOT SIGNED');
-  c+=text('F1',8,32,38,'Generated '+new Date().toLocaleString()+' | ES1.8.4 | Page '+(index+1));
+  let c=box(0,704,612,88,'0.06 0.20 0.17')+'1 1 1 rg\n';
+  c+=text('F2',20,32,757,'FRED ZHANG TIP CALCULATOR');
+  c+=text('F1',11,32,734,'HOST / CASHIER - DAILY TIP REPORT');
+  c+=text('F1',10,32,716,'Work date: '+String(r.date||'-'));
+  c+=text('F1',10,580,716,`REPORT ${index+1} / ${total}`,130,true)+'0 0 0 rg\n';
+  let missing=false,rounded=false,matched=false;
+  for(const [cp,x]of [['AM',32],['PM',314]]){
+    const p=hc185SavedPoolPeriod(r,cp),share=hc185PoolPerEmployee(p);missing ||= !p.complete;rounded ||= share.rounding;matched ||= p.source==='matched-date';
+    c+=box(x,500,266,182,'0.95 0.98 0.97');
+    c+=box(x,653,266,29,'0.10 0.34 0.27')+'1 1 1 rg\n';
+    c+=text('F2',12,x+12,663,cp+' TIP POOL',242)+'0 0 0 rg\n';
+    const money=value=>value===null?'Not recorded':pdfMoney(value);
+    const fields=[['Cash '+cp,money(p.cash)],['Credit '+cp,money(p.credit)],['Total '+cp,money(p.total)],['Total Employee '+cp,p.employeeCount===null?'Not recorded':String(p.employeeCount)],['Total Tip per employee',share.text]];
+    fields.forEach(([label,value],i)=>{
+      const y=630-i*25;
+      c+=text('F1',10.5,x+12,y,label,137);
+      c+=text('F2',11.5,x+254,y,value,100,true);
+    });
+  }
+  c+=text('F1',9,32,483,matched?'Cash / Credit from the matching work-date pool. Saved employee payout is unchanged.':'Pool values saved with this report. Individual payout is shown below.');
+  if(missing)c+=text('F1',9,32,469,'Not recorded = historical pool detail unavailable; it is not a zero amount.');
+  else if(rounded)c+=text('F1',9,32,469,'Whole-cent rounding: some shares differ by $0.01. Your exact share is below.');
+  c+=line(454);
+  c+=text('F2',10,32,434,'EMPLOYEE REPORT');
+  c+=text('F2',23,32,409,r.employeeDisplayName||r.employee||'Employee');
+  c+=text('F1',12,32,386,String(r.position||'Host / Cashier')+'  |  Shift: '+String(r.shift||'-'));
+  for(const [cp,x]of [['AM',32],['PM',314]]){
+    c+=box(x,334,266,38,'0.96 0.97 0.98');
+    c+=text('F1',11,x+12,349,'Tip '+cp);
+    c+=text('F2',17,x+254,347,tip(cp),180,true);
+  }
+  c+=box(32,270,548,53,'0.88 0.95 0.92');
+  c+=text('F2',18,46,289,'TOTAL PAID OUT',285);
+  c+=text('F2',23,565,287,pdfMoney(smallReportPaidOut(r)),215,true);
+  c+=text('F1',9.5,32,253,'Tip AM + Tip PM = Total Paid Out. Cash + credit are included in each share.');
+  c+=text('F2',12,32,220,'EMPLOYEE SIGNATURE');
+  c+='0.80 0.86 0.85 RG 0.65 w 32 91 548 115 re S\n0 0 0 RG\n';
+  c+=pdfSignatureCommands(r.pickupSignature,43,101,526,95);
+  if(!smallReportHasPickupSignature(r))c+=text('F1',12,242,143,'PENDING SIGNATURE',190);
+  c+=text('F2',10,32,74,smallReportHasPickupSignature(r)?'SIGNED':'NOT SIGNED');
+  c+=text('F1',8,32,38,'Generated '+new Date().toLocaleString()+' | '+ES_BUILD+' | Page '+(index+1));
   return c;
 }
 
