@@ -261,7 +261,11 @@ function emailFor(username){
 function employeeAuthPassword(pin){
   return `JT${String(pin).trim()}!!`;
 }
-function loginMsg(m){ $("loginMessage").textContent = m || ""; }
+function loginMsg(m){
+  $("loginMessage").textContent = m || "";
+  // ES1.8.1: show login progress/errors beside the button, not below the fold.
+  const inline=$("fz18BiometricStatus");if(inline)inline.textContent=m||"";
+}
 
 let fzLoginRole="employee";
 // Restore only the role that initiated the one-time PassPRNT callback.
@@ -10262,7 +10266,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8';
+const ES_BUILD='ES1.8.1';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -13144,9 +13148,46 @@ function es18PasskeySupported(){return !!(window.isSecureContext&&window.PublicK
 function es18Decode64(s){const raw=atob(String(s).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
 function es18Encode64(value){const bytes=new Uint8Array(value);let s='';for(const b of bytes)s+=String.fromCharCode(b);return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 function es18PublicKeyOptions(options,registration=false){
-  const out={...options,challenge:es18Decode64(options.challenge)};
-  if(registration)out.user={...options.user,id:es18Decode64(options.user.id)};
-  for(const field of ['allowCredentials','excludeCredentials'])if(options[field])out[field]=options[field].map(c=>({...c,id:es18Decode64(c.id)}));
+  // ES1.8.1: Firebase callable encoding converts optional undefined members to
+  // null. WebAuthn sequence members cannot be null: OMIT optional null values,
+  // but never discard a real allow/exclude list or weaken user verification.
+  const invalid=field=>{throw new TypeError('Invalid passkey option: '+field+'. Refresh the app and retry. Password / PIN still works.');};
+  const binary=(value,field)=>{
+    if(typeof value!=='string'||!value||!/^[-_A-Za-z0-9]+={0,2}$/.test(value)||value.replace(/=+$/,'').length%4===1)invalid(field);
+    try{return es18Decode64(value);}catch(e){invalid(field);}
+  };
+  if(!options||typeof options!=='object'||Array.isArray(options))invalid('publicKey');
+  const out={...options,challenge:binary(options.challenge,'challenge')};
+  if(registration){
+    if(!options.user||typeof options.user!=='object'||Array.isArray(options.user))invalid('user');
+    out.user={...options.user,id:binary(options.user.id,'user.id')};
+  }
+  for(const field of ['allowCredentials','excludeCredentials']){
+    const list=options[field];
+    if(list==null){delete out[field];continue;}
+    if(!Array.isArray(list))invalid(field);
+    out[field]=list.map((credential,index)=>{
+      const label=field+'['+index+']';
+      if(!credential||typeof credential!=='object'||credential.type!=='public-key')invalid(label);
+      const copy={...credential,id:binary(credential.id,label+'.id')};
+      if(credential.transports==null)delete copy.transports;
+      else{
+        if(!Array.isArray(credential.transports)||credential.transports.some(t=>typeof t!=='string'))invalid(label+'.transports');
+        copy.transports=[...credential.transports];
+      }
+      return copy;
+    });
+  }
+  // Other optional members may also cross Firebase as null. Preserve all
+  // non-null options and constraints; malformed lists are errors, not fallbacks.
+  for(const field of ['hints','attestationFormats']){
+    if(options[field]==null)delete out[field];
+    else{
+      if(!Array.isArray(options[field])||options[field].some(v=>typeof v!=='string'))invalid(field);
+      out[field]=[...options[field]];
+    }
+  }
+  if(options.extensions==null)delete out.extensions;
   return out;
 }
 function es18CredentialJson(credential){
@@ -13165,12 +13206,13 @@ function es18PasskeyError(e){
   if(name==='InvalidStateError')return 'This device already has this account’s passkey. Use Fingerprint / Face ID to sign in.';
   if(code==='functions/not-found'||code==='functions/unavailable'||code==='functions/internal')return 'Fingerprint server is not active or cannot be reached. Password / PIN login still works. Activate BACKEND_PASSKEY once, then retry.';
   if(code==='functions/unauthenticated')return 'Confirm your current password / PIN, then try again.';
-  return String(e?.message||'Passkey failed. Password / PIN login is still available.').slice(0,240);
+  return String(e?.message||'Passkey failed. Password / PIN login is still available.').slice(0,1200);
 }
 window.es18PasskeyLogin=async function(){
   if(es18PasskeyBusy)return;if(!es18PasskeySupported()){loginMsg('Passkeys need a compatible secure browser. Open the HTTPS app in Chrome or Safari, or use your password / PIN.');return;}
   const role=String($('fzUnifiedRole')?.value||'employee'),button=$('fz18BiometricLogin');
   es18PasskeyBusy=true;if(button)button.disabled=true;const passwordButton=$('fzUnifiedLoginBtn');if(passwordButton)passwordButton.disabled=true;
+  loginMsg('Preparing Fingerprint / Face ID… Please wait.');
   try{
     await authSecurityReady;es18CredentialAbort=new AbortController();loginMsg('Choose your saved passkey and confirm with your device.');
     const begin=await es18PasskeyApi('passkeyBeginAuthenticationV1',{role});
