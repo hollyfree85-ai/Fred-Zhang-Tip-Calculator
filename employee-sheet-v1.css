@@ -382,7 +382,7 @@ body.tt15-active{overflow:hidden!important}
 #employeeSheet .hc15-pools th:first-child{width:65px}
 #employeeSheet .hc15-pools th:last-child{width:160px}
 #employeeSheet .hc15-accounts{font-size:15px!important;min-height:34px;margin-top:5px;width:100%}
-#employeeSheet .hc15-table{width:calc(var(--es-name-w) + 1565px)!important;margin:0;border-top:1px solid #aecac1}
+#employeeSheet .hc15-table{width:calc(var(--es-name-w) + 815px)!important;margin:0;border-top:1px solid #aecac1}
 #employeeSheet .hc15-table thead th{background:linear-gradient(#267865,#175643)!important;color:#fff!important}
 #employeeSheet .hc15-table .es-name{background:#eff8f4}
 #employeeSheet .hc15-table [data-hc15-out]{font-weight:850;font-size:20px!important;white-space:nowrap;text-align:right}
@@ -561,3 +561,7 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 #employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-grid{scroll-padding-top:60px;scroll-padding-bottom:8px}
 #employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-extra-controls{top:50px;max-height:calc(100% - 58px)}
 #employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-quick-notice{bottom:8px;max-height:80px;font-size:14px}
+
+/* ES1.8.4: tip-only Host/Cashier; no clock columns. */
+#employeeSheet .hc184-toolbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+#employeeSheet #hc184Refresh{font-size:15px;white-space:normal}

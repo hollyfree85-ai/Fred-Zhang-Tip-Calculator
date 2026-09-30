@@ -8,7 +8,7 @@ window.togglePasswordVisibility=function(inputId,show){
 
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {getAuth, initializeAuth, signInWithCustomToken, signInWithEmailAndPassword, signOut, onAuthStateChanged, createUserWithEmailAndPassword, signInAnonymously, setPersistence, inMemoryPersistence, reauthenticateWithCredential, EmailAuthProvider, updatePassword, browserLocalPersistence, browserSessionPersistence} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-import {getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, runTransaction} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import {getFirestore, doc, getDoc, getDocs, getDocFromServer, getDocsFromServer, setDoc, updateDoc, deleteDoc, collection, query, where, orderBy, limit, onSnapshot, serverTimestamp, writeBatch, runTransaction} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
 import { getMessaging, getToken, isSupported as isMessagingSupported } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js";
 import { FIREBASE_CONFIG } from "./firebase-config.js";
@@ -5536,6 +5536,8 @@ function reportRowsForExport(){
     employee:r.employee||"",
     position:r.position||"",
     shift:r.shift||"",
+    reportKind:r.reportKind||"",hostCashierReport:r.hostCashierReport===true,
+    hostCashierTipAM:r.hostCashierTipAM??null,hostCashierTipPM:r.hostCashierTipPM??null,
     busserAM:r.busserAM==="N/A"?"-":(r.busserAM||"-"),
     hourInAM:r.hourInAM||r.hours?.hourInAM||"",
     hourOutAM:r.hourOutAM||r.hours?.hourOutAM||"",
@@ -5780,6 +5782,7 @@ function pdfSignatureCommands(signature,x,y,w,h){
 }
 
 function pdfReportContent(r,index,total){
+  if(es16ExportIsHost(r))return hc184PdfReportContent(r,index,total);
   const hours={...r,...(r.hours||{})};
   r={...r,
     hourIn:r.hourIn??hours.hourIn??"",hourOut:r.hourOut??hours.hourOut??"",
@@ -6056,6 +6059,7 @@ window.shareAllReportsPdf=async function(target){
 
 
 function smallReportClockFields(r){
+  if(es16ExportIsHost(r))return {in1:"",out1:"",in2:"",out2:""};
   const shift=String(r.shift||"").toUpperCase();
   const amIn=r.hourInAM||r.hours?.hourInAM||"";
   const amOut=r.hourOutAM||r.hours?.hourOutAM||"";
@@ -6541,9 +6545,9 @@ window.downloadSelectedEmployeePdf=function(){
   downloadBlob(simplePdfBlob(normalized),`Fred_Zhang_${slugFor(name)}_${date||'all_dates'}.pdf`);
 };
 
-window.downloadSmallReportPdf=function(){
+window.downloadSmallReportPdf=async function(){
   if(!["manager","owner"].includes(currentProfile?.role||""))return;
-  const rows=smallReportFilteredRows();
+  let rows;try{rows=await es184FinalDailyRows();}catch(e){alert(e.message);return;}
   if(!rows.length){alert("No Daily Report data for this filter.");return;}
   const normalized=rows.map(r=>({
     ...r,
@@ -7105,6 +7109,7 @@ window.renderSmallReport=function(){
 };
 
 function smallReportHtmlXlsBlob(rows){
+  if(rows.length&&rows.every(es16ExportIsHost))return es16DailyXlsBlob(rows,'host-cashier',rows[0].date||'');
   const escH=v=>String(v??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   const money=v=>Number(v||0).toLocaleString("en-US",{style:"currency",currency:"USD"});
   const signatureDataUri=signature=>{
@@ -7181,9 +7186,9 @@ function smallReportHtmlXlsBlob(rows){
   return new Blob([html],{type:"application/vnd.ms-excel"});
 }
 
-window.downloadSmallReportXls=function(){
+window.downloadSmallReportXls=async function(){
   if(!["manager","owner"].includes(currentProfile?.role||""))return;
-  const rows=smallReportFilteredRows();
+  let rows;try{rows=await es184FinalDailyRows();}catch(e){alert(e.message);return;}
   if(!rows.length){alert("No Daily Report data for this filter.");return;}
   const date=$("smallReportDate")?.value||todayLocal();
   downloadBlob(smallReportHtmlXlsBlob(rows),`Fred_Zhang_Small_Report_${date}.xls`);
@@ -10282,7 +10287,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.3';
+const ES_BUILD='ES1.8.4';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -11704,7 +11709,7 @@ esApplyRead=function(c){
   if(value&&!value.exists&&c.batch.server&&!s.hadCloud){for(const row of s.rows)if(!(raw.team||[]).includes(row.name)&&!reports.some(r=>esKey(r.employee)===esKey(row.name)))s.dirty[row.name] ||= {__new:true};}
   try{
     es14Rebase(s,raw,reports);s.hadCloud=!!s.hadCloud||!!value?.exists;c.pending=false;
-    latestHourlyReports=[...reports,...latestHourlyReports.filter(r=>r.date!==s.date)];
+    latestHourlyReports=[...reports,...latestHourlyReports.filter(r=>r.date!==s.date||es16ExportIsHost(r))];
     if(s.cloudReady&&!c.initialReady){c.initialReady=true;esStatus('Shared sheet loaded. Save keeps unfinished rows as drafts; complete rows update Final Report.');}
     esFastCacheSave(c);es14Schedule(s);frRenderIfOpen();
   }catch(e){esRejectRead(c,'batch',e);}
@@ -12281,6 +12286,7 @@ function hc15Accept(s,data,verified=true){
   if(Number(data.sheetRevision||0)<Number(s.data?.sheetRevision||0)&&verified)return;
   s.data=tt15Copy(data);s.verified=verified;s.conflicts=[];
   for(const [key,e]of Object.entries(s.edits)){
+    if(JSON.parse(key)[0])continue; // Retain legacy clock draft; not a payout conflict.
     const remote=hc15Get(data,key),[name]=JSON.parse(key);
     if(name&&!hc15Member(data,name)){s.conflicts.push(key);continue;}
     if(hc15Equal(key,remote,e.local))delete s.edits[key];
@@ -12288,7 +12294,7 @@ function hc15Accept(s,data,verified=true){
   }
   hc15KeepLocal(s);hc15Render();hc15Schedule(s);
 }
-function hc15Stop(){const s=hc15Session;if(!s)return;clearTimeout(s.timer);clearTimeout(s.renderTimer);hc15KeepLocal(s);if(!s.busy&&s.verified&&esAllowed()&&currentUser.uid===s.uid&&Object.keys(s.edits).length)void hc15Flush(s);s.unsub?.();s.unsub=null;hc15Session=null;}
+function hc15Stop(){const s=hc15Session;if(!s)return;clearTimeout(s.timer);clearTimeout(s.renderTimer);hc15KeepLocal(s);if(!s.busy&&s.verified&&esAllowed()&&currentUser.uid===s.uid&&Object.keys(s.edits).length)void hc15Flush(s);s.unsub?.();s.unsub=null;++s.readEpoch;hc15Session=null;}
 function hc15Start(date){
   if(!esAllowed()||!esDateValid(date))return;
   if(hc15Session?.date===date&&hc15Session.uid===currentUser.uid&&hc15Session.unsub)return;
@@ -12306,6 +12312,7 @@ function hc15Start(date){
     s.hadCloud ||= exists;hc15Accept(s,data,verified);
     if(s.verified)s.deviceRestored=false;
   },e=>{if(s!==hc15Session)return;s.verified=false;s.error='Host / Cashier could not sync: '+(e.message||e);hc15Render();});
+  void hc184Refresh(s);
 }
 function hc15Set(name,field,value){
   const s=hc15Session;if(!s||s.busy)return;
@@ -12316,11 +12323,11 @@ function hc15Set(name,field,value){
 }
 function hc15Schedule(s=hc15Session){
   if(!s)return;clearTimeout(s.timer);if(s!==hc15Session||!s.verified||s.busy||s.writing||hc15Sig||hc15Credit||navigator.onLine===false)return;
-  if(Object.entries(s.edits).some(([k,e])=>!s.conflicts.includes(k)&&hc15Valid(k,e.local)))s.timer=setTimeout(()=>void hc15Flush(s),700);
+  if(Object.entries(s.edits).some(([k,e])=>!JSON.parse(k)[0]&&!s.conflicts.includes(k)&&hc15Valid(k,e.local)))s.timer=setTimeout(()=>void hc15Flush(s),700);
 }
 async function hc15Flush(s=hc15Session){
   if(s?.writing)return s.writing;if(!s||!s.verified||navigator.onLine===false)return false;
-  const edits=tt15Copy(Object.fromEntries(Object.entries(s.edits).filter(([k,e])=>!s.conflicts.includes(k)&&hc15Valid(k,e.local))));if(!Object.keys(edits).length)return true;
+  const edits=tt15Copy(Object.fromEntries(Object.entries(s.edits).filter(([k,e])=>!JSON.parse(k)[0]&&!s.conflicts.includes(k)&&hc15Valid(k,e.local))));if(!Object.keys(edits).length)return true;
   clearTimeout(s.timer);
   s.writing=(async()=>{
     const ref=doc(db,'hostCashierTipReports',s.date);
@@ -12353,36 +12360,43 @@ function hc15Hours(data,name,complete=false){
 }
 function hc15Report(data,name){
   const member=hc15Member(data,name);if(!member)throw new Error('This employee is no longer on the Host / Cashier team.');
-  const m=hc15Math(data),am=m.amountsAM[name]||0,pm=m.amountsPM[name]||0,total=(Math.round(am*100)+Math.round(pm*100))/100,time=hc15Hours(data,name);
+  const m=hc15Math(data),am=m.amountsAM[name]||0,pm=m.amountsPM[name]||0,total=(Math.round(am*100)+Math.round(pm*100))/100;
   return {date:data.date,employee:name,employeeDisplayName:tt15Label(name),position:member.role,shift:member.shift,reportKind:'host_cashier',hostCashierReport:true,
     paidTip:total,paidTips:total,totalTips:total,payCardTipFee:0,cardFee:0,cashTip:0,meal:0,grandTotal:0,totalAM:0,totalPM:0,busserAM:'N/A',busserRate:0,busserTipOut:0,busserTipOutAM:0,busserTipOutPM:0,totalShared:0,
     barTipOut:0,barTipAM:0,barTipPM:0,amBarTipOut:0,pmBarTipOut:0,bartenderBarTipReceived:0,amBarSales:false,pmBarSales:false,
     totalBeforeMeal:total,grandTotalTip:total,grandTotalAfterAdjustment:total,totalPaidOutBeforeAdjustment:total,totalPaidOut:total,
     hourlyRate:0,hourlyMinimum:0,adjustmentCandidate:0,adjustmentEligible:false,adjustmentSalaryHourly:0,adjustmentDecision:'NONE',
-    totalMinutesWork:time.totalMinutesWork,totalHoursWork:time.totalHoursWork,hours:time.hours,...time.hours,
+    hostCashierNoClock:true,
     hostCashierTipAM:am,hostCashierTipPM:pm,hostCashierPoolAM:m.poolAM,hostCashierPoolPM:m.poolPM,hostCashierCountAM:m.countAM,hostCashierCountPM:m.countPM,
     hostCashierRounding:'Whole cents; remainder in alphabetical employee order',
     hostCashierCashTreatment:'Paid Tip is the combined cash + credit pool share. Cash Tip is 0 because it is not a separately retained personal cash tip.'};
 }
-function hc15Fingerprint(r){return JSON.stringify([r.date,r.employee,r.position,r.shift,r.hostCashierTipAM,r.hostCashierTipPM,r.totalPaidOut,r.totalMinutesWork,r.hours||{}]);}
+function hc15Fingerprint(r){return JSON.stringify([r.date,r.employee,r.position,r.shift,r.hostCashierTipAM,r.hostCashierTipPM,r.totalPaidOut]);}
+function hc184SameFingerprint(old,current){
+  if(old===current)return true;
+  // Old signatures covered the same seven financial/identity fields followed
+  // by optional clocks. Removing clock UI must not invalidate valid signatures.
+  try{const a=JSON.parse(old),b=JSON.parse(current);return Array.isArray(a)&&a.length>=7&&Array.isArray(b)&&b.length===7&&es182StableJson(a.slice(0,7))===es182StableJson(b);}catch(e){return false;}
+}
 function hc15Summary(s,name){
   const view=hc15View(s),r=hc15Report(view,name),old=s.data.sheetFinalized?.[tt15Key(name)];
-  if(hc16NeedsDraft(view,name)||!old||old.fingerprint!==hc15Fingerprint(r)){
+  if(hc16NeedsDraft(view,name)||!old||!hc184SameFingerprint(old.fingerprint,hc15Fingerprint(r))){
     const raw=hc16DraftRow(view,name),shared=s.data.sheetDraftSaved?.[tt15Key(name)],local=s.draftSaves?.[name];
     if(shared&&tt15Same(raw,shared.row)&&!s.conflicts.length)return {text:'Draft saved · synced',kind:'draft'};
     if(local&&tt15Same(raw,local.row))return {text:'Draft saved · device only',kind:'draft'};
   }
-  return !old?{text:'Draft · not saved',kind:'draft'}:old.fingerprint!==hc15Fingerprint(r)?{text:'Changed · Save again',kind:'dirty'}:old.signed?{text:'Saved · Signed',kind:'signed'}:{text:'Saved · Unsigned',kind:'saved'};
+  return !old?{text:'Draft · not saved',kind:'draft'}:!hc184SameFingerprint(old.fingerprint,hc15Fingerprint(r))?{text:'Changed · Save again',kind:'dirty'}:old.signed?{text:'Saved · Signed',kind:'signed'}:{text:'Saved · Unsigned',kind:'saved'};
 }
 function hc15Init(){
   if($('hc15Section')||!$('esGrid'))return;
   const section=document.createElement('section');section.id='hc15Section';section.className='hc15-section';
-  section.innerHTML=`<div class="hc15-heading"><h3>Host / Cashier</h3><button type="button" id="hc15EditTeam">Edit Team</button></div><div id="hc15Status" class="hc15-status" role="status"></div>
+  section.innerHTML=`<div class="hc15-heading"><h3>Host / Cashier</h3><div class="hc184-toolbar"><button type="button" id="hc184Refresh">Refresh from server</button><button type="button" id="hc15EditTeam">Edit Team</button></div></div><div id="hc15Status" class="hc15-status" role="status"></div>
     <div id="hc15Pools" class="hc15-pools"><table><thead><tr><th>Shift</th><th>Cash</th><th>Credit</th><th>Pool / Staff</th></tr></thead><tbody>${['AM','PM'].map(cp=>`<tr><th>${cp}</th><td><input data-hc15-pool="cash${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Cash ${cp}" placeholder="0.00"></td><td><input data-hc15-pool="credit${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Credit ${cp}" placeholder="0.00"><button class="hc15-accounts" data-hc15-credit="${cp}" type="button">Accounts +</button></td><td id="hc15Pool${cp}">—</td></tr>`).join('')}</tbody></table></div>
     <div id="hc15Conflict" class="hidden"><p>Another device changed the same field. Choose which values to keep.</p><button type="button" id="hc15UseCloud">Use latest</button><button type="button" id="hc15KeepMine">Keep this device</button></div>
-    <table class="es-table hc15-table"><colgroup><col class="es-name-col"><col style="width:145px"><col style="width:170px">${Array(4).fill('<col style="width:150px">').join('')}<col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:200px"></colgroup><thead><tr><th class="es-name">Host / Cashier<span>Save · Sign · Print</span></th>${['Shift','Position','Clock In 1','Clock Out 1','Clock In 2','Clock Out 2','Total Hours','Tip AM','Tip PM','Paid Tip Out'].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody id="hc15Rows"></tbody></table>
-    <p class="hc15-footnote">Cash + Credit is split equally within each shift, using the existing cent-rounding rule. Double receives AM + PM. Clock fields are optional; they do not change the split.</p>`;
+    <table class="es-table hc15-table"><colgroup><col class="es-name-col"><col style="width:145px"><col style="width:170px"><col style="width:150px"><col style="width:150px"><col style="width:200px"></colgroup><thead><tr><th class="es-name">Host / Cashier<span>Save · Sign · Print</span></th>${['Shift','Position','Tip AM','Tip PM','Paid Tip Out'].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody id="hc15Rows"></tbody></table>
+    <p class="hc15-footnote">Cash + Credit is split equally within each shift, using the existing cent-rounding rule. Double receives AM + PM. No clock-in / clock-out required. Download uses saved reports from the server on both phone and laptop.</p>`;
   $('esGrid').appendChild(section);
+  $('hc184Refresh').onclick=()=>hc184Refresh(hc15Session,true);
   $('hc15EditTeam').onclick=()=>window.fzOpenTodayTeam(hc15Session?.date||esSession?.date);
   section.addEventListener('input',e=>{if(e.target.dataset.hc15Pool)hc15Set('',e.target.dataset.hc15Pool,e.target.value);if(e.target.dataset.hc15Clock){const val=esNormalizeClock(e.target.value);e.target.value=val;hc15Set(e.target.dataset.hc15Name,e.target.dataset.hc15Clock,val);}});
   section.addEventListener('change',e=>{if(e.target.dataset.hc15Pool&&es14MoneyValid(e.target.value)&&e.target.value!==''){e.target.value=es14MoneyText(e.target.value);hc15Set('',e.target.dataset.hc15Pool,e.target.value);}});
@@ -12399,7 +12413,7 @@ function hc15Render(){
   if(esPan||performance.now()<esTouchUntil){clearTimeout(s.renderTimer);s.renderTimer=setTimeout(hc15Render,180);return;}
   const data=hc15View(s),members=tt15TeamRows({},data),key=JSON.stringify(members);
   if(s.rowsKey!==key||!$('hc15Rows').children.length){
-    s.rowsKey=key;$('hc15Rows').innerHTML=members.map(r=>`<tr data-hc15-row="${tt15Key(r.name)}"><th class="es-name"><b>${esc(tt15Label(r.name))}</b><span class="es-state" data-hc15-state></span><div class="es-row-actions">${['Save','Sign','Print'].map(a=>`<button type="button" data-hc15-action="${a.toLowerCase()}" data-hc15-name="${esc(r.name)}">${a}</button>`).join('')}</div></th><td>${esc(r.shift)}</td><td>${esc(r.role)}</td>${['clockIn','clockOut','clockIn2','clockOut2'].map(f=>`<td><input type="text" inputmode="numeric" maxlength="5" data-hc15-clock="${f}" data-hc15-name="${esc(r.name)}" aria-label="${esc(r.name+' '+f)}" value="${esc(data.staffDetails?.[r.name]?.[f]||'')}" placeholder="${f.endsWith('2')&&r.shift!=='DOUBLE'?'—':'HH:MM'}"${f.endsWith('2')&&r.shift!=='DOUBLE'?' disabled':''}></td>`).join('')}<td data-hc15-out="hours"></td><td data-hc15-out="am"></td><td data-hc15-out="pm"></td><td class="es-payout" data-hc15-out="total"></td></tr>`).join('')||'<tr><td colspan="11">No Host / Cashier on this date. Add them in Today’s Team.</td></tr>';
+    s.rowsKey=key;$('hc15Rows').innerHTML=members.map(r=>`<tr data-hc15-row="${tt15Key(r.name)}"><th class="es-name"><b>${esc(tt15Label(r.name))}</b><span class="es-state" data-hc15-state></span><div class="es-row-actions">${['Save','Sign','Print'].map(a=>`<button type="button" data-hc15-action="${a.toLowerCase()}" data-hc15-name="${esc(r.name)}">${a}</button>`).join('')}</div></th><td>${esc(r.shift)}</td><td>${esc(r.role)}</td><td data-hc15-out="am"></td><td data-hc15-out="pm"></td><td class="es-payout" data-hc15-out="total"></td></tr>`).join('')||'<tr><td colspan="6">No Host / Cashier on this date. Add them in Today’s Team.</td></tr>';
   }
   for(const input of $('hc15Pools').querySelectorAll('input')){if(input!==document.activeElement)input.value=String(data[input.dataset.hc15Pool]??0);input.disabled=!s.verified||s.busy;}
   for(const input of $('hc15Rows').querySelectorAll('input')){const r=hc15Member(data,input.dataset.hc15Name);input.disabled=!s.verified||s.busy||(input.dataset.hc15Clock.endsWith('2')&&r?.shift!=='DOUBLE');if(input!==document.activeElement)input.value=data.staffDetails?.[input.dataset.hc15Name]?.[input.dataset.hc15Clock]||'';}
@@ -12418,7 +12432,7 @@ function hc15UpdateValues(){
       tr.hidden=!!q&&!(tt15Label(row.name)+' '+row.name).toLowerCase().includes(q);
       const title=tr.querySelector('.es-name>b');if(title)title.textContent=tt15Label(row.name);
       const status=tr.querySelector('[data-hc15-state]');status.textContent=state.text;status.dataset.kind=state.kind;
-      for(const [k,v]of Object.entries({hours:mins?Math.floor(mins/60)+'h '+mins%60+'m':'—',am:esMoney(result.hostCashierTipAM),pm:esMoney(result.hostCashierTipPM),total:esMoney(result.totalPaidOut)}))tr.querySelector('[data-hc15-out="'+k+'"]').textContent=v;
+      for(const [k,v]of Object.entries({am:esMoney(result.hostCashierTipAM),pm:esMoney(result.hostCashierTipPM),total:esMoney(result.totalPaidOut)}))tr.querySelector('[data-hc15-out="'+k+'"]').textContent=v;
     }
   }catch(e){$('hc15Status').textContent=e.message;}
 }
@@ -12427,17 +12441,16 @@ async function hc15Commit(name,signature=null,expected=''){
   if(!(await hc15Flush(s)))throw new Error(s.error||'Host / Cashier draft could not sync.');
   const view=hc15View(s);for(const f of TT15_POOLS)if(!es14MoneyValid(view[f]))throw new Error('Enter valid '+f+' with at most 2 decimals.');
   if(s.conflicts.length)throw new Error('Review conflicting Host / Cashier edits before saving this pool.');
-  if(Object.keys(s.edits).some(k=>JSON.parse(k)[0]===name))throw new Error('Finish the selected employee’s clock fields before saving.');
-  hc15Hours(view,name,true);
+  // Legacy clock drafts remain stored, but no longer block a tip report.
   const reportRef=doc(db,'hourlyReports','hc15-'+s.date+'-'+tt15Key(name)),ref=doc(db,'hostCashierTipReports',s.date);
   const out=await runTransaction(db,async tx=>{
     const hs=await tx.get(ref),rs=await tx.get(reportRef);tt15Require(s.uid);
     if(!hs.exists())throw new Error('Set this date’s Host / Cashier team first.');
-    const data=hs.data(),before=rs.exists()?rs.data():null,r=hc15Report(data,name);hc15Hours(data,name,true);
+    const data=hs.data(),before=rs.exists()?rs.data():null,r=hc15Report(data,name);
     if(before&&(!tt15IsHostReport(before)||!hourlyReportBelongsTo(before,name,s.date)))throw new Error('Report identity mismatch. No data was replaced.');
     const fp=hc15Fingerprint(r);
     if(signature&&fp!==expected)throw new Error('Amounts or team changed while signing. Cancel, review the updated row, then sign again. Your signature remains visible.');
-    const same=before?.hostCashierFingerprint===fp,sig=signature||(same?before?.pickupSignature:null);
+    const same=hc184SameFingerprint(before?.hostCashierFingerprint,fp),sig=signature||(same?before?.pickupSignature:null);
     const report={...r,hostCashierFingerprint:fp,pickupSignature:sig||null,signatureStatus:sig?'SIGNED':'PENDING',status:'money_ready',employeeSheetBuild:ES_BUILD,employeeKey:fzEmployeeIdentityKey(name),reportIdentityVersion:'13.8.28',updatedAt:serverTimestamp(),updatedBy:currentProfile?.displayName||currentProfile?.username||''};
     const next=tt15Copy(data);next.sheetFinalized ||= {};next.sheetFinalized[tt15Key(name)]={id:reportRef.id,fingerprint:fp,signed:!!sig};next.signatures ||= {AM:{},PM:{}};
     for(const cp of ['AM','PM']){
@@ -12470,7 +12483,7 @@ async function hc15PrintReport(report,popup){
 }
 function hc15Sign(name){
   const s=hc15Session;if(!s?.verified||s.busy)return;
-  try{const data=hc15View(s),r=hc15Report(data,name);hc15Hours(data,name,true);hc15Sig={name,uid:s.uid,date:s.date,fingerprint:hc15Fingerprint(r),strokes:[],current:null,scroll:es14CaptureScroll()};
+  try{const data=hc15View(s),r=hc15Report(data,name);hc15Sig={name,uid:s.uid,date:s.date,fingerprint:hc15Fingerprint(r),strokes:[],current:null,scroll:es14CaptureScroll()};
     $('hc15SignTitle').textContent=tt15Label(name)+' — Host / Cashier';$('hc15SignSummary').textContent=s.date+' · '+r.shift+' · Paid Tip Out '+esMoney(r.totalPaidOut);$('hc15SignStatus').textContent='Save signature returns to this row.';$('hc15SignModal').classList.remove('hidden');hc15Draw();$('hc15SignCancel').focus();
   }catch(e){s.error=e.message;hc15UpdateValues();}
 }
@@ -12518,7 +12531,15 @@ function hc15Jump(){
   const prepare=esPrepareBatch,find=esFindReport,accept=esAcceptRead,init=esInit,render=esRenderRows,open=window.employeeSheetOpen;
   esPrepareBatch=function(source,reports,date){const removed=new Set(source?.todayTeamRemoved||[]);return prepare(source,(reports||[]).filter(r=>!tt15IsHostReport(r)&&!removed.has(r.employee)),date);};
   esFindReport=function(reports,name){return find((reports||[]).filter(r=>!tt15IsHostReport(r)),name);};
-  esAcceptRead=function(c,kind,value,...rest){return accept(c,kind,kind==='reports'?(value||[]).filter(r=>!tt15IsHostReport(r)):value,...rest);};
+  esAcceptRead=function(c,kind,value,...rest){
+    // Keep the complete verified report list available to legacy Daily paths.
+    // BAR calculations still receive only Server/Bartender records.
+    if(kind==='reports'&&esReadCurrent(c)&&rest[0]!==false){
+      const hosts=(value||[]).filter(r=>r.date===c.session.date&&es16ExportIsHost(r));
+      latestHourlyReports=[...hosts,...latestHourlyReports.filter(r=>r.date!==c.session.date||!es16ExportIsHost(r))];
+    }
+    return accept(c,kind,kind==='reports'?(value||[]).filter(r=>!es16ExportIsHost(r)):value,...rest);
+  };
   esRenderRows=function(...a){const out=render(...a);tt15PaintNames();return out;};
   esInit=function(...a){const out=init(...a);hc15Init();
     if($('esToolActions')&&!$('tt15SheetTeam')){const b=document.createElement('button');b.type='button';b.id='tt15SheetTeam';b.textContent="Today's Team";b.onclick=()=>window.fzOpenTodayTeam(esSession?.date);$('esToolActions').prepend(b);}
@@ -12611,7 +12632,7 @@ function hc16DraftRow(data,name){
 }
 function hc16NeedsDraft(data,name){
   if(TT15_POOLS.some(f=>!es14MoneyValid(data[f])))return true;
-  try{hc15Hours(data,name,true);return false;}catch(e){return true;}
+  return false; // Clock fields are not part of Host/Cashier tip finalization.
 }
 async function hc16SaveDraft(name){
   const s=hc15Session;if(!s||!esAllowed()||currentUser.uid!==s.uid)throw new Error('Manager / Owner session required.');if(!hc15Member(hc15View(s),name))throw new Error('Host / Cashier row not found.');
@@ -12658,19 +12679,18 @@ function es16ExportSession(date){
   const s=esSession;
   if(!esAllowed()||!s?.ready||s.uid!==currentUser?.uid)throw new Error('Open Employee Sheet with your Manager / Owner login first.');
   if(!esDateValid(date)||s.date!==date||($('esDate')&&$('esDate').value!==date))throw new Error('The work date changed. Select the date again, then download.');
-  if(s.busy)throw new Error('Please wait for this save to finish, then download.');
+  if(s.busy||hc15Session?.busy)throw new Error('Please wait for this save to finish, then download.');
   return s;
 }
 async function es16DailyExportRows(group,date){
   es16ExportGroup(group);const session=es16ExportSession(date),uid=currentUser.uid;
-  if(!es14IsOnline())throw new Error('Reconnect to download the latest saved Daily Report.');
-  const snap=await getDocs(query(collection(db,'hourlyReports'),where('date','==',date)));
-  if(es16ExportSession(date)!==session||currentUser.uid!==uid)throw new Error('The session changed. Please download again.');
-  if(snap.metadata?.fromCache===true||snap.metadata?.hasPendingWrites===true)throw new Error('Saved reports are still syncing. Please try the download again when connected.');
-  return snap.docs.map(d=>({id:d.id,...d.data()}))
-    .filter(r=>r.date===date&&(group==='host-cashier'?es16ExportIsHost(r):!es16ExportIsHost(r)))
-    .sort((a,b)=>String(a.employee||'').localeCompare(String(b.employee||''))||String(a.shift||'').localeCompare(String(b.shift||''))||String(a.id||'').localeCompare(String(b.id||'')));
+  const guard=()=>{if(es16ExportSession(date)!==session||currentUser.uid!==uid)throw new Error('The session changed. Please download again.');};
+  const all=await es184SavedReports(date,guard);
+  let selected=all.filter(r=>group==='host-cashier'?es16ExportIsHost(r):!es16ExportIsHost(r));
+  if(group==='host-cashier')selected=await hc184CompleteSavedRows(selected,date,guard);
+  guard();return selected.sort((a,b)=>String(a.employee||'').localeCompare(String(b.employee||''))||String(a.shift||'').localeCompare(String(b.shift||''))||String(a.id||'').localeCompare(String(b.id||'')));
 }
+
 function es16DailyXlsBlob(rows,group,date){
   const groupTitle=es16ExportGroupTitle(group),host=group==='host-cashier';
   const safe=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -12679,7 +12699,11 @@ function es16DailyXlsBlob(rows,group,date){
   const textValue=v=>{const s=String(v??'');return safe(/^[\s\u0000-\u001f]*[=+\-@]/.test(s)?"'"+s:s);};
   const num=v=>Number.isFinite(Number(v))?Number(v):0;
   const decimal=v=>num(v).toFixed(2);
-  const columns=[
+  const columns=host?[
+    ['Date','text',r=>r.date,115],['Employee','text',r=>r.employee,250],['Shift','text',r=>r.shift,125],
+    ['Tip AM','money',r=>hc184TipAmount(r,'AM'),150],['Tip PM','money',r=>hc184TipAmount(r,'PM'),150],
+    ['Total Paid Out','money',r=>smallReportPaidOut(r),185],['Signature','signature',r=>r.pickupSignature,280]
+  ]:[
     ['Date','text',r=>r.date,115],['Employee','text',r=>r.employee,250],['Shift','text',r=>r.shift,125],
     ['Clock In 1','text',r=>smallReportClockFields(r).in1,130],['Clock Out 1','text',r=>smallReportClockFields(r).out1,130],
     ['Clock In 2','text',r=>smallReportClockFields(r).in2,130],['Clock Out 2','text',r=>smallReportClockFields(r).out2,130],
@@ -12700,6 +12724,7 @@ function es16DailyXlsBlob(rows,group,date){
   };
   const body=rows.map((r,i)=>'<tr class="data-row" style="background:'+(i%2?'#edf4f8':'#ffffff')+'">'+columns.map(([label,type,value])=>{
     const v=value(r);if(type==='signature')return signatureCell(v);
+    if(host&&v==null)return '<td class="text" x:str>Not available</td>';
     if(type==='number'||type==='money')return numericCell(v,type,label==='Total Paid Out'?' style="font-weight:bold;color:#155a46"':'');
     return `<td class="text" x:str>${label==='Employee'?'<b>'+textValue(v)+'</b><br><span>'+textValue(r.position)+'</span>':textValue(v)}</td>`;
   }).join('')+'</tr>').join('');
@@ -12709,6 +12734,7 @@ function es16DailyXlsBlob(rows,group,date){
     if(i===1)return `<td class="text" x:str>${rows.length} report${rows.length===1?'':'s'}</td>`;
     if(type==='signature')return `<td class="text" x:str>${signed} of ${rows.length} signed</td>`;
     if(type!=='number'&&type!=='money')return '<td></td>';
+    if(host&&rows.some(r=>value(r)==null))return '<td class="text" x:str>Not available</td>';
     const total=type==='money'?rows.reduce((sum,r)=>sum+Math.round(num(value(r))*100),0)/100:rows.reduce((sum,r)=>sum+num(value(r)),0);
     return numericCell(total,type);
   }).join('')+'</tr>';
@@ -12763,11 +12789,12 @@ window.employeeSheetDownload=async function(group,format){
     const date=$('esDate')?.value||esSession?.date||'';
     es16ExportSession(date);es16ExportBusy=true;es16DailyExportControls();
     es16ExportMessage('Loading saved '+es16ExportGroupTitle(group)+' reports for '+date+'…');
+    if(hc15Session?.writing)await hc15Session.writing;
     const rows=await es16DailyExportRows(group,date);
     if(!rows.length){es16ExportMessage('No saved '+es16ExportGroupTitle(group)+' Daily Reports for '+date+'. Finish and save a row to Final Report, then download. Draft-only rows are not included.');return false;}
     const blob=format==='xls'?es16DailyXlsBlob(rows,group,date):es16DailyPdfBlob(rows,group,date);
     const file='Fred_Zhang_Daily_Report_'+(group==='server'?'Server_Bartender':'Host_Cashier')+'_'+date+'.'+format;
-    downloadBlob(blob,file);es16ExportMessage('Downloaded '+rows.length+' saved '+es16ExportGroupTitle(group)+' report'+(rows.length===1?'':'s')+' · '+date+'.');return true;
+    downloadBlob(blob,file);es16ExportMessage('Downloaded '+rows.length+' saved '+es16ExportGroupTitle(group)+' report'+(rows.length===1?'':'s')+' · '+date+'. Names: '+rows.map(r=>r.employeeDisplayName||r.employee).join(', ')+(group==='host-cashier'&&es184ExportMissing.length?' · NOT included (not finalized): '+es184ExportMissing.join(', ')+'. Save these rows first.':''));return true;
   }catch(e){es16ExportMessage(e.message||'The saved report could not be downloaded. Please try again.',true);return false;}
   finally{es16ExportBusy=false;es16DailyExportControls();}
 };
@@ -13211,6 +13238,172 @@ async function es182SaveSignature(){
 })();
 
 
+/* ES1.8.4 — Host/Cashier mobile reads and tip-only reports.
+ * Server-only snapshots do not own the Host/Cashier report cache. Export reads
+ * the selected work date from the server, never from a device's draft/list.
+ * Nothing in this read/recovery path creates or finalizes reports.
+ */
+let es184ExportMissing=[];
+function es184ReadGuard(uid){
+  if(!esAllowed()||!currentUser||currentUser.uid!==uid)throw new Error('Login changed. Please reopen the report.');
+  if(!es14IsOnline())throw new Error('Reconnect to download the latest saved Daily Report.');
+}
+function es184CheckSnapshot(snap){
+  if(!snap||snap.metadata?.fromCache===true||snap.metadata?.hasPendingWrites===true)throw new Error('Saved reports are still syncing. Please try again when connected.');
+  return snap;
+}
+async function es184HttpRead(kind,date,uid,guard,id=''){
+  es184ReadGuard(uid);guard();
+  if(typeof currentUser.getIdToken!=='function'||typeof fetch!=='function')throw new Error('Server connection is unavailable. Retry when connected.');
+  const controller=new AbortController();let timer;
+  try{return await Promise.race([
+    new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(new Error('Server read timed out. No partial report was downloaded. Tap Refresh from server, then retry.'));},10000);}),
+    (async()=>{
+      const token=await currentUser.getIdToken();es184ReadGuard(uid);guard();
+      const prefix='projects/'+FIREBASE_CONFIG.projectId+'/databases/(default)/documents';
+      const root='https://firestore.googleapis.com/v1/'+prefix;
+      const path=kind==='host'?'hostCashierTipReports/'+date:kind==='report'?'hourlyReports/'+id:'';
+      const resource=path?prefix+'/'+path:'';
+      const body=kind==='reports'?{structuredQuery:{from:[{collectionId:'hourlyReports'}],where:{fieldFilter:{field:{fieldPath:'date'},op:'EQUAL',value:{stringValue:date}}}}}:{documents:[resource]};
+      const response=await fetch(root+(kind==='reports'?':runQuery':':batchGet'),{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store',signal:controller.signal});
+      const json=await response.json();es184ReadGuard(uid);guard();
+      if(!response.ok){const error=new Error(json?.error?.message||'Server read failed. No partial report was downloaded.');error.code=response.status===403?'permission-denied':response.status===401?'unauthenticated':String(response.status);throw error;}
+      if(!Array.isArray(json)||!json.length||json.some(x=>x.error))throw new Error('Invalid server response. No partial report was downloaded.');
+      const decode=d=>esDecodeFirestore({mapValue:{fields:d.fields||{}}});
+      if(kind!=='reports'){
+        if(json.length!==1)throw new Error('Unexpected server document response.');
+        if(json[0].found?.name===resource)return {exists:true,data:decode(json[0].found)};
+        if(json[0].missing===resource)return {exists:false,data:{}};
+        throw new Error('Server response does not match this work date.');
+      }
+      if(json.some(x=>!x.document&&!x.readTime))throw new Error('Incomplete report response. Please retry.');
+      return json.filter(x=>x.document).map(x=>{
+        const doc=x.document;if(!doc.name.startsWith(prefix+'/hourlyReports/'))throw new Error('Unexpected report identity.');
+        const row={...decode(doc),id:doc.name.split('/').pop()};if(row.date!==date)throw new Error('Unexpected work date in report response.');return row;
+      });
+    })()
+  ]);}finally{clearTimeout(timer);controller.abort();}
+}
+async function es184CloudRead(kind,date,guard=()=>{},id=''){
+  const uid=currentUser?.uid;es184ReadGuard(uid);guard();
+  if(!esDateValid(date)||!['reports','host','report'].includes(kind)||kind==='report'&&(!id||id.includes('/')))throw new Error('Invalid report request.');
+  let timer;
+  try{
+    const ref=kind==='reports'?query(collection(db,'hourlyReports'),where('date','==',date)):doc(db,kind==='host'?'hostCashierTipReports':'hourlyReports',kind==='host'?date:id);
+    const read=kind==='reports'?(typeof getDocsFromServer==='function'?getDocsFromServer:getDocs):(typeof getDocFromServer==='function'?getDocFromServer:getDoc);
+    const snap=await Promise.race([
+      read(ref),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Server connection taking too long.')),4000);})
+    ]);
+    es184ReadGuard(uid);guard();es184CheckSnapshot(snap);
+    if(kind!=='reports')return {exists:snap.exists(),data:snap.exists()?snap.data():{}};
+    if(!Array.isArray(snap.docs))throw new Error('Invalid server report list.');
+    return snap.docs.map(d=>({...d.data(),id:d.id})).filter(r=>r.date===date);
+  }catch(error){
+    es184ReadGuard(uid);guard();
+    // A rules denial is never treated as an empty date or retried anonymously.
+    if(/permission|unauthenticated/i.test(String(error.code||'')))throw error;
+    if(typeof fetch!=='function'||typeof currentUser?.getIdToken!=='function')throw error;
+    return await es184HttpRead(kind,date,uid,guard,id);
+  }finally{clearTimeout(timer);}
+}
+async function es184SavedReports(date,guard=()=>{}){
+  const rows=await es184CloudRead('reports',date,guard);guard();
+  // Replace exactly one complete date; neither host nor server rows are omitted.
+  latestHourlyReports=[...rows,...latestHourlyReports.filter(r=>r.date!==date)];
+  return rows;
+}
+async function hc184CompleteSavedRows(rows,date,guard=()=>{}){
+  es184ExportMissing=[];
+  const current=await es184CloudRead('host',date,guard);guard();
+  if(!current.exists)return rows;
+  const data=current.data;if(data.date&&data.date!==date)throw new Error('Host / Cashier work date mismatch.');
+  const map=new Map(rows.map(r=>[r.id,r]));
+  // Another device may finish a save between the query and the team read. Read
+  // those explicit final-report IDs too; never synthesize a finalized document.
+  for(const [key,final]of Object.entries(data.sheetFinalized||{})){
+    const id=String(final?.id||'');if(!id||map.has(id))continue;
+    const saved=await es184CloudRead('report',date,guard,id);guard();
+    if(!saved.exists)throw new Error('A saved Host / Cashier report is unavailable ('+id+'). Refresh the reports and retry; no partial download was created.');
+    const r={...saved.data,id};
+    if(r.date!==date||!es16ExportIsHost(r)||tt15Key(r.employee)!==key)throw new Error('Host / Cashier report identity mismatch. No partial download was created.');
+    map.set(id,r);
+  }
+  const output=[...map.values()];
+  es184ExportMissing=tt15TeamRows({},data).filter(member=>!output.some(r=>r.employee===member.name)).map(member=>tt15Label(member.name));
+  if(hc15Session?.date===date&&hc15Session.uid===currentUser.uid&&!hc15Session.busy)hc15Accept(hc15Session,data,true);
+  const ids=new Set(output.map(r=>r.id));latestHourlyReports=[...output,...latestHourlyReports.filter(r=>!ids.has(r.id))];
+  return output;
+}
+async function hc184Refresh(s=hc15Session,manual=false){
+  if(!s||s!==hc15Session||!esAllowed()||s.uid!==currentUser?.uid||s.busy)return false;
+  if(s.refreshing)return s.refreshing;
+  const epoch=s.readEpoch=(Number(s.readEpoch)||0)+1;
+  const guard=()=>{if(hc15Session!==s||s.readEpoch!==epoch||!esAllowed()||currentUser.uid!==s.uid)throw new Error('Host / Cashier date or login changed.');};
+  if(manual){s.error='Refreshing Host / Cashier from server…';hc15UpdateValues();}
+  s.refreshing=(async()=>{
+    try{
+      const result=await es184CloudRead('host',s.date,guard);guard();
+      if(s.writing)await s.writing;guard();
+      s.loaded=true;s.hadCloud ||= result.exists;
+      const data=result.exists?result.data:{date:s.date};
+      if(data.date&&data.date!==s.date)throw new Error('Host / Cashier server date mismatch.');
+      if(Number(data.sheetRevision||0)<Number(s.data?.sheetRevision||0)&&s.verified)return true;
+      s.error='';s.deviceRestored=false;hc15Accept(s,data,true);return true;
+    }catch(e){if(hc15Session===s&&s.readEpoch===epoch){s.error=e.message||'Host / Cashier could not sync. Tap Refresh from server.';if(manual)s.verified=false;hc15Render();}return false;}
+    finally{if(hc15Session===s){s.refreshing=null;hc15Render();}}
+  })();
+  return s.refreshing;
+}
+function hc184Resume(){if(document.visibilityState!=='hidden'&&esAllowed()&&document.body.classList.contains('es-active')&&hc15Session&&!hc15Session.busy)void hc184Refresh(hc15Session);}
+window.addEventListener('online',hc184Resume);window.addEventListener('pageshow',hc184Resume);document.addEventListener('visibilitychange',hc184Resume);
+async function es184FinalDailyRows(){
+  const uid=currentUser?.uid,date=$('smallReportDate')?.value||'',employee=$('smallReportEmployee')?.value||'';
+  es184ReadGuard(uid);if(!esDateValid(date))throw new Error('Choose a work date before downloading the Daily Report.');
+  const guard=()=>{es184ReadGuard(uid);if(($('smallReportDate')?.value||'')!==date||($('smallReportEmployee')?.value||'')!==employee)throw new Error('Report filter changed. Please download again.');};
+  const all=await es184SavedReports(date,guard);
+  const host=await hc184CompleteSavedRows(all.filter(es16ExportIsHost),date,guard);guard();
+  return [...all.filter(r=>!es16ExportIsHost(r)),...host].filter(r=>!employee||r.employee===employee).sort((a,b)=>String(a.employee).localeCompare(String(b.employee)));
+}
+function hc184TipAmount(r,period){
+  const value=r['hostCashierTip'+period];
+  if(value!==undefined&&value!==null&&Number.isFinite(Number(value)))return Number(value);
+  // Old single-shift saved reports can be shown without inventing a split.
+  const shift=String(r.shift||'').toUpperCase();
+  if(shift==='PM')return period==='PM'?smallReportPaidOut(r):0;
+  if(shift==='AM'||/10:45|14:00\s*-\s*16:00/.test(shift))return period==='AM'?smallReportPaidOut(r):0;
+  return null;
+}
+function hc184PdfReportContent(r,index,total){
+  const text=(font,size,x,y,t)=>`BT /${font} ${size} Tf ${x} ${y} Td (${pdfEscape(t)}) Tj ET\n`;
+  const line=(y)=>`0.80 0.86 0.85 RG 0.65 w 32 ${y} m 580 ${y} l S\n0 0 0 RG\n`;
+  const box=(x,y,w,h,color)=>`${color} rg ${x} ${y} ${w} ${h} re f\n0 0 0 rg\n`;
+  const tip=cp=>{const n=hc184TipAmount(r,cp);return n===null?'Not available':pdfMoney(n);};
+  let c=box(0,694,612,98,'0.06 0.20 0.17')+'1 1 1 rg\n';
+  c+=text('F2',20,32,755,'FRED ZHANG TIP CALCULATOR');
+  c+=text('F1',12,32,731,'HOST / CASHIER - DAILY TIP REPORT');
+  c+=text('F1',10,455,710,`REPORT ${index+1} / ${total}`)+'0 0 0 rg\n';
+  const name=String(r.employeeDisplayName||r.employee||'Employee');
+  c+=text('F2',name.length>36?18:24,32,649,name);
+  c+=text('F1',12,32,622,'Work date: '+String(r.date||'-'));
+  c+=text('F1',12,32,600,String(r.position||'Host / Cashier')+'  |  Shift: '+String(r.shift||'-'));
+  c+=line(578);
+  c+=text('F2',13,32,546,'TIP ALLOCATION');
+  c+=text('F1',15,44,507,'Tip AM');c+=text('F2',17,420,507,tip('AM'));
+  c+=line(489);c+=text('F1',15,44,459,'Tip PM');c+=text('F2',17,420,459,tip('PM'));
+  c+=box(32,357,548,69,'0.88 0.95 0.92');
+  c+=text('F2',18,46,386,'TOTAL PAID OUT');c+=text('F2',23,409,383,pdfMoney(smallReportPaidOut(r)));
+  c+=text('F1',10,32,332,'Cash + credit pool share, split equally per shift. Double receives AM + PM.');
+  c+=text('F1',10,32,314,'This report does not require clock-in / clock-out times.');
+  c+=text('F2',12,32,259,'EMPLOYEE SIGNATURE');
+  c+='0.80 0.86 0.85 RG 0.65 w 32 104 548 141 re S\n0 0 0 RG\n';
+  c+=pdfSignatureCommands(r.pickupSignature,43,114,526,115);
+  if(!smallReportHasPickupSignature(r))c+=text('F1',12,222,165,'PENDING SIGNATURE');
+  c+=text('F2',10,32,83,smallReportHasPickupSignature(r)?'SIGNED':'NOT SIGNED');
+  c+=text('F1',8,32,38,'Generated '+new Date().toLocaleString()+' | ES1.8.4 | Page '+(index+1));
+  return c;
+}
+
+
 /* ES1.7 — keep the real mobile table headers above the software keyboard.
  * Chrome/Android can pan its visual viewport while the layout viewport and
  * 100dvh stay tall. Fit the sheet to the visible rectangle instead of cloning
@@ -13467,4 +13660,3 @@ window.es18UpdateBiometricUi=function(){
   if(b)b.classList.toggle('hidden',!['employee','manager','owner','cashier'].includes(currentProfile?.role));
 };
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.es18UpdateBiometricUi(),{once:true});else window.es18UpdateBiometricUi();
-
