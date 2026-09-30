@@ -6196,8 +6196,10 @@ function buildSmallReportThermalHtml(r){
     .total{display:flex;justify-content:space-between;align-items:flex-end;gap:18px;font-weight:900;font-size:31px;line-height:1.1;padding:10px 0}
     .total span{white-space:nowrap}.total b{text-align:right}
     .payout-note,.tip-note{font-size:18px;line-height:1.3;text-align:center;font-weight:700;margin:4px 0 7px}
-    .tip-grand{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;font-size:28px;line-height:1.15;font-weight:900;padding:7px 0}
-    .tip-grand span{flex:1;min-width:0}.tip-grand b{flex:0 0 auto;text-align:right}
+    /* ES1.8.3: cash/gross tip are ordinary detail rows; only payout is emphasized. */
+    .tip-grand{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;font-size:24px;line-height:1.32;font-weight:400;padding:5px 0;text-transform:none}
+    .tip-grand span{flex:1 1 auto;min-width:0}.tip-grand .amount{flex:0 0 auto;text-align:right;max-width:285px;word-break:break-word;font-weight:400}
+    .tip-note{font-weight:400}
     .signature-title{text-align:center;font-weight:900;font-size:22px;margin:14px 0 2px}
     .signature{width:100%;height:164px;display:flex;align-items:center;justify-content:center;overflow:hidden}
     .signature svg{display:block;width:500px!important;height:160px!important;max-width:100%}
@@ -6207,7 +6209,7 @@ function buildSmallReportThermalHtml(r){
       html,body{width:80mm;max-width:80mm}
       body{padding:3mm 3mm 5mm;font-size:14pt}
       .title{font-size:20pt}.sub{font-size:12pt}.row{font-size:14pt;padding:1.2mm 0}
-      .total{font-size:16pt;gap:6px}.total span{white-space:normal;min-width:0;flex:1}.total b,.tip-grand b{max-width:48%;overflow-wrap:anywhere}.row b{max-width:48%}.tip-grand{font-size:16pt}.payout-note,.tip-note{font-size:10pt}.signature-title{font-size:13pt}.signed{font-size:11pt}
+      .total{font-size:16pt;gap:6px}.total span{white-space:normal;min-width:0;flex:1}.total b,.tip-grand .amount{max-width:48%;overflow-wrap:anywhere}.row b{max-width:48%}.tip-grand{font-size:14pt;font-weight:400}.payout-note,.tip-note{font-size:10pt}.signature-title{font-size:13pt}.signed{font-size:11pt}
       .receipt-note{font-size:16pt;line-height:1.38;margin-top:3.5mm}
       .signature{height:23mm}.signature svg{width:68mm!important;height:22mm!important}
     }
@@ -6216,13 +6218,12 @@ function buildSmallReportThermalHtml(r){
     <div class="sub">Fred Zhang Tip Calculator</div>
     <div class="rule"></div>
     ${rowHtml}
+    <div class="row"><span>Cash Tip (already received)</span><b>${thermalReceiptSafe(thermalReceiptMoney(r.cashTip))}</b></div>
+    <div class="tip-grand"><span>Grand Total Tip</span><span class="amount">${thermalReceiptSafe(thermalReceiptMoney(thermalReportGrandTotalTip(r)))}</span></div>
+    <div class="tip-note">Total Tip Before Meal + Cash Tip<br>Before meal deduction; not an extra payout.</div>
     <div class="rule"></div>
     <div class="total"><span>TOTAL PAID OUT</span><b>${thermalReceiptSafe(thermalReceiptMoney(thermalReportPaidOut(r)))}</b></div>
     <div class="payout-note">Cash Tip is NOT included in Total Paid Out.</div>
-    <div class="rule"></div>
-    <div class="row"><span>Cash Tip (already received)</span><b>${thermalReceiptSafe(thermalReceiptMoney(r.cashTip))}</b></div>
-    <div class="tip-grand"><span>GRAND TOTAL TIP</span><b>${thermalReceiptSafe(thermalReceiptMoney(thermalReportGrandTotalTip(r)))}</b></div>
-    <div class="tip-note">Total Tip Before Meal + Cash Tip<br>Before meal deduction; not an extra payout.</div>
     <div class="rule"></div>
     <div class="signature-title">EMPLOYEE SIGNATURE</div>
     <div class="signature">${signature}</div>
@@ -10281,7 +10282,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.2';
+const ES_BUILD='ES1.8.3';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
