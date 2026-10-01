@@ -12439,11 +12439,30 @@ function hc15UpdateValues(){
     }
   }catch(e){$('hc15Status').textContent=e.message;}
 }
+async function hc188RebaseExplicitHostSave(s){
+  if(!s?.conflicts?.length)return false;
+  if(!es14IsOnline())throw new Error('This device has conflicting Host / Cashier edits and is offline. Reconnect, then tap Save again.');
+  const ref=doc(db,'hostCashierTipReports',s.date),snap=await getDocFromServer(ref);tt15Require(s.uid);
+  if(!snap.exists())throw new Error('This Host / Cashier date was removed. Your device values are kept.');
+  const remote=snap.data(),allowed=new Set([...TT15_POOLS,'creditAccountsAM','creditAccountsPM']);
+  for(const key of s.conflicts){
+    const [name,field]=JSON.parse(key);
+    if(name||!allowed.has(field))throw new Error('Review conflicting Host / Cashier edits before saving this pool.');
+    const edit=s.edits[key];if(edit)edit.base=tt15Copy(hc15Get(remote,key));
+  }
+  // Tapping Save is an explicit instruction to keep the pool values currently
+  // shown on this device. Rebase only those conflicted pool/account fields to a
+  // fresh server snapshot; hc15Flush still performs a transaction and will
+  // detect any newer change that happens after this read.
+  s.data=tt15Copy(remote);s.verified=true;s.conflicts=[];s.error='';hc15KeepLocal(s);hc15Render();
+  return true;
+}
 async function hc15Commit(name,signature=null,expected=''){
   const s=hc15Session;if(!s?.verified)throw new Error('Checking cloud. Your signature is kept.');tt15Require(s.uid);
+  if(s.conflicts.length&&!signature)await hc188RebaseExplicitHostSave(s);
   if(!(await hc15Flush(s)))throw new Error(s.error||'Host / Cashier draft could not sync.');
   const view=hc15View(s);for(const f of TT15_POOLS)if(!es14MoneyValid(view[f]))throw new Error('Enter valid '+f+' with at most 2 decimals.');
-  if(s.conflicts.length)throw new Error('Review conflicting Host / Cashier edits before saving this pool.');
+  if(s.conflicts.length&&!signature)throw new Error('Another device changed the same Host / Cashier pool again while saving. Tap Save once more after reviewing the current values.');
   // Legacy clock drafts remain stored, but no longer block a tip report.
   const reportRef=doc(db,'hourlyReports','hc15-'+s.date+'-'+tt15Key(name)),ref=doc(db,'hostCashierTipReports',s.date);
   const out=await runTransaction(db,async tx=>{
@@ -12794,17 +12813,17 @@ window.employeeSheetDownload=async function(group,format){
     es16ExportMessage('Loading saved '+es16ExportGroupTitle(group)+' reports for '+date+'…');
     if(hc15Session?.writing)await hc15Session.writing;
     const rows=await es16DailyExportRows(group,date);
-    if(!rows.length){es16ExportMessage('No saved '+es16ExportGroupTitle(group)+' Daily Reports for '+date+'. Finish and save a row to Final Report, then download. Draft-only rows are not included.');return false;}
+    if(!rows.length){es16ExportMessage(group==='host-cashier'?'No Host / Cashier team or server pool data is available for '+date+'.':'No saved '+es16ExportGroupTitle(group)+' Daily Reports for '+date+'. Finish and save a row to Final Report, then download. Draft-only rows are not included.');return false;}
     const blob=format==='xls'?es16DailyXlsBlob(rows,group,date):es16DailyPdfBlob(rows,group,date);
     const file='Fred_Zhang_Daily_Report_'+(group==='server'?'Server_Bartender':'Host_Cashier')+'_'+date+'.'+format;
-    downloadBlob(blob,file);es16ExportMessage('Downloaded '+rows.length+' saved '+es16ExportGroupTitle(group)+' report'+(rows.length===1?'':'s')+' · '+date+'. Names: '+rows.map(r=>r.employeeDisplayName||r.employee).join(', ')+(group==='host-cashier'&&es184ExportMissing.length?' · NOT included (not finalized): '+es184ExportMissing.join(', ')+'. Save these rows first.':''));return true;
+    downloadBlob(blob,file);es16ExportMessage('Downloaded '+rows.length+' '+(group==='host-cashier'?'Host / Cashier':'saved Server / Bartender')+' report'+(rows.length===1?'':'s')+' · '+date+'. Names: '+rows.map(r=>r.employeeDisplayName||r.employee).join(', ')+(group==='host-cashier'?' · Signature is optional for download.':''));return true;
   }catch(e){es16ExportMessage(e.message||'The saved report could not be downloaded. Please try again.',true);return false;}
   finally{es16ExportBusy=false;es16DailyExportControls();}
 };
 function es16DailyExportsInit(){
   if($('es16DailyExports')||!$('esGrid'))return;
   const section=document.createElement('section');section.id='es16DailyExports';section.className='es16-daily-exports';section.setAttribute('aria-labelledby','es16ExportTitle');
-  section.innerHTML='<div class="es16-export-heading"><div><h3 id="es16ExportTitle">Download Daily Report</h3><p>Work date: <b id="es16ExportDate"></b></p></div><span class="es16-export-tag">Saved reports</span></div><p class="es16-export-note">Server includes Bartender. Downloads use the saved Daily Report for this date; draft-only rows are excluded.</p><div class="es16-export-buttons"><button type="button" data-es16-group="server" data-es16-format="xls">Download XLS Server</button><button type="button" data-es16-group="server" data-es16-format="pdf">Download PDF Server</button><button type="button" data-es16-group="host-cashier" data-es16-format="xls">Download XLS Host/Cashier</button><button type="button" data-es16-group="host-cashier" data-es16-format="pdf">Download PDF Host/Cashier</button></div><p id="es16ExportStatus" role="status" aria-live="polite"></p>';
+  section.innerHTML='<div class="es16-export-heading"><div><h3 id="es16ExportTitle">Download Daily Report</h3><p>Work date: <b id="es16ExportDate"></b></p></div><span class="es16-export-tag">Server reports</span></div><p class="es16-export-note">Server includes Bartender. Server/Bartender downloads use saved Daily Reports. Host/Cashier downloads use the current server pool/team and do not require a signature.</p><div class="es16-export-buttons"><button type="button" data-es16-group="server" data-es16-format="xls">Download XLS Server</button><button type="button" data-es16-group="server" data-es16-format="pdf">Download PDF Server</button><button type="button" data-es16-group="host-cashier" data-es16-format="xls">Download XLS Host/Cashier</button><button type="button" data-es16-group="host-cashier" data-es16-format="pdf">Download PDF Host/Cashier</button></div><p id="es16ExportStatus" role="status" aria-live="polite"></p>';
   $('esGrid').appendChild(section);
   section.addEventListener('click',e=>{const b=e.target.closest('button[data-es16-group]');if(b)window.employeeSheetDownload(b.dataset.es16Group,b.dataset.es16Format);});
   es16DailyExportControls();
@@ -13332,8 +13351,19 @@ async function hc184CompleteSavedRows(rows,date,guard=()=>{}){
     map.set(id,r);
   }
   // Read-only enrichment for older saved reports; never changes a payout or signature.
+  // Host/Cashier download is also allowed before a signature/final report exists.
+  // Missing employees are rendered from the CURRENT SERVER pool/team document as
+  // unsigned report rows. This is export-only: it never creates hourlyReports,
+  // never finalizes a draft, and never writes a signature.
   const output=[...map.values()].map(r=>hc185WithPoolSummary(r,{...data,date:data.date||date}));
-  es184ExportMissing=tt15TeamRows({},data).filter(member=>!output.some(r=>r.employee===member.name)).map(member=>tt15Label(member.name));
+  const present=new Set(output.map(r=>String(r.employee||'')));
+  for(const member of tt15TeamRows({},data)){
+    if(present.has(member.name))continue;
+    const current=hc15Report({...data,date:data.date||date},member.name);
+    output.push({...current,id:'export-current-'+date+'-'+tt15Key(member.name),pickupSignature:null,signatureStatus:'PENDING',status:'export_current',employeeSheetBuild:ES_BUILD,hostCashierFingerprint:hc15Fingerprint(current),exportCurrentUnsigned:true});
+    present.add(member.name);
+  }
+  es184ExportMissing=[];
   if(hc15Session?.date===date&&hc15Session.uid===currentUser.uid&&!hc15Session.busy)hc15Accept(hc15Session,data,true);
   const ids=new Set(output.map(r=>r.id));latestHourlyReports=[...output,...latestHourlyReports.filter(r=>!ids.has(r.id))];
   return output;
