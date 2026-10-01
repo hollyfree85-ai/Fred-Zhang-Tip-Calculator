@@ -3880,7 +3880,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es15",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es188",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10288,7 +10288,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.7';
+const ES_BUILD='ES1.8.8';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -13751,7 +13751,7 @@ window.es18UpdateBiometricUi=function(){
   if(b)b.classList.toggle('hidden',!['employee','manager','owner','cashier'].includes(currentProfile?.role));
 };
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.es18UpdateBiometricUi(),{once:true});else window.es18UpdateBiometricUi();
-// ES1.8.7 — Employee Daily Detail PDF readability / zebra landscape report.
+// ES1.8.8 — Fast Employee Daily Detail + ES1.8.7 readable landscape PDF.
 (function(){
   const money=v=>'$'+monthlyReportRound(v).toFixed(2),num=v=>monthlyReportNum(v),escHtml=v=>esc(String(v??''));
   let detailToken=0,detailRows=[];
@@ -13761,7 +13761,56 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const keys=['sales','paidTip','cardFee','busserAM','busserPM','barOut','barReceived','cashTip','meal','adjustment','beforeMeal','paidOut','grandTip'];
   function aggregate(rows){const map=new Map();for(const raw of rows){const r=norm(raw);if(!r.date)continue;if(!map.has(r.date)){map.set(r.date,{...r,shifts:new Set([r.shift]),positions:new Set([r.position])});continue;}const x=map.get(r.date);x.reports++;x.shifts.add(r.shift);x.positions.add(r.position);for(const k of keys)x[k]+=r[k];}return [...map.values()].map(x=>{const o={...x,shift:[...x.shifts].filter(Boolean).join(' + ')||'-',position:[...x.positions].filter(Boolean).join(' + ')||'-'};delete o.shifts;delete o.positions;for(const k of keys)o[k]=monthlyReportRound(o[k]);return o;}).sort((a,b)=>a.date.localeCompare(b.date));}
   function totals(rows){const t={date:'TOTAL',shift:'',position:'',reports:0};for(const k of keys)t[k]=0;for(const r of rows){t.reports+=r.reports||1;for(const k of keys)t[k]+=num(r[k]);}for(const k of keys)t[k]=monthlyReportRound(t[k]);return t;}
-  async function fetchRange(from,to){const dates=dateList(from,to);if(!dates.length)throw new Error('Choose a valid date range.');if(dates.length>366)throw new Error('Choose a range of 366 days or less.');try{const q=query(collection(db,'hourlyReports'),where('date','>=',from),where('date','<=',to),orderBy('date','asc'));const snap=await Promise.race([getDocsFromServer(q),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Range read timed out.')),8000))]);if(snap.metadata?.fromCache===true)throw new Error('Server data is not ready.');return snap.docs.map(d=>({id:d.id,...d.data()}));}catch(error){if(typeof es184CloudRead!=='function'||dates.length>62)throw error;const out=[];for(const d of dates)out.push(...await es184CloudRead('reports',d,()=>{}));return out;}}
+  const rangeCache=new Map();
+  function rangeKey(from,to){return from+'|'+to;}
+  function rangeCachePut(from,to,rows){rangeCache.set(rangeKey(from,to),{at:Date.now(),rows:[...rows]});if(rangeCache.size>8){const oldest=[...rangeCache.entries()].sort((a,b)=>a[1].at-b[1].at)[0]?.[0];if(oldest)rangeCache.delete(oldest);}return rows;}
+  function liveRangeRows(from,to){
+    // Final Report already owns one verified server subscription for this exact range.
+    // Reuse it instead of issuing a second Firestore request from the Daily Detail panel.
+    if(typeof frState!=='undefined'&&frState?.open&&frState?.mode==='monthly'&&frState?.verified&&frState?.key===('monthly|'+from+'|'+to)&&Array.isArray(frState.rows))return [...frState.rows];
+    return null;
+  }
+  async function httpRangeRead(from,to){
+    const uid=currentUser?.uid;if(!uid||!currentUser||typeof currentUser.getIdToken!=='function'||typeof fetch!=='function')throw new Error('Server connection is unavailable.');
+    if(typeof es184ReadGuard==='function')es184ReadGuard(uid);
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),6000);
+    try{
+      const token=await currentUser.getIdToken();if(typeof es184ReadGuard==='function')es184ReadGuard(uid);
+      const prefix='projects/'+FIREBASE_CONFIG.projectId+'/databases/(default)/documents';
+      const body={structuredQuery:{from:[{collectionId:'hourlyReports'}],where:{compositeFilter:{op:'AND',filters:[
+        {fieldFilter:{field:{fieldPath:'date'},op:'GREATER_THAN_OR_EQUAL',value:{stringValue:from}}},
+        {fieldFilter:{field:{fieldPath:'date'},op:'LESS_THAN_OR_EQUAL',value:{stringValue:to}}}
+      ]}}}};
+      const response=await fetch('https://firestore.googleapis.com/v1/'+prefix+':runQuery',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store',signal:controller.signal});
+      const json=await response.json();if(typeof es184ReadGuard==='function')es184ReadGuard(uid);
+      if(!response.ok)throw new Error(json?.error?.message||'Server range read failed.');
+      if(!Array.isArray(json)||json.some(x=>x.error))throw new Error('Invalid server range response.');
+      const decode=d=>esDecodeFirestore({mapValue:{fields:d.fields||{}}});
+      return json.filter(x=>x.document).map(x=>{const d=x.document;if(!d.name.startsWith(prefix+'/hourlyReports/'))throw new Error('Unexpected report identity.');const row={...decode(d),id:d.name.split('/').pop()};if(row.date<from||row.date>to)throw new Error('Unexpected work date in report response.');return row;});
+    }finally{clearTimeout(timer);controller.abort();}
+  }
+  async function fetchRange(from,to){
+    const dates=dateList(from,to);if(!dates.length)throw new Error('Choose a valid date range.');if(dates.length>366)throw new Error('Choose a range of 366 days or less.');
+    const live=liveRangeRows(from,to);if(live)return rangeCachePut(from,to,live);
+    const cached=rangeCache.get(rangeKey(from,to));if(cached&&Date.now()-cached.at<120000)return [...cached.rows];
+    // Fast path 1: normal Firestore range read. Mobile gets only 2.5s before switching transports.
+    try{
+      const q=query(collection(db,'hourlyReports'),where('date','>=',from),where('date','<=',to),orderBy('date','asc'));
+      const snap=await Promise.race([getDocsFromServer(q),new Promise((_,rej)=>setTimeout(()=>rej(new Error('Range read switching transport.')),2500))]);
+      if(snap.metadata?.fromCache===true||snap.metadata?.hasPendingWrites===true)throw new Error('Server data is not ready.');
+      return rangeCachePut(from,to,snap.docs.map(d=>({id:d.id,...d.data()})));
+    }catch(firstError){
+      // Fast path 2: one authenticated REST range request. This replaces the old one-date-at-a-time fallback.
+      try{return rangeCachePut(from,to,await httpRangeRead(from,to));}
+      catch(secondError){
+        if(typeof es184CloudRead!=='function'||dates.length>62)throw secondError;
+        // Last-resort compatibility path: bounded parallel date reads, never 31 sequential waits.
+        const out=[];let cursor=0;const workers=Math.min(8,dates.length);
+        await Promise.all(Array.from({length:workers},async()=>{while(cursor<dates.length){const i=cursor++;out.push(...await es184CloudRead('reports',dates[i],()=>{}));}}));
+        return rangeCachePut(from,to,out);
+      }
+    }
+  }
   function table(rows){const t=totals(rows),row=r=>`<tr><td>${escHtml(r.date)}</td><td>${escHtml(r.shift)}</td><td>${escHtml(r.position)}</td>${keys.map(k=>`<td>${money(r[k])}</td>`).join('')}</tr>`;return `<div class="fz186-scroll"><table class="fz186-table"><thead><tr><th>Date</th><th>Shift</th><th>Position</th><th>Sales</th><th>Paid Tip</th><th>Card Fee</th><th>Busser AM</th><th>Busser PM</th><th>Bar Out</th><th>Bar Received</th><th>Cash Tip</th><th>Meal</th><th>Adjustment</th><th>Before Meal</th><th>Paid Out</th><th>Grand Tip</th></tr></thead><tbody>${rows.map(row).join('')}</tbody><tfoot>${row(t)}</tfoot></table></div>`;}
   async function render(){const host=document.getElementById('fz186DailyDetail');if(!host)return;const {from,to,employee}=monthlyReportRange();if(!employee){detailRows=[];host.innerHTML='<div class="notice">Choose one Employee to see the daily breakdown.</div>';return;}if(!validDate(from)||!validDate(to)||from>to){detailRows=[];host.innerHTML='<div class="notice danger">Choose a valid Start Date and End Date.</div>';return;}const token=++detailToken;host.innerHTML='<div class="notice">Loading finalized daily reports from server…</div>';try{const all=await fetchRange(from,to);if(token!==detailToken)return;const rows=aggregate(all.filter(r=>String(r?.employee||'').trim()===employee));detailRows=rows;if(!rows.length){host.innerHTML='<div class="notice">No finalized Daily Reports found for '+escHtml(employee)+' in this period.</div>';return;}const t=totals(rows);host.innerHTML=`<div class="fz186-detail-head"><div><b>${escHtml(employee)}</b><span>${escHtml(from)} to ${escHtml(to)} · ${rows.length} work day${rows.length===1?'':'s'}</span></div><button class="btn dark" type="button" id="fz186PdfBtn">DOWNLOAD DAILY TABLE PDF</button></div>${table(rows)}<div class="small fz186-note"><b>Paid Out</b> = saved payout after Meal and accepted Hourly Adjustment. <b>Grand Tip</b> = Before Meal + Cash Tip. Cash Tip is already received and is not added to Paid Out.</div>`;document.getElementById('fz186PdfBtn').onclick=()=>window.downloadEmployeeDailyDetailPdf();if(document.getElementById('monthlyReportStatus'))document.getElementById('monthlyReportStatus').innerHTML=`<div class="notice good"><b>${escHtml(employee)}</b> · ${rows.length} daily row${rows.length===1?'':'s'} · Paid Out ${money(t.paidOut)} · Cash Tip ${money(t.cashTip)} · Grand Tip ${money(t.grandTip)}</div>`;}catch(e){if(token!==detailToken)return;detailRows=[];host.innerHTML='<div class="notice danger"><b>Daily detail could not load from server.</b><br>'+escHtml(e?.message||e)+'</div>';}}
   function thisWeek(){const now=new Date(),diff=(now.getDay()+6)%7,a=new Date(now);a.setDate(now.getDate()-diff);const b=new Date(a);b.setDate(a.getDate()+6);const f=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;$('monthlyReportFrom').value=f(a);$('monthlyReportTo').value=f(b);window.renderMonthlyReport?.();render();}
