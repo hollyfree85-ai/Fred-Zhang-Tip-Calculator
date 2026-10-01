@@ -10288,7 +10288,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.6';
+const ES_BUILD='ES1.8.7';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -13751,7 +13751,7 @@ window.es18UpdateBiometricUi=function(){
   if(b)b.classList.toggle('hidden',!['employee','manager','owner','cashier'].includes(currentProfile?.role));
 };
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.es18UpdateBiometricUi(),{once:true});else window.es18UpdateBiometricUi();
-// ES1.8.6 — Employee Daily Detail / Weekly & Range landscape report.
+// ES1.8.7 — Employee Daily Detail PDF readability / zebra landscape report.
 (function(){
   const money=v=>'$'+monthlyReportRound(v).toFixed(2),num=v=>monthlyReportNum(v),escHtml=v=>esc(String(v??''));
   let detailToken=0,detailRows=[];
@@ -13770,11 +13770,48 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   function fit(s,w,size){s=String(s??'');const max=Math.max(2,Math.floor((w-4)/(size*.5)));return s.length>max?s.slice(0,Math.max(1,max-1))+'~':s;}
   function pdfBlob(rows,employee,from,to){
     const cols=[['Date',52,'date','left'],['Shift',43,'shift','left'],['Position',52,'position','left'],['Sales',48,'sales','right'],['Paid Tip',48,'paidTip','right'],['Card Fee',43,'cardFee','right'],['Bus AM',43,'busserAM','right'],['Bus PM',43,'busserPM','right'],['Bar Out',43,'barOut','right'],['Bar Recv',46,'barReceived','right'],['Cash Tip',45,'cashTip','right'],['Meal',42,'meal','right'],['Adj',42,'adjustment','right'],['Before Meal',52,'beforeMeal','right'],['Paid Out',50,'paidOut','right'],['Grand Tip',50,'grandTip','right']];
-    const scale=744/cols.reduce((a,c)=>a+c[1],0);cols.forEach(c=>c[1]*=scale);const per=17,pages=[];for(let i=0;i<rows.length;i+=per)pages.push(rows.slice(i,i+per));if(!pages.length)pages.push([]);const t=totals(rows),obj=[],pageIds=[],contentIds=[];let next=3;for(let p=0;p<pages.length;p++){pageIds.push(next++);contentIds.push(next++);}const f1=next++,f2=next++;
-    for(let p=0;p<pages.length;p++){let c='';c+='0.055 0.14 0.25 rg 24 548 744 42 re f\n1 1 1 rg\n';c+=pText('F2',15,36,573,'Fred Zhang Tip Calculator - Employee Daily Detail');c+=pText('F1',8.5,36,558,employee+' | '+from+' to '+to);c+=pText('F1',7.5,690,558,`Page ${p+1}/${pages.length}`);c+='0 0 0 rg\n';let y=530,x=24,h=21;c+='0.90 0.94 0.98 rg 24 '+(y-h+4)+' 744 '+h+' re f\n0 0 0 rg\n';for(const col of cols){c+=pText('F2',5.8,x+2,y-10,fit(col[0],col[1],5.8));x+=col[1];}y-=h;
-      for(const r of pages[p]){x=24;c+=`0.82 G 0.35 w 24 ${y-h+4} 744 ${h} re S\n0 G\n`;for(const col of cols){let v=r[col[2]];if(typeof v==='number')v=money(v);const txt=fit(v,col[1],5.7),approx=txt.length*5.7*.5,tx=col[3]==='right'?Math.max(x+2,x+col[1]-3-approx):x+2;c+=pText('F1',5.7,tx,y-10,txt);x+=col[1];}y-=h;}
-      if(p===pages.length-1){x=24;c+='0.96 0.97 0.99 rg 24 '+(y-h+4)+' 744 '+h+' re f\n0 0 0 rg\n';for(const col of cols){let v=t[col[2]];if(col[2]==='date')v='TOTAL';else if(['shift','position'].includes(col[2]))v='';else if(typeof v==='number')v=money(v);const txt=fit(v,col[1],5.8),approx=txt.length*5.8*.5,tx=col[3]==='right'?Math.max(x+2,x+col[1]-3-approx):x+2;c+=pText('F2',5.8,tx,y-10,txt);x+=col[1];}}
-      c+=pText('F1',6.7,24,34,'Paid Out = saved Daily Report payout (Before Meal - Meal + accepted Hourly Adjustment). Cash Tip is already received.');obj[contentIds[p]]=`<< /Length ${c.length} >>\nstream\n${c}\nendstream`;obj[pageIds[p]]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${contentIds[p]} 0 R >>`;}
+    const scale=744/cols.reduce((a,c)=>a+c[1],0);cols.forEach(c=>c[1]*=scale);
+    const per=15,pages=[];for(let i=0;i<rows.length;i+=per)pages.push(rows.slice(i,i+per));if(!pages.length)pages.push([]);
+    const t=totals(rows),obj=[],pageIds=[],contentIds=[];let next=3;for(let p=0;p<pages.length;p++){pageIds.push(next++);contentIds.push(next++);}const f1=next++,f2=next++;
+    const headerLabels={date:'DATE',shift:'SHIFT',position:'POSITION',sales:'SALES',paidTip:'PAID TIP',cardFee:'CARD FEE',busserAM:'BUS AM',busserPM:'BUS PM',barOut:'BAR OUT',barReceived:'BAR RECV',cashTip:'CASH TIP',meal:'MEAL',adjustment:'ADJ',beforeMeal:'BEFORE MEAL',paidOut:'PAID OUT',grandTip:'GRAND TIP'};
+    for(let p=0;p<pages.length;p++){
+      let c='';
+      // Dark navy report banner.
+      c+='0.055 0.14 0.25 rg 24 548 744 42 re f\n1 1 1 rg\n';
+      c+=pText('F2',15,36,573,'Fred Zhang Tip Calculator - Employee Daily Detail');
+      c+=pText('F1',8.5,36,558,employee+' | '+from+' to '+to);
+      c+=pText('F1',7.5,690,558,`Page ${p+1}/${pages.length}`);
+      c+='0 0 0 rg\n';
+      let y=526,x=24,h=25;
+      // Strong blue header with white labels and visible column dividers.
+      c+='0.12 0.32 0.52 rg 24 '+(y-h+4)+' 744 '+h+' re f\n';
+      x=24;
+      for(const col of cols){
+        c+='0.55 0.72 0.86 RG 0.35 w '+x+' '+(y-h+4)+' '+col[1]+' '+h+' re S\n';
+        c+='1 1 1 rg\n';
+        c+=pText('F2',5.7,x+2,y-11,fit(headerLabels[col[2]]||col[0],col[1],5.7));
+        x+=col[1];
+      }
+      y-=h;
+      pages[p].forEach((r,idx)=>{
+        x=24;
+        // Zebra rows: white and very light blue.
+        c+=(idx%2===0?'1 1 1 rg ':'0.92 0.96 0.99 rg ')+`24 ${y-h+4} 744 ${h} re f\n`;
+        c+='0.76 0.83 0.90 RG 0.30 w\n';
+        for(const col of cols)c+=`${x} ${y-h+4} ${col[1]} ${h} re S\n`,x+=col[1];
+        c+='0.05 0.10 0.16 rg\n';x=24;
+        for(const col of cols){let v=r[col[2]];if(typeof v==='number')v=money(v);const txt=fit(v,col[1],5.85),approx=txt.length*5.85*.5,tx=col[3]==='right'?Math.max(x+2,x+col[1]-3-approx):x+2;c+=pText('F1',5.85,tx,y-11,txt);x+=col[1];}
+        y-=h;
+      });
+      if(p===pages.length-1){
+        x=24;c+='0.82 0.90 0.97 rg 24 '+(y-h+4)+' 744 '+h+' re f\n0.04 0.12 0.22 rg\n';
+        for(const col of cols){let v=t[col[2]];if(col[2]==='date')v='TOTAL';else if(['shift','position'].includes(col[2]))v='';else if(typeof v==='number')v=money(v);const txt=fit(v,col[1],5.9),approx=txt.length*5.9*.5,tx=col[3]==='right'?Math.max(x+2,x+col[1]-3-approx):x+2;c+=pText('F2',5.9,tx,y-11,txt);x+=col[1];}
+      }
+      c+='0.25 0.32 0.40 rg\n';
+      c+=pText('F1',6.7,24,34,'Paid Out = saved Daily Report payout (Before Meal - Meal + accepted Hourly Adjustment). Cash Tip is already received.');
+      obj[contentIds[p]]=`<< /Length ${c.length} >>\nstream\n${c}\nendstream`;
+      obj[pageIds[p]]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 792 612] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${contentIds[p]} 0 R >>`;
+    }
     obj[1]='<< /Type /Catalog /Pages 2 0 R >>';obj[2]=`<< /Type /Pages /Kids [${pageIds.map(id=>id+' 0 R').join(' ')}] /Count ${pageIds.length} >>`;obj[f1]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';obj[f2]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>';const max=f2;let pdf='%PDF-1.4\n',off=[0];for(let i=1;i<=max;i++){off[i]=pdf.length;pdf+=`${i} 0 obj\n${obj[i]}\nendobj\n`;}const xr=pdf.length;pdf+=`xref\n0 ${max+1}\n0000000000 65535 f \n`;for(let i=1;i<=max;i++)pdf+=String(off[i]).padStart(10,'0')+' 00000 n \n';pdf+=`trailer\n<< /Size ${max+1} /Root 1 0 R >>\nstartxref\n${xr}\n%%EOF`;return new Blob([pdf],{type:'application/pdf'});
   }
   window.downloadEmployeeDailyDetailPdf=async function(){if(!['manager','owner'].includes(currentProfile?.role||''))return;const {from,to,employee}=monthlyReportRange();if(!employee){alert('Choose one Employee first.');return;}try{const all=await fetchRange(from,to),rows=aggregate(all.filter(r=>String(r?.employee||'').trim()===employee));detailRows=rows;if(!rows.length){alert('No finalized Daily Reports found for this employee and period.');return;}const safe=employee.replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'Employee';downloadBlob(pdfBlob(rows,employee,from,to),`Fred_Zhang_Daily_Detail_${safe}_${from}_to_${to}.pdf`);}catch(e){alert('Daily Detail PDF was not created.\n\n'+String(e?.message||e));}};
