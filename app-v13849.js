@@ -188,6 +188,8 @@ const WORK_PROFILES=Object.freeze([
 ]);
 const accountEmployeeRoster=new Map();
 function employeeWorkProfile(name){
+  const generated=String(name||'').match(/^(.*?) \u00b7 (AM|PM|DOUBLE|LONG|2-4|10:45-2) \u00b7 (Server|Bartender)$/);
+  if(generated)return {name:String(name),position:generated[3],personName:generated[1]};
   const key=slugFor(name);
   const known=WORK_PROFILES.find(p=>slugFor(p.name)===key);
   if(known)return known;
@@ -4691,7 +4693,7 @@ function shouldExcludeHistoricalReport(r){
   return false;
 }
 
-function fzEmployeeIdentityKey(name){
+function fzEmployeeIdentityKey(employeeWorkProfile(name)?.personName||name){
   return String(name||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"");
 }
 
@@ -4708,7 +4710,7 @@ async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=fa
     const r=ds.data()||{};
     const patch={};
     if(String(r.employeeUid||"")!==uid)patch.employeeUid=uid;
-    const key=fzEmployeeIdentityKey(name);
+    const key=fzEmployeeIdentityKey(employeeWorkProfile(name)?.personName||name);
     if(String(r.employeeKey||"")!==key)patch.employeeKey=key;
     if(Object.keys(patch).length){
       patch.accountLinkedAt=serverTimestamp();
@@ -10288,7 +10290,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.8';
+const ES_BUILD='ES1.8.9';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10603,8 +10605,9 @@ function esRenderRows(){
   const body=$('esRows');if(!body)return;
   const needle=String($('esSearch')?.value||'').trim().toLowerCase();
   body.innerHTML=s.rows.map((row,idx)=>{
-    const state=esRowStatus(row),show=!needle||row.name.toLowerCase().includes(needle);
-    return `<tr data-es-index="${idx}"${!show?' hidden':''}><th scope="row" class="es-name"><b>${esc(row.name)}</b><span class="es-state" data-kind="${state.kind}">${esc(state.text)}</span><div class="es-row-actions">${['Save','Sign','Print'].map(action=>`<button type="button" data-es-action="${action.toLowerCase()}" data-es-row="${idx}" aria-label="${action} ${esc(row.name)}">${action}</button>`).join('')}</div><span class="es-row-message"></span></th>${ES_COLUMNS.map(([field,label,,group])=>`<td data-es-col="${field}" class="es-cell es-${group}${field==='payout'?' es-payout':''}">${ES_FIELDS.includes(field)?esInput(row,field,label):`<div class="es-computed" data-es-out="${field}">${esOutput(row,field)}</div>`}</td>`).join('')}</tr>`;
+    const state=esRowStatus(row),displaySearch=(employeeWorkProfile(row.name)?.personName||row.name).toLowerCase(),show=!needle||displaySearch.includes(needle);
+    const displayName=employeeWorkProfile(row.name)?.personName||row.name;
+    return `<tr data-es-index="${idx}"${!show?' hidden':''}><th scope="row" class="es-name"><b>${esc(displayName)}</b><small style="display:block;margin:.2rem 0;color:#60758a;font-weight:800">${esc(row.shift)} · ${esc(row.role)}</small><span class="es-state" data-kind="${state.kind}">${esc(state.text)}</span><div class="es-row-actions">${['Save','Sign','Print'].map(action=>`<button type="button" data-es-action="${action.toLowerCase()}" data-es-row="${idx}" aria-label="${action} ${esc(row.name)}">${action}</button>`).join('')}</div><span class="es-row-message"></span></th>${ES_COLUMNS.map(([field,label,,group])=>`<td data-es-col="${field}" class="es-cell es-${group}${field==='payout'?' es-payout':''}">${ES_FIELDS.includes(field)?esInput(row,field,label):`<div class="es-computed" data-es-out="${field}">${esOutput(row,field)}</div>`}</td>`).join('')}</tr>`;
   }).join('');
   if(!s.rows.length)body.innerHTML=`<tr><td colspan="27" class="es-empty">Start with Team / BAR → select an employee → Add. No need to open individual forms.</td></tr>`;
   esUpdateSummary();
@@ -10818,7 +10821,7 @@ async function esCommit(name,signature=null,expectedSignatureFingerprint=''){
     const source=subSnap?.exists()?subSnap.data():null;
     const validSource=hourlyReportBelongsTo(source,name,s.date)?sourceId:'';
     const sigPatch=esSignaturePatch(before,calculated,signature);
-    const payload={...calculated,...sigPatch,sourceSubmissionId:validSource,status:'money_ready',employeeKey:fzEmployeeIdentityKey(name),reportIdentityVersion:'13.8.28',employeeSheetBuild:ES_BUILD,updatedAt:serverTimestamp(),updatedBy:currentProfile.displayName||currentProfile.username||''};
+    const payload={...calculated,...sigPatch,sourceSubmissionId:validSource,status:'money_ready',employeeKey:fzEmployeeIdentityKey(employeeWorkProfile(name)?.personName||name),reportIdentityVersion:'13.8.28',employeeSheetBuild:ES_BUILD,updatedAt:serverTimestamp(),updatedBy:currentProfile.displayName||currentProfile.username||''};
     if(validSource&&source.employeeUid)payload.employeeUid=source.employeeUid;
     if(before)tx.update(reportRef,payload);
     else tx.set(reportRef,{...payload,createdAt:serverTimestamp(),createdByUid:s.uid,createdBy:currentProfile.displayName||currentProfile.username||''});
@@ -11767,7 +11770,7 @@ esCommit=async function(name,signature=null,expectedSignatureFingerprint=''){
     const sourceId=before?.sourceSubmissionId||batch.drafts[name].sourceSubmissionId||'',subRef=sourceId?doc(db,'submissions',sourceId):null,subSnap=subRef?await tx.get(subRef):null;
     const source=subSnap?.exists()?subSnap.data():null,validSource=hourlyReportBelongsTo(source,name,s.date)?sourceId:'';
     const sigPatch=esSignaturePatch(before,calculated,signature),savedRow=es14CleanRow(row),fingerprint=esFingerprint(calculated);
-    const payload={...calculated,...sigPatch,sourceSubmissionId:validSource,status:'money_ready',employeeKey:fzEmployeeIdentityKey(name),reportIdentityVersion:'13.8.28',employeeSheetBuild:ES_BUILD,employeeSheetRevision:Number(raw.employeeSheetRevision||0)+1,employeeSheetRow:savedRow,employeeSheetFingerprint:fingerprint,updatedAt:serverTimestamp(),updatedBy:currentProfile.displayName||currentProfile.username||''};
+    const payload={...calculated,...sigPatch,sourceSubmissionId:validSource,status:'money_ready',employeeKey:fzEmployeeIdentityKey(employeeWorkProfile(name)?.personName||name),reportIdentityVersion:'13.8.28',employeeSheetBuild:ES_BUILD,employeeSheetRevision:Number(raw.employeeSheetRevision||0)+1,employeeSheetRow:savedRow,employeeSheetFingerprint:fingerprint,updatedAt:serverTimestamp(),updatedBy:currentProfile.displayName||currentProfile.username||''};
     if(validSource&&source.employeeUid)payload.employeeUid=source.employeeUid;
     if(before)tx.update(reportRef,payload);else tx.set(reportRef,{...payload,createdAt:serverTimestamp(),createdByUid:s.uid,createdBy:currentProfile.displayName||currentProfile.username||''});
     if(validSource)tx.update(subRef,{status:'money_ready',hourlyStatus:'finalized',hourlyReportId:reportRef.id,finalReport:{...calculated},...(signature?{pickupSignature:signature,signatureStatus:'SIGNED'}:sigPatch.pickupSignature===null?{pickupSignature:null,signatureStatus:'PENDING'}:{}),updatedAt:serverTimestamp()});
@@ -12055,6 +12058,8 @@ function tt15DirectoryStart(){
   },e=>{tt15Directory.ready=false;tt15Message('Employee list could not sync: '+(e.message||e),true);tt15DirectoryPaint();});
 }
 function tt15TeamRows(batch={},host={}){
+  const explicit=Array.isArray(batch.todayTeamAssignments)&&batch.todayTeamAssignments.length?batch.todayTeamAssignments:(Array.isArray(host.todayTeamAssignments)?host.todayTeamAssignments:null);
+  if(explicit)return explicit.map(r=>({name:tt15CanonicalName(r.name),role:r.role,shift:r.shift}));
   const rows=[];
   for(const name of batch.team||[]){const v=batch.drafts?.[name]?.values||{};rows.push({name,role:esFixedRole(name)||(['Server','Bartender'].includes(v.hPosition)?v.hPosition:'Server'),shift:v.hShift||''});}
   const am=new Set((host.employeesAM||[]).filter(Boolean)),pm=new Set((host.employeesPM||[]).filter(Boolean));
@@ -12066,6 +12071,16 @@ function tt15TeamRows(batch={},host={}){
   }
   return rows;
 }
+function tt15CanonicalName(name){return employeeWorkProfile(name)?.personName||String(name||'').split(' \u00b7 ')[0]||name;}
+function tt15AssignmentWorkRows(rows){
+  const counts=new Map(),seen=new Map();
+  for(const r of rows)counts.set(tt15Key(r.name),(counts.get(tt15Key(r.name))||0)+1);
+  return rows.map(r=>{
+    const key=tt15Key(r.name),n=(seen.get(key)||0)+1;seen.set(key,n);
+    const workName=counts.get(key)>1 && n>1 ? `${r.name} \u00b7 ${r.shift} \u00b7 ${r.role}` : r.name;
+    return {...r,personName:r.name,workName};
+  });
+}
 function tt15HostMembership(rows){
   const hosts=rows.filter(r=>tt15Host(r.role));
   const am=hosts.filter(r=>['AM','DOUBLE',SHIFT_EARLY,SHIFT_MIDDLE].includes(r.shift)).map(r=>r.name);
@@ -12074,32 +12089,28 @@ function tt15HostMembership(rows){
   return {hosts,am,pm};
 }
 function tt15TeamValidate(rows,directory){
-  const seen=new Set();for(const r of rows){
+  const counts=new Map(),assignments=new Set();
+  for(const r of rows){
     if(!tt15NameValid(r.name))throw new Error('Select a valid employee for every row.');
-    const key=tt15Key(r.name);if(seen.has(key))throw new Error(tt15Label(r.name)+' is listed twice. Use the existing separate work profiles for two positions.');seen.add(key);
+    const key=tt15Key(r.name),count=(counts.get(key)||0)+1;counts.set(key,count);
+    if(count>3)throw new Error(tt15Label(r.name)+' can have a maximum of 3 shifts in one day.');
     if(!TT15_ROLES.includes(r.role))throw new Error('Choose a position for '+tt15Label(r.name)+'.');
     if(!(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).includes(r.shift))throw new Error('Choose a supported shift for '+tt15Label(r.name)+'.');
-    const fixed=esFixedRole(r.name);if(fixed&&fixed!==r.role)throw new Error(r.name+' is a '+fixed+' work profile. Choose the matching profile.');
+    const assignment=key+'|'+r.shift+'|'+r.role;if(assignments.has(assignment))throw new Error(tt15Label(r.name)+' already has that shift + role.');assignments.add(assignment);
   }
   tt15HostMembership(rows);return true;
 }
 function tt15MergeTeam(base,edited,remote){
-  const result=tt15Copy(remote),conflicts=[];
-  for(const old of base){
-    const local=edited.find(r=>r.name===old.name),current=result.find(r=>r.name===old.name);
-    if(!local){if(current&&!tt15Same(current,old))conflicts.push(old.name);else if(current)result.splice(result.indexOf(current),1);continue;}
-    if(!current){if(!tt15Same(local,old))conflicts.push(old.name);continue;}
-    for(const f of ['role','shift'])if(local[f]!==old[f]){if(current[f]!==old[f]&&current[f]!==local[f])conflicts.push(old.name);else current[f]=local[f];}
-  }
-  for(const row of edited)if(!base.some(r=>r.name===row.name)){
-    const current=result.find(r=>r.name===row.name);if(current&&!tt15Same(current,row))conflicts.push(row.name);else if(!current)result.push(tt15Copy(row));
-  }
-  if(conflicts.length){const e=new Error('Another device changed '+[...new Set(conflicts)].join(', ')+'. Review the latest team before updating. Your edits are kept.');e.teamConflict=true;throw e;}
-  return result;
+  // Multi-role rows are ordered assignments. If another device changed the team after
+  // this editor opened, keep the local draft and require a reload instead of guessing.
+  if(!tt15Same(base,remote) && !tt15Same(edited,remote)){const e=new Error('Another device changed today\'s team. Reload and review; your edits are kept.');e.teamConflict=true;throw e;}
+  return tt15Copy(edited);
 }
 function tt15BuildTeam(raw,host,rows,date){
   const batch=tt15Copy(raw||{});batch.date=date;batch.drafts ||= {};hv1EnsureBarState(batch);
-  const servers=rows.filter(r=>!tt15Host(r.role)),removed=new Set(batch.todayTeamRemoved||[]);
+  const workRows=tt15AssignmentWorkRows(rows);
+  batch.todayTeamAssignments=rows.map(r=>({name:r.name,role:r.role,shift:r.shift}));
+  const servers=workRows.filter(r=>!tt15Host(r.role)).map(r=>({...r,name:r.workName})),removed=new Set(batch.todayTeamRemoved||[]);
   for(const name of batch.team||[])if(!servers.some(r=>r.name===name))removed.add(name);
   const resultRows=esRowsFromBatch({...batch,team:servers.map(r=>r.name)},[],date);
   for(const input of servers){
@@ -12123,7 +12134,7 @@ function tt15BuildTeam(raw,host,rows,date){
     for(const name of Object.keys(built.bar[cp].entries||{}))if(!allowed.has(name))delete built.bar[cp].entries[name];
   }
   hv1ApplyBarAutomation(built);
-  const membership=tt15HostMembership(rows),hc=tt15Copy(host||{});hc.date=date;hc.team ||= {};hc.staffDetails ||= {};
+  const membership=tt15HostMembership(rows),hc=tt15Copy(host||{});hc.date=date;hc.todayTeamAssignments=rows.map(r=>({name:r.name,role:r.role,shift:r.shift}));hc.team ||= {};hc.staffDetails ||= {};
   for(const name of Object.keys(hc.team))hc.team[name]={...hc.team[name],working:false};
   for(const row of membership.hosts){hc.team[row.name]={...(hc.team[row.name]||{}),working:true,shift:row.shift,position:row.role};hc.staffDetails[row.name]={...(hc.staffDetails[row.name]||{}),role:row.role};}
   hc.employeesAM=[...membership.am,...Array(7-membership.am.length).fill('')];hc.employeesPM=[...membership.pm,...Array(7-membership.pm.length).fill('')];
@@ -12156,7 +12167,7 @@ function tt15Init(){
   $('tt15AddRow').onclick=()=>{if(tt15State?.editing&&!tt15State.busy){tt15State.rows.push({name:'',role:'Server',shift:'AM'});tt15Render();}};
   $('tt15Rows').addEventListener('change',e=>{const i=Number(e.target.dataset.ttIndex),key=e.target.dataset.ttField,s=tt15State;if(!key||!s?.editing||s.busy)return;const row=s.rows[i];if(!row)return;
     row[key]=e.target.value;
-    if(key==='name'){const entry=tt15DirectoryEntries().find(x=>x.name===row.name);row.role=esFixedRole(row.name)||entry?.defaultRole||'Server';}
+    if(key==='name'){const entry=tt15DirectoryEntries().find(x=>x.name===row.name);row.role=entry?.defaultRole||'Server';}
     if(tt15Host(row.role)&&!TT15_HOST_SHIFTS.includes(row.shift))row.shift='PM';
     tt15Render();
   });
@@ -12177,7 +12188,7 @@ function tt15Render(){
   $('tt15Manage').disabled=!!s.busy;
   $('tt15Rows').innerHTML=s.rows.map((r,i)=>{
     const options=directory.filter(e=>e.active||e.name===r.name);if(r.name&&!options.some(e=>e.name===r.name))options.push({name:r.name,displayName:r.name,active:false});
-    return `<tr><td><select data-tt-index="${i}" data-tt-field="name" aria-label="Employee ${i+1}"${!editable?' disabled':''}>${esOption('','Select employee',r.name)}${options.map(e=>esOption(e.name,e.displayName+(e.active?'':' (inactive)'),r.name)).join('')}</select></td><td><select data-tt-index="${i}" data-tt-field="role" aria-label="Position ${i+1}"${!editable||esFixedRole(r.name)?' disabled':''}>${TT15_ROLES.map(x=>esOption(x,x,r.role)).join('')}</select></td><td><select data-tt-index="${i}" data-tt-field="shift" aria-label="Shift ${i+1}"${!editable?' disabled':''}>${esOption('','Choose shift',r.shift)}${(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>esOption(x,x==='DOUBLE'?'Double':x==='LONG'?'Long':x,r.shift)).join('')}</select></td><td><button type="button" data-tt-remove="${i}" aria-label="Remove ${esc(r.name||'row')} from this team"${!editable?' disabled':''}>✕</button></td></tr>`;
+    return `<tr><td><select data-tt-index="${i}" data-tt-field="name" aria-label="Employee ${i+1}"${!editable?' disabled':''}>${esOption('','Select employee',r.name)}${options.map(e=>esOption(e.name,e.displayName+(e.active?'':' (inactive)'),r.name)).join('')}</select></td><td><select data-tt-index="${i}" data-tt-field="role" aria-label="Position ${i+1}"${!editable?' disabled':''}>${TT15_ROLES.map(x=>esOption(x,x,r.role)).join('')}</select></td><td><select data-tt-index="${i}" data-tt-field="shift" aria-label="Shift ${i+1}"${!editable?' disabled':''}>${esOption('','Choose shift',r.shift)}${(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>esOption(x,x==='DOUBLE'?'Double':x==='LONG'?'Long':x,r.shift)).join('')}</select></td><td><button type="button" data-tt-remove="${i}" aria-label="Remove ${esc(r.name||'row')} from this team"${!editable?' disabled':''}>✕</button></td></tr>`;
   }).join('')||'<tr><td colspan="4">No team yet. Click Edit Team, then Add row.</td></tr>';
 }
 window.fzOpenTodayTeam=async function(date){
@@ -12195,6 +12206,14 @@ window.fzOpenTodayTeam=async function(date){
       if(!s.busy)tt15Message(s.ready?(s.editing?'Edit team, then Update Team.':'Live · '+rows.length+' employees'):'Checking cloud…');}
   };
   for(const [kind,col]of [['batch','hourlyV1Batches'],['host','hostCashierTipReports']])s.unsubs.push(onSnapshot(doc(db,col,workdate),{includeMetadataChanges:true},snap=>accept(kind,snap),e=>{if(tt15State===s){s.ready=false;tt15Message('Team could not sync: '+(e.message||e)+'. Reopen Today\'s Team to retry.',true);tt15Render();}}));
+  // HP/mobile safeguard: if realtime metadata stalls, perform one direct server read.
+  setTimeout(async()=>{
+    if(tt15State!==s||s.ready||token!==tt15Token)return;
+    try{
+      const [bs,hs]=await Promise.all([getDocFromServer(doc(db,'hourlyV1Batches',workdate)),getDocFromServer(doc(db,'hostCashierTipReports',workdate))]);
+      if(tt15State!==s||token!==tt15Token)return;accept('batch',bs);accept('host',hs);
+    }catch(e){if(tt15State===s&&!s.ready)tt15Message('Still connecting… Check connection or tap Home and reopen Today\'s Team.',true);}
+  },3500);
 };
 async function tt15UpdateTeam(){
   const s=tt15State;if(!s?.ready||!s.editing||s.busy)return false;
@@ -12473,7 +12492,7 @@ async function hc15Commit(name,signature=null,expected=''){
     const fp=hc15Fingerprint(r);
     if(signature&&fp!==expected)throw new Error('Amounts or team changed while signing. Cancel, review the updated row, then sign again. Your signature remains visible.');
     const same=hc184SameFingerprint(before?.hostCashierFingerprint,fp),sig=signature||(same?before?.pickupSignature:null);
-    const report={...r,hostCashierFingerprint:fp,pickupSignature:sig||null,signatureStatus:sig?'SIGNED':'PENDING',status:'money_ready',employeeSheetBuild:ES_BUILD,employeeKey:fzEmployeeIdentityKey(name),reportIdentityVersion:'13.8.28',updatedAt:serverTimestamp(),updatedBy:currentProfile?.displayName||currentProfile?.username||''};
+    const report={...r,hostCashierFingerprint:fp,pickupSignature:sig||null,signatureStatus:sig?'SIGNED':'PENDING',status:'money_ready',employeeSheetBuild:ES_BUILD,employeeKey:fzEmployeeIdentityKey(employeeWorkProfile(name)?.personName||name),reportIdentityVersion:'13.8.28',updatedAt:serverTimestamp(),updatedBy:currentProfile?.displayName||currentProfile?.username||''};
     const next=tt15Copy(data);next.sheetFinalized ||= {};next.sheetFinalized[tt15Key(name)]={id:reportRef.id,fingerprint:fp,signed:!!sig};next.signatures ||= {AM:{},PM:{}};
     for(const cp of ['AM','PM']){
       next.signatures[cp] ||= {};const amount=r['hostCashierTip'+cp],active=(data['employees'+cp]||[]).includes(name);
@@ -13781,7 +13800,7 @@ window.es18UpdateBiometricUi=function(){
   if(b)b.classList.toggle('hidden',!['employee','manager','owner','cashier'].includes(currentProfile?.role));
 };
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.es18UpdateBiometricUi(),{once:true});else window.es18UpdateBiometricUi();
-// ES1.8.8 — Fast Employee Daily Detail + ES1.8.7 readable landscape PDF.
+// ES1.8.9 — Fast Employee Daily Detail + ES1.8.7 readable landscape PDF.
 (function(){
   const money=v=>'$'+monthlyReportRound(v).toFixed(2),num=v=>monthlyReportNum(v),escHtml=v=>esc(String(v??''));
   let detailToken=0,detailRows=[];
@@ -13842,7 +13861,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
   }
   function table(rows){const t=totals(rows),row=r=>`<tr><td>${escHtml(r.date)}</td><td>${escHtml(r.shift)}</td><td>${escHtml(r.position)}</td>${keys.map(k=>`<td>${money(r[k])}</td>`).join('')}</tr>`;return `<div class="fz186-scroll"><table class="fz186-table"><thead><tr><th>Date</th><th>Shift</th><th>Position</th><th>Sales</th><th>Paid Tip</th><th>Card Fee</th><th>Busser AM</th><th>Busser PM</th><th>Bar Out</th><th>Bar Received</th><th>Cash Tip</th><th>Meal</th><th>Adjustment</th><th>Before Meal</th><th>Paid Out</th><th>Grand Tip</th></tr></thead><tbody>${rows.map(row).join('')}</tbody><tfoot>${row(t)}</tfoot></table></div>`;}
-  async function render(){const host=document.getElementById('fz186DailyDetail');if(!host)return;const {from,to,employee}=monthlyReportRange();if(!employee){detailRows=[];host.innerHTML='<div class="notice">Choose one Employee to see the daily breakdown.</div>';return;}if(!validDate(from)||!validDate(to)||from>to){detailRows=[];host.innerHTML='<div class="notice danger">Choose a valid Start Date and End Date.</div>';return;}const token=++detailToken;host.innerHTML='<div class="notice">Loading finalized daily reports from server…</div>';try{const all=await fetchRange(from,to);if(token!==detailToken)return;const rows=aggregate(all.filter(r=>String(r?.employee||'').trim()===employee));detailRows=rows;if(!rows.length){host.innerHTML='<div class="notice">No finalized Daily Reports found for '+escHtml(employee)+' in this period.</div>';return;}const t=totals(rows);host.innerHTML=`<div class="fz186-detail-head"><div><b>${escHtml(employee)}</b><span>${escHtml(from)} to ${escHtml(to)} · ${rows.length} work day${rows.length===1?'':'s'}</span></div><button class="btn dark" type="button" id="fz186PdfBtn">DOWNLOAD DAILY TABLE PDF</button></div>${table(rows)}<div class="small fz186-note"><b>Paid Out</b> = saved payout after Meal and accepted Hourly Adjustment. <b>Grand Tip</b> = Before Meal + Cash Tip. Cash Tip is already received and is not added to Paid Out.</div>`;document.getElementById('fz186PdfBtn').onclick=()=>window.downloadEmployeeDailyDetailPdf();if(document.getElementById('monthlyReportStatus'))document.getElementById('monthlyReportStatus').innerHTML=`<div class="notice good"><b>${escHtml(employee)}</b> · ${rows.length} daily row${rows.length===1?'':'s'} · Paid Out ${money(t.paidOut)} · Cash Tip ${money(t.cashTip)} · Grand Tip ${money(t.grandTip)}</div>`;}catch(e){if(token!==detailToken)return;detailRows=[];host.innerHTML='<div class="notice danger"><b>Daily detail could not load from server.</b><br>'+escHtml(e?.message||e)+'</div>';}}
+  async function render(){const host=document.getElementById('fz186DailyDetail');if(!host)return;const {from,to,employee}=monthlyReportRange();if(!employee){detailRows=[];host.innerHTML='<div class="notice">Choose one Employee to see the daily breakdown.</div>';return;}if(!validDate(from)||!validDate(to)||from>to){detailRows=[];host.innerHTML='<div class="notice danger">Choose a valid Start Date and End Date.</div>';return;}const token=++detailToken;host.innerHTML='<div class="notice">Loading finalized daily reports from server…</div>';try{const all=await fetchRange(from,to);if(token!==detailToken)return;const rows=aggregate(all.filter(r=>String(r?.personName||employeeWorkProfile(r?.employee)?.personName||r?.employee||'').trim()===employee));detailRows=rows;if(!rows.length){host.innerHTML='<div class="notice">No finalized Daily Reports found for '+escHtml(employee)+' in this period.</div>';return;}const t=totals(rows);host.innerHTML=`<div class="fz186-detail-head"><div><b>${escHtml(employee)}</b><span>${escHtml(from)} to ${escHtml(to)} · ${rows.length} work day${rows.length===1?'':'s'}</span></div><button class="btn dark" type="button" id="fz186PdfBtn">DOWNLOAD DAILY TABLE PDF</button></div>${table(rows)}<div class="small fz186-note"><b>Paid Out</b> = saved payout after Meal and accepted Hourly Adjustment. <b>Grand Tip</b> = Before Meal + Cash Tip. Cash Tip is already received and is not added to Paid Out.</div>`;document.getElementById('fz186PdfBtn').onclick=()=>window.downloadEmployeeDailyDetailPdf();if(document.getElementById('monthlyReportStatus'))document.getElementById('monthlyReportStatus').innerHTML=`<div class="notice good"><b>${escHtml(employee)}</b> · ${rows.length} daily row${rows.length===1?'':'s'} · Paid Out ${money(t.paidOut)} · Cash Tip ${money(t.cashTip)} · Grand Tip ${money(t.grandTip)}</div>`;}catch(e){if(token!==detailToken)return;detailRows=[];host.innerHTML='<div class="notice danger"><b>Daily detail could not load from server.</b><br>'+escHtml(e?.message||e)+'</div>';}}
   function thisWeek(){const now=new Date(),diff=(now.getDay()+6)%7,a=new Date(now);a.setDate(now.getDate()-diff);const b=new Date(a);b.setDate(a.getDate()+6);const f=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;$('monthlyReportFrom').value=f(a);$('monthlyReportTo').value=f(b);window.renderMonthlyReport?.();render();}
   function pEsc(s){return String(s??'').replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').normalize('NFKD').replace(/[^\x20-\x7E]/g,' ');}
   function pText(font,size,x,y,s){return `BT /${font} ${size} Tf ${x.toFixed(2)} ${y.toFixed(2)} Td (${pEsc(s)}) Tj ET\n`;}
@@ -13893,7 +13912,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
     obj[1]='<< /Type /Catalog /Pages 2 0 R >>';obj[2]=`<< /Type /Pages /Kids [${pageIds.map(id=>id+' 0 R').join(' ')}] /Count ${pageIds.length} >>`;obj[f1]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';obj[f2]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>';const max=f2;let pdf='%PDF-1.4\n',off=[0];for(let i=1;i<=max;i++){off[i]=pdf.length;pdf+=`${i} 0 obj\n${obj[i]}\nendobj\n`;}const xr=pdf.length;pdf+=`xref\n0 ${max+1}\n0000000000 65535 f \n`;for(let i=1;i<=max;i++)pdf+=String(off[i]).padStart(10,'0')+' 00000 n \n';pdf+=`trailer\n<< /Size ${max+1} /Root 1 0 R >>\nstartxref\n${xr}\n%%EOF`;return new Blob([pdf],{type:'application/pdf'});
   }
-  window.downloadEmployeeDailyDetailPdf=async function(){if(!['manager','owner'].includes(currentProfile?.role||''))return;const {from,to,employee}=monthlyReportRange();if(!employee){alert('Choose one Employee first.');return;}try{const all=await fetchRange(from,to),rows=aggregate(all.filter(r=>String(r?.employee||'').trim()===employee));detailRows=rows;if(!rows.length){alert('No finalized Daily Reports found for this employee and period.');return;}const safe=employee.replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'Employee';downloadBlob(pdfBlob(rows,employee,from,to),`Fred_Zhang_Daily_Detail_${safe}_${from}_to_${to}.pdf`);}catch(e){alert('Daily Detail PDF was not created.\n\n'+String(e?.message||e));}};
+  window.downloadEmployeeDailyDetailPdf=async function(){if(!['manager','owner'].includes(currentProfile?.role||''))return;const {from,to,employee}=monthlyReportRange();if(!employee){alert('Choose one Employee first.');return;}try{const all=await fetchRange(from,to),rows=aggregate(all.filter(r=>String(r?.personName||employeeWorkProfile(r?.employee)?.personName||r?.employee||'').trim()===employee));detailRows=rows;if(!rows.length){alert('No finalized Daily Reports found for this employee and period.');return;}const safe=employee.replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'Employee';downloadBlob(pdfBlob(rows,employee,from,to),`Fred_Zhang_Daily_Detail_${safe}_${from}_to_${to}.pdf`);}catch(e){alert('Daily Detail PDF was not created.\n\n'+String(e?.message||e));}};
   function install(){
     const section=$('monthlyReport');if(!section||section.dataset.es186==='1')return false;section.dataset.es186='1';
     const actions=section.querySelector('.fz-monthly-head .actions');if(actions&&!$('fz186ThisWeek')){const b=document.createElement('button');b.id='fz186ThisWeek';b.type='button';b.className='btn light';b.textContent='THIS WEEK';b.onclick=thisWeek;actions.insertBefore(b,actions.firstChild);}
