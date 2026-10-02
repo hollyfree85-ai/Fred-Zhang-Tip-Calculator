@@ -3882,7 +3882,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es1892",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es1893",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -12058,7 +12058,12 @@ function tt15DirectoryStart(){
   },e=>{tt15Directory.ready=false;tt15Message('Employee list could not sync: '+(e.message||e),true);tt15DirectoryPaint();});
 }
 function tt15TeamRows(batch={},host={}){
-  const explicit=Array.isArray(batch.todayTeamAssignments)&&batch.todayTeamAssignments.length?batch.todayTeamAssignments:(Array.isArray(host.todayTeamAssignments)?host.todayTeamAssignments:null);
+  // ES1.8.9 routing hotfix: only the hourly batch owns the full multi-role
+  // assignment list. Host/Cashier-only consumers must project from the host
+  // membership arrays below; host.todayTeamAssignments intentionally contains
+  // the whole Today's Team snapshot for cross-document reconstruction and must
+  // never be rendered as Host/Cashier membership.
+  const explicit=Array.isArray(batch.todayTeamAssignments)&&batch.todayTeamAssignments.length?batch.todayTeamAssignments:null;
   if(explicit)return explicit.map(r=>({name:tt15CanonicalName(r.name),role:r.role,shift:r.shift}));
   const rows=[];
   for(const name of batch.team||[]){const v=batch.drafts?.[name]?.values||{};rows.push({name,role:esFixedRole(name)||(['Server','Bartender'].includes(v.hPosition)?v.hPosition:'Server'),shift:v.hShift||''});}
