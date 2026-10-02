@@ -4693,7 +4693,7 @@ function shouldExcludeHistoricalReport(r){
   return false;
 }
 
-function fzEmployeeIdentityKey(employeeWorkProfile(name)?.personName||name){
+function fzEmployeeIdentityKey(name){
   return String(name||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"");
 }
 
