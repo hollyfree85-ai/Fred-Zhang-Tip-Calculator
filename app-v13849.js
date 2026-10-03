@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18110",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18130",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -5860,7 +5860,7 @@ function pdfReportContent(r,index,total){
 
   // Employee identity card
   c+=box(28,646,556,46,"0.96 0.975 0.995");
-  c+=txt("F2",16,42,674,String(r.employee||"Employee"));
+  c+=txt("F2",16,42,674,String(smallReportCanonicalPerson(r)||r.employee||"Employee"));
   c+=txt("F1",9,42,658,`${position}  |  ${shift||"-"}`);
   c+=txt("F1",8.5,430,674,"STATUS");
   c+=txt("F2",10.5,430,657,String(r.status||"MONEY READY").replaceAll("_"," ").toUpperCase());
@@ -6198,7 +6198,7 @@ function buildSmallReportThermalHtml(r){
   // being scaled down from Android's default wide WebView viewport.
   const signature=smallReportSignatureSvg(r.pickupSignature,500,160);
   const rows=[
-    ["Name",r.employee||""],
+    ["Name",smallReportCanonicalPerson(r)||r.employee||""],
     ["Shift",r.shift||""],
     ["Grand Total",thermalReceiptMoney(r.grandTotal)],
     ["Paid Tip",thermalReceiptMoney(r.paidTip)],
@@ -6366,22 +6366,27 @@ function restoreSmallReportAfterPassPrnt(state){
   setTimeout(reopen,450);
 }
 
+function smallReportCanonicalPerson(r){
+  const raw=String(r?.personName||r?.employee||'').trim();
+  return raw?canonicalEmployeeName(raw).split(' · ')[0].trim():'';
+}
 function smallReportFilteredRows(){
   const date=$("smallReportDate")?.value||"";
   const employee=$("smallReportEmployee")?.value||"";
+  const wanted=employee?canonicalEmployeeName(employee).split(' · ')[0].trim():'';
   return [...latestHourlyReports]
-    .filter(r=>(!date||r.date===date)&&(!employee||r.employee===employee))
+    .filter(r=>(!date||r.date===date)&&(!wanted||smallReportCanonicalPerson(r)===wanted))
     .sort((a,b)=>{
       const d=String(b.date||"").localeCompare(String(a.date||""));
-      return d || String(a.employee||"").localeCompare(String(b.employee||""));
+      return d || smallReportCanonicalPerson(a).localeCompare(smallReportCanonicalPerson(b)) || String(a.shift||'').localeCompare(String(b.shift||''));
     });
 }
 
 function populateSmallReportEmployeeFilter(){
   const sel=$("smallReportEmployee");
   if(!sel)return;
-  const current=sel.value;
-  const names=[...new Set(latestHourlyReports.map(r=>r.employee).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const current=canonicalEmployeeName(sel.value||'').split(' · ')[0].trim();
+  const names=[...new Set(latestHourlyReports.map(smallReportCanonicalPerson).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   sel.innerHTML=`<option value="">All Employees</option>`+
     names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
   if(names.includes(current))sel.value=current;
@@ -6530,7 +6535,7 @@ function buildSmallReportPrintableHtml(rows){
         const c=smallReportClockFields(r);
         return `<tr>
           <td>${safe(r.date||"")}</td>
-          <td><span class="emp">${safe(r.employee||"")}</span><br>${safe(r.position||"")}</td>
+          <td><span class="emp">${safe(smallReportCanonicalPerson(r)||r.employee||"")}</span><br>${safe(r.position||"")}</td>
           <td>${safe(r.shift||"")}</td>
           <td>${safe(c.in1||"")}</td><td>${safe(c.out1||"")}</td>
           <td>${safe(c.in2||"")}</td><td>${safe(c.out2||"")}</td>
@@ -6735,7 +6740,7 @@ window.openSmallReportDetail=function(reportId){
   if(!r){alert("Report not found.");return;}
   const c=smallReportClockFields(r);
   const barLabel=String(r.position||"").toLowerCase()==="bartender"?"Bar Tip Out Received":"Bar Tip Out";
-  $("smallReportDetailTitle").textContent=r.employee||"Employee Report";
+  $("smallReportDetailTitle").textContent=smallReportCanonicalPerson(r)||r.employee||"Employee Report";
   $("smallReportDetailSub").textContent=`${r.date||""} • ${r.position||""} • ${r.shift||""}`;
   $("smallReportDetailBody").innerHTML=`
     <div class="sr-detail-grid">
@@ -7129,7 +7134,7 @@ window.renderSmallReport=function(){
     return `<tr class="small-report-name-row">
       <td>
         <button class="small-report-name-btn" type="button" onclick="openSmallReportDetail('${r.id}')">
-          ${esc(r.employee||"")}
+          ${esc(smallReportCanonicalPerson(r)||r.employee||"")}
         </button>
       </td>
     </tr>`;
@@ -7156,7 +7161,7 @@ function smallReportHtmlXlsBlob(rows){
 
     return `<tr style="height:96px">
       <td>${escH(r.date||"")}</td>
-      <td><b>${escH(r.employee||"")}</b><br><span>${escH(r.position||"")}</span></td>
+      <td><b>${escH(smallReportCanonicalPerson(r)||r.employee||"")}</b><br><span>${escH(r.position||"")}</span></td>
       <td>${escH(r.shift||"")}</td>
       <td>${escH(c.in1||"")}</td>
       <td>${escH(c.out1||"")}</td>
@@ -10335,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.12';
+const ES_BUILD='ES1.8.13';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12050,7 +12055,8 @@ window.fzOpenFinalReport=function(mode='daily',date=''){
   const daily=smallReportFilteredRows,monthly=monthlyReportFilteredReports,renderDaily=window.renderSmallReport,renderMonthly=window.renderMonthlyReport,openSheet=window.employeeSheetOpen;
   smallReportFilteredRows=function(){
     if(!frState.open||frState.mode!=='daily')return daily();
-    const {from,employee}=frRange();return [...frState.rows].filter(r=>(!from||r.date===from)&&(!employee||r.employee===employee)).sort((a,b)=>String(b.date).localeCompare(String(a.date))||String(a.employee).localeCompare(String(b.employee)));
+    const {from,employee}=frRange(),wanted=employee?canonicalEmployeeName(employee).split(' · ')[0].trim():'';
+    return [...frState.rows].filter(r=>(!from||r.date===from)&&(!wanted||smallReportCanonicalPerson(r)===wanted)).sort((a,b)=>String(b.date).localeCompare(String(a.date))||smallReportCanonicalPerson(a).localeCompare(smallReportCanonicalPerson(b))||String(a.shift||'').localeCompare(String(b.shift||'')));
   };
   monthlyReportFilteredReports=function(){
     if(!frState.open||frState.mode!=='monthly')return monthly();
@@ -12083,7 +12089,7 @@ try{onAuthStateChanged(auth,user=>{if(!user||!frAllowed())frExit();});}catch(e){
  * reports are never renamed/deleted. Team and host membership commit atomically.
  */
 const TT15_ROLES=['Server','Bartender','Host','Cashier','Host / Cashier'];
-const TT15_HOST_SHIFTS=['AM','PM','DOUBLE',SHIFT_EARLY,SHIFT_MIDDLE];
+const TT15_HOST_SHIFTS=[...TIP_SHIFTS];
 const TT15_POOLS=['cashAM','creditAM','cashPM','creditPM'];
 let tt15State=null,tt15Token=0,tt15Directory={uid:'',data:{},ready:false,unsub:null};
 let hc15Session=null,hc15Sig=null,hc15Credit=null;
@@ -12134,8 +12140,14 @@ function tt15TeamRows(batch={},host={}){
   for(const name of batch.team||[]){const v=batch.drafts?.[name]?.values||{};rows.push({name,role:esFixedRole(name)||(['Server','Bartender'].includes(v.hPosition)?v.hPosition:'Server'),shift:v.hShift||''});}
   const am=new Set((host.employeesAM||[]).filter(Boolean)),pm=new Set((host.employeesPM||[]).filter(Boolean));
   for(const name of new Set([...am,...pm])){
-    const original=host.team?.[name]?.shift;
-    const shift=am.has(name)&&pm.has(name)?'DOUBLE':am.has(name)&&[SHIFT_EARLY,SHIFT_MIDDLE].includes(original)?original:am.has(name)?'AM':'PM';
+    const original=String(host.team?.[name]?.shift||'').toUpperCase();
+    // Preserve an explicit Host/Cashier shift only when the AM/PM membership
+    // still matches that shift. LONG starts at 2 PM, so it participates in the
+    // AM (2–4) pool and the PM pool; unlike DOUBLE it must reload as LONG.
+    const originalAM=['AM','DOUBLE','LONG',SHIFT_EARLY,SHIFT_MIDDLE].includes(original);
+    const originalPM=['PM','DOUBLE','LONG'].includes(original);
+    const preserveOriginal=['AM','PM','DOUBLE','LONG',SHIFT_EARLY,SHIFT_MIDDLE].includes(original)&&am.has(name)===originalAM&&pm.has(name)===originalPM;
+    const shift=preserveOriginal?original:(am.has(name)&&pm.has(name)?'DOUBLE':am.has(name)?'AM':'PM');
     const role=host.staffDetails?.[name]?.role||host.team?.[name]?.position||'Host / Cashier';
     rows.push({name,role:tt15Host(role)?role:'Host / Cashier',shift});
   }
@@ -12153,8 +12165,8 @@ function tt15AssignmentWorkRows(rows){
 }
 function tt15HostMembership(rows){
   const hosts=rows.filter(r=>tt15Host(r.role));
-  const am=hosts.filter(r=>['AM','DOUBLE',SHIFT_EARLY,SHIFT_MIDDLE].includes(r.shift)).map(r=>r.name);
-  const pm=hosts.filter(r=>['PM','DOUBLE'].includes(r.shift)).map(r=>r.name);
+  const am=hosts.filter(r=>['AM','DOUBLE','LONG',SHIFT_EARLY,SHIFT_MIDDLE].includes(r.shift)).map(r=>r.name);
+  const pm=hosts.filter(r=>['PM','DOUBLE','LONG'].includes(r.shift)).map(r=>r.name);
   if(am.length>7||pm.length>7)throw new Error('Host / Cashier: maximum 7 employees per AM or PM, matching the existing split.');
   return {hosts,am,pm};
 }
@@ -13485,7 +13497,7 @@ async function es184FinalDailyRows(){
   const guard=()=>{es184ReadGuard(uid);if(($('smallReportDate')?.value||'')!==date||($('smallReportEmployee')?.value||'')!==employee)throw new Error('Report filter changed. Please download again.');};
   const all=await es184SavedReports(date,guard);
   const host=await hc184CompleteSavedRows(all.filter(es16ExportIsHost),date,guard);guard();
-  return [...all.filter(r=>!es16ExportIsHost(r)),...host].filter(r=>!employee||r.employee===employee).sort((a,b)=>String(a.employee).localeCompare(String(b.employee)));
+  return [...all.filter(r=>!es16ExportIsHost(r)),...host].filter(r=>!employee||smallReportCanonicalPerson(r)===canonicalEmployeeName(employee).split(' · ')[0].trim()).sort((a,b)=>smallReportCanonicalPerson(a).localeCompare(smallReportCanonicalPerson(b))||String(a.shift||'').localeCompare(String(b.shift||'')));
 }
 function hc184TipAmount(r,period){
   const value=r['hostCashierTip'+period];

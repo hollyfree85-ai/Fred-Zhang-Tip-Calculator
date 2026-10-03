@@ -140,6 +140,7 @@ function renderRoster(){
         <option value="AM" ${t.shift==="AM"?"selected":""}>AM</option>
         <option value="PM" ${t.shift==="PM"?"selected":""}>PM</option>
         <option value="DOUBLE" ${t.shift==="DOUBLE"?"selected":""}>DOUBLE</option>
+        <option value="LONG" ${t.shift==="LONG"?"selected":""}>LONG</option>
         ${["10:45 - 14:00","14:00 - 16:00"].map(k=>`<option value="${k}" ${t.shift===k?"selected":""}>${k}</option>`).join("")}
       </select>
     </label>`;
@@ -153,7 +154,7 @@ function renderRoster(){
     state.team[name]={working:!!ck.checked,shift:x.value||"AM"};markDirty();
   }));
 }
-function selectedFromTeam(shift){return Object.entries(state.team||{}).filter(([_,v])=>v?.working&&(v.shift===shift||v.shift==="DOUBLE"||(shift==="AM"&&["10:45 - 14:00","14:00 - 16:00"].includes(v.shift)))).map(([name])=>name)}
+function selectedFromTeam(shift){return Object.entries(state.team||{}).filter(([_,v])=>v?.working&&(v.shift===shift||v.shift==="DOUBLE"||v.shift==="LONG"||(shift==="AM"&&["10:45 - 14:00","14:00 - 16:00"].includes(v.shift)))).map(([name])=>name)}
 function createTeam(){
   const am=selectedFromTeam("AM"),pm=selectedFromTeam("PM");
   if(am.length>7||pm.length>7){alert("Maximum 7 employees per shift.");return}
