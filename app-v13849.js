@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18130",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18140",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.13';
+const ES_BUILD='ES1.8.14';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12182,6 +12182,32 @@ function tt15TeamValidate(rows,directory){
   }
   tt15HostMembership(rows);return true;
 }
+function tt15BartenderDuplicateGroups(rows){
+  const groups=new Map();
+  for(const r of rows||[]){
+    if(String(r?.role||'')!=='Bartender'||!tt15NameValid(r?.name)||!r?.shift)continue;
+    const shift=String(r.shift),key=shift.toUpperCase();
+    if(!groups.has(key))groups.set(key,{shift,names:[]});
+    const g=groups.get(key),label=tt15Label(r.name);
+    if(!g.names.includes(label))g.names.push(label);
+  }
+  return [...groups.values()].filter(g=>g.names.length>1);
+}
+function tt15DuplicateBartenderDialog(group){
+  return new Promise(resolve=>{
+    const modal=$('tt15BartenderDuplicateModal'),text=$('tt15BartenderDuplicateText'),cancel=$('tt15BartenderDuplicateCancel'),cont=$('tt15BartenderDuplicateContinue');
+    if(!modal||!text||!cancel||!cont){resolve(window.confirm(`${group.shift} already has bartender ${group.names[0]}. Continue with ${group.names.length} bartenders in the same shift?`));return;}
+    const first=group.names[0],extra=group.names.slice(1).join(', ');
+    text.textContent=`${group.shift} already has bartender ${first}. Additional bartender: ${extra}. Continue with more than one bartender in this shift?`;
+    modal.classList.remove('hidden');
+    const finish=value=>{modal.classList.add('hidden');cancel.onclick=null;cont.onclick=null;resolve(value);};
+    cancel.onclick=()=>finish(false);cont.onclick=()=>finish(true);cont.focus();
+  });
+}
+async function tt15ConfirmDuplicateBartenders(rows){
+  for(const group of tt15BartenderDuplicateGroups(rows))if(!await tt15DuplicateBartenderDialog(group))return false;
+  return true;
+}
 function tt15MergeTeam(base,edited,remote){
   // Multi-role rows are ordered assignments. If another device changed the team after
   // this editor opened, keep the local draft and require a reload instead of guessing.
@@ -12226,7 +12252,7 @@ function tt15BuildTeam(raw,host,rows,date){
   return {batch:built,host:hc};
 }
 function tt15Message(text,error=false){const el=$('tt15Status');if(el){el.textContent=text;el.dataset.error=error?'1':'0';}}
-function tt15Close(){if(tt15State){tt15State.unsubs.forEach(u=>u());tt15State.unsubs=[];tt15State.open=false;}++tt15Token;$('todayTeamPage')?.classList.add('hidden');document.body.classList.remove('tt15-active');}
+function tt15Close(){if(tt15State){tt15State.unsubs.forEach(u=>u());tt15State.unsubs=[];tt15State.open=false;}++tt15Token;$('tt15BartenderDuplicateModal')?.classList.add('hidden');$('todayTeamPage')?.classList.add('hidden');document.body.classList.remove('tt15-active');}
 function tt15Init(){
   if($('todayTeamPage'))return;const parent=$('staffApp');if(!parent)return;
   const page=document.createElement('section');page.id='todayTeamPage';page.className='staffPanel tt15-page hidden';
@@ -12236,6 +12262,7 @@ function tt15Init(){
     <div class="tt15-team-grid"><table class="tt15-table"><thead><tr><th>Employee</th><th>Position</th><th>Shift</th><th></th></tr></thead><tbody id="tt15Rows"></tbody></table></div>
     <div class="tt15-actions"><button type="button" id="tt15AddRow">＋ Add row</button><button type="button" id="tt15Cancel">Cancel edits</button><button type="button" class="tt15-primary" id="tt15Update">Update Team</button></div>
     <p class="tt15-hint">Server / Bartender → upper sheet. Host / Cashier → lower sheet. Updating the team does not delete saved reports.</p>
+    <div id="tt15BartenderDuplicateModal" class="tt15-modal hidden" role="dialog" aria-modal="true" aria-labelledby="tt15BartenderDuplicateTitle"><div class="tt15-dialog"><header><h3 id="tt15BartenderDuplicateTitle">Bartender already assigned</h3></header><p id="tt15BartenderDuplicateText" class="tt15-hint"></p><div class="tt15-actions"><button type="button" id="tt15BartenderDuplicateCancel">Cancel</button><button type="button" class="tt15-primary" id="tt15BartenderDuplicateContinue">Continue</button></div></div></div>
     <div id="tt15DirectoryPanel" class="tt15-modal hidden" role="dialog" aria-modal="true" aria-labelledby="tt15DirectoryTitle"><div class="tt15-dialog"><header><h3 id="tt15DirectoryTitle">Manage Employee</h3><button type="button" id="tt15DirectoryClose" aria-label="Close manage employee">✕</button></header>
     <p class="tt15-hint">Team roster only. Login accounts stay in Users. Editing a display name keeps the original report identity.</p><div class="tt15-directory-toolbar"><input type="search" id="tt15DirectorySearch" placeholder="Find employee" aria-label="Find employee in directory"><button type="button" id="tt15New">＋ Add Employee</button></div>
     <div id="tt15DirectoryEdit" class="hidden"><label>Employee name / display name<input id="tt15EmployeeName" maxlength="100" autocomplete="off"></label><label>Default position<select id="tt15EmployeeRole">${TT15_ROLES.map(r=>esOption(r,r,'Server')).join('')}</select></label><label>Phone (optional)<input id="tt15EmployeePhone" type="tel" maxlength="40" autocomplete="off"></label><div class="tt15-actions"><button id="tt15EmployeeCancel" type="button">Cancel</button><button id="tt15EmployeeSave" type="button" class="tt15-primary">Save Employee</button></div></div>
@@ -12300,6 +12327,7 @@ window.fzOpenTodayTeam=async function(date){
 async function tt15UpdateTeam(){
   const s=tt15State;if(!s?.ready||!s.editing||s.busy)return false;
   try{tt15Require(s.uid);tt15TeamValidate(s.rows);if(!s.rows.length&&!confirm('Remove everyone from this date’s active team? Saved reports and archived drafts will remain.'))return false;}catch(e){tt15Message(e.message,true);return false;}
+  if(!await tt15ConfirmDuplicateBartenders(s.rows)){tt15Message('Update canceled. Team edits are still here.');return false;}
   const edited=tt15Copy(s.rows),base=tt15Copy(s.baseRows);s.busy=true;tt15Render();tt15Message('Updating both sections…');
   try{
     const result=await runTransaction(db,async tx=>{
