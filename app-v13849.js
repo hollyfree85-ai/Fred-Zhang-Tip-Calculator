@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18101",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18110",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -9828,28 +9828,43 @@ function monthlyReportRange(){
     employee:String($("monthlyReportEmployee")?.value||"")
   };
 }
+function monthlyReportCanonicalPerson(report){
+  const raw=String(report?.personName||report?.employee||"").trim();
+  if(!raw)return "";
+  return canonicalEmployeeName(raw).split(" · ")[0].trim();
+}
+function monthlyReportShiftRank(value){
+  const key=String(value||"").trim().toUpperCase().replace(/–/g,"-");
+  const order={"AM":10,"10:45-2":20,"2-4":30,"2PM_4PM":30,"PM":40,"DOUBLE":50,"LONG":60};
+  return Object.prototype.hasOwnProperty.call(order,key)?order[key]:100;
+}
+function monthlyReportJoinShifts(values){
+  return [...values].filter(Boolean).sort((a,b)=>monthlyReportShiftRank(a)-monthlyReportShiftRank(b)||String(a).localeCompare(String(b))).join(" / ");
+}
 function monthlyReportFilteredReports(){
   const {from,to,employee}=monthlyReportRange();
   if(from&&to&&from>to)return [];
+  const wanted=employee?canonicalEmployeeName(employee).split(" · ")[0].trim():"";
   return (latestHourlyReports||[]).filter(r=>{
     const date=String(r?.date||"");
-    const name=String(r?.employee||"").trim();
-    return date&&name&&(!from||date>=from)&&(!to||date<=to)&&(!employee||name===employee);
+    const name=monthlyReportCanonicalPerson(r);
+    return date&&name&&(!from||date>=from)&&(!to||date<=to)&&(!wanted||name===wanted);
   });
 }
 function monthlyReportSummaries(){
   const groups=new Map();
   for(const raw of monthlyReportFilteredReports()){
     const r=typeof reportForWorkPosition==="function"?reportForWorkPosition(raw):raw;
-    const name=String(r?.employee||"Unknown Employee").trim()||"Unknown Employee";
+    const name=monthlyReportCanonicalPerson(r)||"Unknown Employee";
     const key=name.toLocaleLowerCase();
     if(!groups.has(key))groups.set(key,{
-      employee:name,dates:new Set(),positions:new Set(),reports:0,hours:0,grandTotal:0,paidTip:0,cardFee:0,
+      employee:name,dates:new Set(),shifts:new Set(),positions:new Set(),reports:0,hours:0,grandTotal:0,paidTip:0,cardFee:0,
       busserAM:0,busserPM:0,busserTotal:0,barTipOut:0,barTipReceived:0,cashTip:0,grandTip:0,meal:0,
       adjustment:0,totalPaidOut:0,netToEmployee:0
     });
     const s=groups.get(key);
     if(r.date)s.dates.add(String(r.date));
+    if(r.shift)s.shifts.add(String(r.shift));
     if(r.position)s.positions.add(String(r.position));
     s.reports++;
     s.hours+=monthlyReportHours(r);
@@ -9870,7 +9885,7 @@ function monthlyReportSummaries(){
     s.netToEmployee+=paidOut+monthlyReportNum(r.cashTip);
   }
   return [...groups.values()].map(s=>({
-    ...s,days:s.dates.size,positionsText:[...s.positions].sort().join(" / "),
+    ...s,days:s.dates.size,shiftsText:monthlyReportJoinShifts(s.shifts),positionsText:[...s.positions].sort().join(" / "),
     hours:monthlyReportRound(s.hours),grandTotal:monthlyReportRound(s.grandTotal),paidTip:monthlyReportRound(s.paidTip),
     cardFee:monthlyReportRound(s.cardFee),busserAM:monthlyReportRound(s.busserAM),busserPM:monthlyReportRound(s.busserPM),
     busserTotal:monthlyReportRound(s.busserTotal),barTipOut:monthlyReportRound(s.barTipOut),barTipReceived:monthlyReportRound(s.barTipReceived),
@@ -9891,8 +9906,8 @@ function monthlyReportTotals(rows){
 }
 function monthlyReportPopulateEmployee(){
   const sel=$("monthlyReportEmployee");if(!sel)return;
-  const current=sel.value||"";
-  const names=[...new Set((latestHourlyReports||[]).map(r=>String(r.employee||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const current=canonicalEmployeeName(sel.value||"").split(" · ")[0].trim();
+  const names=[...new Set((latestHourlyReports||[]).map(r=>monthlyReportCanonicalPerson(r)).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   sel.innerHTML='<option value="">All Employees</option>'+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
   if(names.includes(current))sel.value=current;
 }
@@ -10038,13 +10053,15 @@ initMonthlyReportUi();
   const oldRender=window.renderMonthlyReport;
 
   monthlyReportHeaderHtml=function(){
-    return `<tr><th>Name</th><th>Total Hours</th><th>Paid Tip</th><th>Cash Tip</th><th>Paid Tip Before Meal</th>
+    return `<tr><th>Name</th><th>Shift</th><th>Position</th><th>Total Hours</th><th>Paid Tip</th><th>Cash Tip</th><th>Paid Tip Before Meal</th>
       <th>Busser Tip Out AM</th><th>Busser Tip Out PM</th><th>Bar Tip Out</th><th>Bar Tip Out Received</th><th>Sales</th><th>Hourly Adjustment</th></tr>`;
   };
 
   monthlyReportTableRowsHtml=function(rows){
     return rows.map(r=>`<tr>
       <td class="fz-monthly-name"><b>${esc(r.employee)}</b></td>
+      <td>${esc(r.shiftsText||"-")}</td>
+      <td>${esc(r.positionsText||"-")}</td>
       <td>${r.hours.toFixed(2)}</td>
       <td>${monthlyReportMoney(r.paidTip)}</td>
       <td>${monthlyReportMoney(r.cashTip)}</td>
@@ -10059,7 +10076,7 @@ initMonthlyReportUi();
   };
 
   monthlyReportTotalRowHtml=function(t){
-    return `<tr class="fz-monthly-total"><td><b>TOTAL</b></td>
+    return `<tr class="fz-monthly-total"><td><b>TOTAL</b></td><td>—</td><td>—</td>
       <td>${t.hours.toFixed(2)}</td>
       <td>${monthlyReportMoney(t.paidTip)}</td>
       <td>${monthlyReportMoney(t.cashTip)}</td>
@@ -10131,6 +10148,8 @@ initMonthlyReportUi();
     const source=isAll?totals:(rows.find(r=>String(r.employee||"")===selectedEmployee)||rows[0]||totals);
     const summary={
       name:isAll?"ALL EMPLOYEES":String(source.employee||selectedEmployee||"Employee"),
+      shifts:isAll?"Mixed":String(source.shiftsText||"-"),
+      positions:isAll?"Mixed":String(source.positionsText||"-"),
       hours:monthlyReportNum(source.hours),
       paidTip:monthlyReportNum(source.paidTip),
       cashTip:monthlyReportNum(source.cashTip),
@@ -10179,12 +10198,13 @@ initMonthlyReportUi();
     c+="0 0 0 rg\n";
 
     // Name / scope strip
-    c+="0.94 0.97 1 rg 34 642 544 26 re f\n";
-    c+="0.76 0.84 0.91 RG 0.8 w 34 642 544 26 re S\n0 G\n";
-    c+="0.055 0.14 0.25 rg\n"; // ES1.4: restore readable text after pale strip fill.
-    c+=monthlyPdfCellText("F2",11,46,650,520,isAll?"SUMMARY: ALL EMPLOYEES":`EMPLOYEE: ${summary.name}`,"left");
+    c+="0.94 0.97 1 rg 34 630 544 38 re f\n";
+    c+="0.76 0.84 0.91 RG 0.8 w 34 630 544 38 re S\n0 G\n";
+    c+="0.055 0.14 0.25 rg\n"; // readable identity strip
+    c+=monthlyPdfCellText("F2",10.5,46,650,520,isAll?"SUMMARY: ALL EMPLOYEES":`EMPLOYEE: ${summary.name}`,"left");
+    c+=monthlyPdfCellText("F1",8.4,46,636,520,`SHIFT: ${summary.shifts}   |   POSITION: ${summary.positions}`,"left");
 
-    const xL=34,xR=314,w=264,h=68,gap=10,top=626;
+    const xL=34,xR=314,w=264,h=68,gap=10,top=614;
     for(let i=0;i<5;i++){
       const y=top-h-i*(h+gap);
       c+=card(xL,y,w,h,left[i][0],left[i][1],left[i][2]);
@@ -10249,7 +10269,7 @@ initMonthlyReportUi();
     }
   }
   const style=document.createElement("style");style.id="fzMonthlySimpleSummaryStyles";style.textContent=`
-    #monthlyReport .fz-monthly-table{min-width:1450px!important}
+    #monthlyReport .fz-monthly-table{min-width:1700px!important}
     #monthlyReport .fz-monthly-table th,#monthlyReport .fz-monthly-table td{padding:11px 10px!important}
     #monthlyReport .fz-monthly-table th:first-child,#monthlyReport .fz-monthly-table td:first-child{min-width:180px!important}
     #monthlyReport .fz-monthly-simple-note{margin-top:10px;color:#64748b;line-height:1.45}
@@ -10315,7 +10335,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.10';
+const ES_BUILD='ES1.8.11';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
