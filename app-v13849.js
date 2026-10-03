@@ -174,13 +174,31 @@ let tipCheckPollTimer=null;
 
 
 
-const EMPLOYEE_ROSTER = Object.freeze(["Adrieanna Walker", "Aida Gonzales", "Alainna Montalvo", "Angela Grizzad", "Ariana Garner", "Ashley Garcia", "Brandi Copeland", "Caitlin Dillon", "Christina Gurley", "Cynthia Risner", "Dorothy Makovicka", "Fred Zhang", "Hannah Dempsey", "Jesus Ovalle-Munoz", "Katelyn Ramsey", "Libby Lane", "Megan Meadows", "Megan Sisk", "Mia Burress", "Mia Gibson", "Ruwini Rathnayaka", "Sara Swift", "Sarah Kibler", "Sasha Safitri", "Shaniya Scott", "T'Aljah Boyd", "Vidya Caroline"]);
+const EMPLOYEE_ROSTER = Object.freeze(["Adrieanna Walker", "Aida Gonzales", "Alainna Montalvo", "Angela Gizzard", "Ariana Garner", "Ashley Garcia", "Brandi Copeland", "Caitlin Dillon", "Christina Gurley", "Cynthia Risner", "Dorothy Makovicka", "Fred Zhang", "Hannah Dempsey", "Jesus Ovalle-Munoz", "Katelyn Ramsey", "Libby Lane", "Megan Meadows", "Megan Sisk", "Mia Burress", "Mia Gibson", "Ruwini Rathnayaka", "Sara Swift", "Sarah Kibler", "Sasha Safitri", "Shaniya Scott", "T'Aljah Boyd", "Vidya Caroline"]);
 
-const RECOVERED_EMPLOYEE_PHONES = Object.freeze({"Adrieanna Walker":"9382181403","Aida Gonzales":"2567555902","Alainna Montalvo":"2563211032","Angela Grizzad":"2569455956","Ariana Garner":"2569539676","Ashley Garcia":"2568366171","Brandi Copeland":"2565596641","Caitlin Dillon":"2568933734","Christina Gurley":"2564796386","Cynthia Risner":"2566795133","Dorothy Makovicka":"2566985722","Fred Zhang":"9098718416","Hanif Fitroh":"8502389020","Hannah Dempsey":"9316522095","Jesus Ovalle-Munoz":"7028329771","Katelyn Ramsey":"2055229939","Libby Lane":"2565728615","Megan Meadows":"9314922850","Megan Sisk":"2562867040","Mia Burress":"8646140631","Mia Gibson":"12563615765","Rizky Santoso":"18502380977","Ruwini Rathnayaka":"2566521938","Sara Swift":"2565052238","Sarah Kibler":"5105891306","Sasha Safitri":"3347132951","T'Aijah Boyd":"2565518870","Vidya Caroline":"8187494818","Shaniya Scott":"13147042742","T'Aljah Boyd":"2565518870"});
+const RECOVERED_EMPLOYEE_PHONES = Object.freeze({"Adrieanna Walker":"9382181403","Aida Gonzales":"2567555902","Alainna Montalvo":"2563211032","Angela Gizzard":"2569455956","Ariana Garner":"2569539676","Ashley Garcia":"2568366171","Brandi Copeland":"2565596641","Caitlin Dillon":"2568933734","Christina Gurley":"2564796386","Cynthia Risner":"2566795133","Dorothy Makovicka":"2566985722","Fred Zhang":"9098718416","Hanif Fitroh":"8502389020","Hannah Dempsey":"9316522095","Jesus Ovalle-Munoz":"7028329771","Katelyn Ramsey":"2055229939","Libby Lane":"2565728615","Megan Meadows":"9314922850","Megan Sisk":"2562867040","Mia Burress":"8646140631","Mia Gibson":"12563615765","Rizky Santoso":"18502380977","Ruwini Rathnayaka":"2566521938","Sara Swift":"2565052238","Sarah Kibler":"5105891306","Sasha Safitri":"3347132951","T'Aijah Boyd":"2565518870","Vidya Caroline":"8187494818","Shaniya Scott":"13147042742","T'Aljah Boyd":"2565518870"});
+
+const EMPLOYEE_IDENTITY_GROUPS=Object.freeze([
+  Object.freeze({canonical:"Angela Gizzard",aliases:Object.freeze(["Angela Gizzard","Angela Grizzad","Angela Server","Angela Bar"])}),
+  Object.freeze({canonical:"Caitlin Dillon",aliases:Object.freeze(["Caitlin Dillon","Caitlin Bar"])})
+]);
+function canonicalEmployeeName(name){
+  const clean=String(name||"").trim().replace(/\s+/g," ");
+  if(!clean)return clean;
+  const middle=clean.match(/^(.*?) \u00b7 (AM|PM|DOUBLE|LONG|2-4|10:45-2) \u00b7 (Server|Bartender)$/i);
+  const base=middle?middle[1]:clean;
+  const group=EMPLOYEE_IDENTITY_GROUPS.find(g=>g.aliases.some(a=>a.toLowerCase()===base.toLowerCase()));
+  if(!group)return clean;
+  return middle?`${group.canonical} \u00b7 ${middle[2].toUpperCase()} \u00b7 ${middle[3][0].toUpperCase()+middle[3].slice(1).toLowerCase()}`:group.canonical;
+}
+function employeeIdentityAliases(name){
+  const canonical=canonicalEmployeeName(name).split(' \u00b7 ')[0];
+  return EMPLOYEE_IDENTITY_GROUPS.find(g=>g.canonical===canonical)?.aliases||[canonical];
+}
 
 const ANGELA_WORK_PROFILES=Object.freeze([
-  Object.freeze({name:"Angela Bar",position:"Bartender",personName:"Angela Grizzad"}),
-  Object.freeze({name:"Angela Server",position:"Server",personName:"Angela Grizzad"})
+  Object.freeze({name:"Angela Bar",position:"Bartender",personName:"Angela Gizzard"}),
+  Object.freeze({name:"Angela Server",position:"Server",personName:"Angela Gizzard"})
 ]);
 const WORK_PROFILES=Object.freeze([
   ...ANGELA_WORK_PROFILES,
@@ -207,10 +225,11 @@ function applyEmployeeWorkProfile(){
   if($("ePosition")){$("ePosition").disabled=!!profile;if(profile)$("ePosition").value=profile.position;}
 }
 
-const dynamicEmployeeRoster=new Set([...EMPLOYEE_ROSTER,...ANGELA_WORK_PROFILES.map(p=>p.name)]);
+const dynamicEmployeeRoster=new Set([...EMPLOYEE_ROSTER]);
 function getEmployeeRoster(){
-  const names=new Map([...dynamicEmployeeRoster].filter(Boolean).map(n=>[normalizeEmployeeNameKey(n),n]));
-  for(const [key,u] of accountEmployeeRoster)if(!names.has(key))names.set(key,u.displayName);
+  const names=new Map();
+  for(const raw of [...dynamicEmployeeRoster].filter(Boolean)){const n=canonicalEmployeeName(raw);names.set(normalizeEmployeeNameKey(n),n);}
+  for(const u of accountEmployeeRoster.values()){const n=canonicalEmployeeName(u.displayName);const key=normalizeEmployeeNameKey(n);if(!names.has(key))names.set(key,n);}
   return [...names.values()].sort((a,b)=>a.localeCompare(b));
 }
 function syncEmployeeAccountRoster(users){
@@ -218,8 +237,8 @@ function syncEmployeeAccountRoster(users){
   for(const u of users||[]){
     if(String(u.role||'').toLowerCase()!=='employee' || u.active===false
       || String(u.approvalStatus||'').toLowerCase()!=='approved')continue;
-    const name=String(u.displayName||u.username||'').trim().replace(/\s+/g,' ');
-    if(name)accountEmployeeRoster.set(normalizeEmployeeNameKey(name),{...u,displayName:name});
+    const rawName=String(u.displayName||u.username||'').trim().replace(/\s+/g,' '),name=canonicalEmployeeName(rawName);
+    if(name)accountEmployeeRoster.set(normalizeEmployeeNameKey(name),{...u,displayName:name,legacyDisplayName:rawName!==name?rawName:''});
   }
   employeeLoginDirectory=[...accountEmployeeRoster.values()].map(u=>({displayName:u.displayName,username:u.username||u.displayName})).sort((a,b)=>a.displayName.localeCompare(b.displayName));
   populateRoster();populateBartenderServerDropdowns();hv1RenderRoster(true);
@@ -231,11 +250,11 @@ async function refreshEmployeeAccountRoster(){
   }catch(e){console.warn("Employee roster refresh:",e);}
 }
 function addDynamicEmployeeName(name){
-  const clean=String(name||"").trim().replace(/\s+/g," ");
+  const clean=canonicalEmployeeName(String(name||"").trim().replace(/\s+/g," "));
   if(clean) dynamicEmployeeRoster.add(clean);
 }
 function removeDynamicEmployeeName(name){
-  const clean=String(name||"").trim().replace(/\s+/g," ");
+  const clean=canonicalEmployeeName(String(name||"").trim().replace(/\s+/g," "));
   if(clean && !EMPLOYEE_ROSTER.includes(clean) && !Object.prototype.hasOwnProperty.call(RECOVERED_EMPLOYEE_PHONES,clean)){
     dynamicEmployeeRoster.delete(clean);
   }
@@ -325,7 +344,7 @@ window.refreshEmployeeLoginOptions=async function(){
     try{
       const result=await employeeLoginOptionsApi({});
       if(!Array.isArray(result?.data?.employees))throw new Error('Employee directory unavailable.');
-      employeeLoginDirectory=result.data.employees.filter(u=>typeof u.username==='string' && u.username && typeof u.displayName==='string').map(u=>({username:u.username,displayName:u.displayName}));
+      {const byName=new Map();for(const u of result.data.employees.filter(u=>typeof u.username==='string'&&u.username&&typeof u.displayName==='string')){const displayName=canonicalEmployeeName(u.displayName),key=normalizeEmployeeNameKey(displayName);if(!byName.has(key))byName.set(key,{username:u.username,displayName});}employeeLoginDirectory=[...byName.values()];}
       populateEmployeeLoginOptions();if(status)status.textContent='Employee names updated.';
       return true;
     }catch(e){
@@ -3882,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es1893",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18101",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -4688,13 +4707,13 @@ function shouldExcludeHistoricalReport(r){
   // User-approved historical cleanup:
   // - Angela Grizzad 2026-09-04 should not sync/show.
   // - Sarah Kibler duplicate on 2026-09-05 with 0 hours should not sync/show.
-  if(name==="angela grizzad" && date==="2026-09-04") return true;
+  if(canonicalEmployeeName(r.employee).toLowerCase()==="angela gizzard" && date==="2026-09-04") return true;
   if(name==="sarah kibler" && date==="2026-09-05" && hours<=0) return true;
   return false;
 }
 
 function fzEmployeeIdentityKey(name){
-  return String(name||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"");
+  return canonicalEmployeeName(name).split(' \u00b7 ')[0].trim().toLowerCase().replace(/[^a-z0-9]+/g,"");
 }
 
 async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=false}={}){
@@ -4702,9 +4721,9 @@ async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=fa
   const name=String(displayName||"").trim();
   if(!uid||!name)return {matched:0,updated:0};
 
-  const qh=query(collection(db,"hourlyReports"),where("employee","==",name),limit(200));
-  const snap=await getDocs(qh);
-  const eligibleDocs=snap.docs.filter(ds=>!shouldExcludeHistoricalReport(ds.data()||{}));
+  const canonical=canonicalEmployeeName(name).split(' \u00b7 ')[0],aliases=employeeIdentityAliases(canonical);
+  const docs=[];for(const alias of aliases){const snap=await getDocs(query(collection(db,"hourlyReports"),where("employee","==",alias),limit(200)));for(const ds of snap.docs)if(!docs.some(x=>x.id===ds.id))docs.push(ds);}
+  const eligibleDocs=docs.filter(ds=>!shouldExcludeHistoricalReport(ds.data()||{}));
   let updated=0;
   for(const ds of eligibleDocs){
     const r=ds.data()||{};
@@ -4729,21 +4748,23 @@ async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=fa
 
 window.cleanHistoricalDuplicates=async function(){
   if(!["manager","owner"].includes(currentProfile?.role||""))return;
-  const ok=confirm("Delete the approved historical duplicates: Angela Grizzad 2026-09-04 and Sarah Kibler 2026-09-05 zero-hour duplicate?");
+  const ok=confirm("Delete the approved historical duplicates: Angela Gizzard 2026-09-04 and Sarah Kibler 2026-09-05 zero-hour duplicate?");
   if(!ok)return;
   const targets=[
-    {employee:"Angela Grizzad",date:"2026-09-04",zeroOnly:false},
-    {employee:"Sarah Kibler",date:"2026-09-05",zeroOnly:true}
+    {employees:employeeIdentityAliases("Angela Gizzard"),date:"2026-09-04",zeroOnly:false},
+    {employees:["Sarah Kibler"],date:"2026-09-05",zeroOnly:true}
   ];
   let deleted=0;
   for(const t of targets){
-    const qh=query(collection(db,"hourlyReports"),where("employee","==",t.employee),where("date","==",t.date),limit(20));
-    const snap=await getDocs(qh);
-    for(const ds of snap.docs){
-      const r=ds.data()||{};
-      if(t.zeroOnly && Number(r.totalHoursWork||r.totalHours||0)>0)continue;
-      await deleteDoc(ds.ref);
-      deleted++;
+    for(const employee of t.employees){
+      const qh=query(collection(db,"hourlyReports"),where("employee","==",employee),where("date","==",t.date),limit(20));
+      const snap=await getDocs(qh);
+      for(const ds of snap.docs){
+        const r=ds.data()||{};
+        if(t.zeroOnly && Number(r.totalHoursWork||r.totalHours||0)>0)continue;
+        await deleteDoc(ds.ref);
+        deleted++;
+      }
     }
   }
   alert(`${deleted} historical report(s) deleted. Run Sync Historical Reports again.`);
@@ -6529,12 +6550,13 @@ function buildSmallReportPrintableHtml(rows){
 }
 
 function employeePdfRows(name,date){
-  return [...latestHourlyReports].filter(r=>r.employee===name && (!date || r.date===date)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+  const wanted=canonicalEmployeeName(name).split(' \u00b7 ')[0];
+  return [...latestHourlyReports].filter(r=>canonicalEmployeeName(r.personName||r.employee).split(' \u00b7 ')[0]===wanted && (!date || r.date===date)).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
 }
 window.refreshEmployeePdfOptions=function(){
   const sel=$('employeePdfName');if(!sel)return;
   const previous=sel.value,date=$('smallReportDate')?.value||'';
-  const names=[...new Set(latestHourlyReports.filter(r=>!date || r.date===date).map(r=>r.employee).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
+  const names=[...new Set(latestHourlyReports.filter(r=>!date || r.date===date).map(r=>canonicalEmployeeName(r.personName||r.employee).split(' \u00b7 ')[0]).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
   sel.innerHTML='<option value="">Select employee</option>'+names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
   sel.value=names.includes(previous)?previous:'';
 };
@@ -6574,10 +6596,10 @@ function normalizePhone(v){
   return plus?`+${digits}`:digits;
 }
 function rememberEmployeePhone(name,phone,source=""){
-  const key=normalizeEmployeeNameKey(name);
+  const canonical=canonicalEmployeeName(name),key=normalizeEmployeeNameKey(canonical);
   const normalized=normalizePhone(phone);
   if(!key||!normalized)return;
-  employeePhoneDirectory.set(key,{phone:normalized,name:String(name||"").trim(),source});
+  employeePhoneDirectory.set(key,{phone:normalized,name:canonical,source});
 }
 
 async function refreshEmployeePhoneDirectory(force=false){
@@ -6614,7 +6636,7 @@ async function refreshEmployeePhoneDirectory(force=false){
     snap.forEach(d=>{
       const u=d.data()||{};
       if(u.active===false)return;
-      const name=String(u.displayName||u.name||"").trim();
+      const name=canonicalEmployeeName(String(u.displayName||u.name||"").trim());
       const phone=normalizePhone(u.phone||"");
       const key=normalizeEmployeeNameKey(name);
       if(name)addDynamicEmployeeName(name);
@@ -6629,7 +6651,7 @@ async function refreshEmployeePhoneDirectory(force=false){
     const local=JSON.parse(localStorage.getItem("fz_employee_directory")||"[]");
     for(const u of Array.isArray(local)?local:[]){
       if(u.active===false)continue;
-      const name=String(u.displayName||"").trim();
+      const name=canonicalEmployeeName(String(u.displayName||"").trim());
       const phone=normalizePhone(u.phone||"");
       const key=normalizeEmployeeNameKey(name);
       if(name)addDynamicEmployeeName(name);
@@ -6643,7 +6665,7 @@ async function refreshEmployeePhoneDirectory(force=false){
     syncEmployeeAccountRoster(snap.docs.map(d=>({uid:d.id,...d.data()})));
     snap.forEach(d=>{
       const u=d.data()||{};
-      const name=u.displayName||u.username||"";
+      const name=canonicalEmployeeName(u.displayName||u.username||"");
       const phone=normalizePhone(u.phone||"");
       const key=normalizeEmployeeNameKey(name);
       if(key&&phone) next.set(key,{phone,name,source:"users"});
@@ -6657,7 +6679,7 @@ async function refreshEmployeePhoneDirectory(force=false){
     const snap=await getDocs(query(collection(db,"signupRequests"),limit(500)));
     snap.forEach(d=>{
       const u=d.data()||{};
-      const name=u.displayName||u.name||u.username||"";
+      const name=canonicalEmployeeName(u.displayName||u.name||u.username||"");
       const phone=normalizePhone(u.phone||u.mobilePhone||"");
       const key=normalizeEmployeeNameKey(name);
       if(key&&phone&&!next.has(key)) next.set(key,{phone,name,source:"signupRequests"});
@@ -6675,7 +6697,7 @@ async function refreshEmployeePhoneDirectory(force=false){
 
 
 function recoveredPhoneForEmployeeName(name){
-  const key=normalizeEmployeeNameKey(name);
+  const key=normalizeEmployeeNameKey(canonicalEmployeeName(name));
   for(const [n,p] of Object.entries(RECOVERED_EMPLOYEE_PHONES)){
     if(normalizeEmployeeNameKey(n)===key)return normalizePhone(p);
   }
@@ -6684,7 +6706,7 @@ function recoveredPhoneForEmployeeName(name){
 
 async function phoneForEmployeeName(name){
   await refreshEmployeePhoneDirectory(false);
-  const key=normalizeEmployeeNameKey(name);
+  const key=normalizeEmployeeNameKey(canonicalEmployeeName(name));
   let hit=employeePhoneDirectory.get(key);
   if(hit?.phone)return hit.phone;
 
@@ -6695,7 +6717,7 @@ async function phoneForEmployeeName(name){
 }
 
 function findEmployeeUserByName(name){
-  const key=normalizeEmployeeNameKey(name);
+  const key=normalizeEmployeeNameKey(canonicalEmployeeName(name));
   if(!key)return null;
   const live=latestUsers.find(u=>
     normalizeEmployeeNameKey(u.displayName||"")===key ||
@@ -6914,7 +6936,10 @@ function employeeDirectoryDocId(name){
 function loadLocalEmployeeDirectory(){
   try{
     const x=JSON.parse(localStorage.getItem("fz_employee_directory")||"[]");
-    return Array.isArray(x)?x:[];
+    if(!Array.isArray(x))return [];
+    const map=new Map();
+    for(const row of x){const displayName=canonicalEmployeeName(row?.displayName||row?.name||"");if(!displayName)continue;const key=normalizeEmployeeNameKey(displayName),old=map.get(key)||{};map.set(key,{...row,...old,displayName,phone:old.phone||row.phone||""});}
+    return [...map.values()];
   }catch(e){return [];}
 }
 function saveLocalEmployeeDirectoryRow(row,oldName=""){
@@ -10290,7 +10315,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.9';
+const ES_BUILD='ES1.8.10';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10411,7 +10436,8 @@ function esValidateSales(row,route,complete=false){
       if(second<firstEnd)errors.push('Clock pair 2 overlaps clock pair 1.');
       if(secondEnd-first>1440)errors.push('Both clock pairs must fit within one 24-hour work day.');
     }
-    if(row.role==='Bartender' && !ES_PERIODS.some(cp=>route[cp]===row.name))errors.push('Choose this bartender in the BAR routing on this sheet.');
+    // A bartender may validly receive $0.00 when no BAR period is routed to this row.
+    // Routing is optional for Save; if assigned later, save again to update BAR Received.
   }
   return [...new Set(errors)];
 }
@@ -10591,9 +10617,9 @@ function esRowStatus(row){
   const incomplete=esValidateSales(row,s.routing,true).length>0;
   if(incomplete || !old || esFingerprint(r)!==esFingerprint(old)){
     const shared=s.baseBatch?.drafts?.[row.name]?.employeeSheetDraftSaved;
-    if(shared&&es16RowMatches(row,shared.row)&&!(s.conflicts||[]).some(c=>c.name===row.name||c.name==='BAR routing'))return {text:'Draft saved · synced',kind:'draft'};
+    if(shared&&es16RowMatches(row,shared.row)&&!(s.conflicts||[]).some(c=>c.name===row.name||c.name==='BAR routing'))return {text:'Saved · incomplete draft · synced',kind:'draft'};
     const local=s.draftSaves?.[row.name];
-    if(local&&es16RowMatches(row,local.row))return {text:'Draft saved · device only',kind:'draft'};
+    if(local&&es16RowMatches(row,local.row))return {text:'Saved · incomplete draft · device only',kind:'draft'};
   }
   if(s.errors[row.name]?.length)return {text:'Check input',kind:'error'};
   if(!old)return {text:'Draft · not saved',kind:'draft'};
@@ -11796,8 +11822,22 @@ window.employeeSheetSave=async function(name){
   esSetBusy(true);esStatus('Saving '+name+'…');
   try{
     const row=esSession.rows.find(r=>r.name===name);if(!row)throw new Error('Employee row not found.');
-    if(esValidateSales(row,esSession.routing,true).length || !esSession.cloudReady || !es14IsOnline())await es16SaveDraft(name);
-    else{await esCommit(name);esStatus(name+' saved · Final Report updated.');}
+    // SAVE must never be blocked merely because the row is unfinished. First
+    // persist the current row as a recoverable draft. A complete row then uses
+    // the existing strict Final Report transaction. Sign/Print remain strict.
+    const strictErrors=esValidateSales(row,esSession.routing,true);
+    const draft=await es16SaveDraft(name);
+    if(strictErrors.length || !esSession.cloudReady || !es14IsOnline() || !draft.shared){
+      // es16SaveDraft already reports whether this is cloud-synced or device-only.
+      return true;
+    }
+    try{
+      await esCommit(name);esStatus(name+' saved · Final Report updated.');
+    }catch(finalError){
+      // The explicit Save still succeeded as a draft. Never tell the manager
+      // the row was lost merely because finalization needs another review.
+      esStatus(name+' saved · draft synced. Final Report not updated: '+(finalError?.message||String(finalError)),true);
+    }
     return true;
   }
   catch(e){es14HandleError(e);return false;}
@@ -12033,19 +12073,19 @@ function tt15Require(uid=currentUser?.uid){if(!esAllowed()||currentUser.uid!==ui
 function tt15NameValid(name){return !!name&&name.length<=100&&!/[\u0000-\u001f\u007f]/.test(name)&&!['__proto__','constructor','prototype'].includes(name.toLowerCase());}
 function tt15DirectoryEntries(data=tt15Directory.data){
   const map=new Map();
-  for(const name of getEmployeeRoster())map.set(tt15Key(name),{name,displayName:name,defaultRole:esFixedRole(name)||'Server',active:true,revision:0,phone:''});
-  for(const name of window.FZHostCashierMath?.names||[]){const k=tt15Key(name),old=map.get(k);map.set(k,{...(old||{}),name,displayName:name,defaultRole:esFixedRole(name)||'Host / Cashier',active:true,revision:0,phone:''});}
+  for(const raw of getEmployeeRoster()){const name=canonicalEmployeeName(raw),k=tt15Key(name);map.set(k,{name,displayName:name,defaultRole:esFixedRole(name)||'Server',active:true,revision:0,phone:''});}
+  for(const raw of window.FZHostCashierMath?.names||[]){const name=canonicalEmployeeName(raw),k=tt15Key(name),old=map.get(k);map.set(k,{...(old||{}),name,displayName:name,defaultRole:esFixedRole(name)||'Host / Cashier',active:true,revision:0,phone:''});}
   for(const item of Object.values(data?.entries||{})){
-    const name=tt15Clean(item?.name);if(!tt15NameValid(name))continue;const k=tt15Key(name);
+    const rawName=tt15Clean(item?.name),name=canonicalEmployeeName(rawName);if(!tt15NameValid(name))continue;const k=tt15Key(name);
     map.set(k,{...(map.get(k)||{}),name,displayName:name,defaultRole:esFixedRole(name)||'Host / Cashier',active:item.active!==false,phone:String(item.phone||''),revision:0});
   }
-  for(const [k,item] of Object.entries(data?.directoryEntries||{})){
-    if(!tt15NameValid(item?.name)||k!==tt15Key(item.name))continue;
-    map.set(k,{...(map.get(k)||{}),...item,displayName:tt15Clean(item.displayName)||item.name,active:item.active!==false});
+  for(const item of Object.values(data?.directoryEntries||{})){
+    const rawName=tt15Clean(item?.name),name=canonicalEmployeeName(rawName);if(!tt15NameValid(name))continue;const k=tt15Key(name),displayName=canonicalEmployeeName(tt15Clean(item.displayName)||name);
+    map.set(k,{...(map.get(k)||{}),...item,name,displayName,active:item.active!==false});
   }
   return [...map.values()].sort((a,b)=>a.displayName.localeCompare(b.displayName));
 }
-function tt15Label(name){return tt15DirectoryEntries().find(e=>e.name===name)?.displayName||name;}
+function tt15Label(name){const canonical=canonicalEmployeeName(name);return tt15DirectoryEntries().find(e=>e.name===canonical)?.displayName||canonical;}
 function tt15DirectoryStart(){
   if(!esAllowed())return;
   const uid=currentUser.uid;if(tt15Directory.uid===uid&&tt15Directory.unsub)return;
@@ -12076,7 +12116,7 @@ function tt15TeamRows(batch={},host={}){
   }
   return rows;
 }
-function tt15CanonicalName(name){return employeeWorkProfile(name)?.personName||String(name||'').split(' \u00b7 ')[0]||name;}
+function tt15CanonicalName(name){return canonicalEmployeeName(employeeWorkProfile(name)?.personName||String(name||'').split(' \u00b7 ')[0]||name);}
 function tt15AssignmentWorkRows(rows){
   const counts=new Map(),seen=new Map();
   for(const r of rows)counts.set(tt15Key(r.name),(counts.get(tt15Key(r.name))||0)+1);
@@ -12669,7 +12709,7 @@ async function es16SaveDraft(name){
     }catch(e){reason=' Not synced: '+(e.message||String(e));}
   }else reason=es14IsOnline()?' Cloud connection is not ready.':' Offline.';
   if(!shared&&!kept)throw new Error('Draft was not saved: device storage is unavailable and the complete draft could not sync. Keep this page open and retry.');
-  esStatus(name+(shared?' · Draft saved and synced. Complete the row later.':' · Draft saved on this device only.'+reason));
+  esStatus(name+(shared?' · Saved as draft and synced. Complete the row later.':' · Saved as draft on this device only.'+reason));
   return {draft:true,shared,local:kept};
 }
 function hc16DraftRow(data,name){
