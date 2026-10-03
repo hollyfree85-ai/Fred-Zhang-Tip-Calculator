@@ -1289,7 +1289,7 @@ let ownerTableSession=null,ownerTableRequest=0,ownerTableSaving=false;
 const OWNER_TABLE_MONEY={grand:'hGrandTotal',totalAM:'hTotalAM',paid:'hPaidTip',cardFee:'hCardFee',cash:'hCashTip',meal:'hMeal'};
 const OWNER_TABLE_GROUPS={shift:'Shift',clock:'Clock In / Out',sales:'Sales',paid:'Paid Tip',cardFee:'Pay Card Tip Fee',cash:'Cash Tip',meal:'Meal'};
 const OWNER_TABLE_CLOCKS=['clockIn','clockOut','clockIn2','clockOut2'];
-function ownerTableAllowed(){return !!currentUser && currentProfile?.role==='owner';}
+function ownerTableAllowed(){return !!currentUser && ['manager','owner'].includes(currentProfile?.role||'');}
 function ownerTableStatus(message){if($('ownerTableStatus'))$('ownerTableStatus').textContent=message;}
 function ownerTableRow(s,name){
   const d=s.drafts?.[name]||{},v=d.values||{},shift=hv1DraftShift(d);
@@ -1467,7 +1467,7 @@ function ownerTableBuildBatch(source,session){
   hv1ApplyBarAutomation(s);return s;
 }
 window.ownerTableOpen=async function(){
-  if(!ownerTableAllowed()){alert('Owner only.');return;}
+  if(!ownerTableAllowed()){alert('Manager / Owner only.');return;}
   if(ownerTableSaving)return;
   if(ownerTableSession && Object.keys(ownerTableSession.dirty).length && !confirm('Discard unsaved table changes and reload?'))return;
   ownerTableSession=null;
@@ -1502,7 +1502,7 @@ window.ownerTableDateChanged=async function(){
   ownerTableSession=null;$('hv1Date').value=date;await window.ownerTableOpen();
 };
 window.ownerTableSave=async function(back=false){
-  if(!ownerTableAllowed()){alert('Owner only.');return false;}
+  if(!ownerTableAllowed()){alert('Manager / Owner only.');return false;}
   const session=ownerTableSession;
   if(ownerTableSaving || !session || session.uid!==currentUser.uid)return false;
   if(session.date!==hv1DateValue()){ownerTableStatus('Work date changed. Reopen the table.');return false;}
@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18160",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18190",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.16';
+const ES_BUILD='ES1.8.19';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -11825,7 +11825,7 @@ esCommit=async function(name,signature=null,expectedSignatureFingerprint=''){
     if(validSource&&source.employeeUid)payload.employeeUid=source.employeeUid;
     if(before)tx.update(reportRef,payload);else tx.set(reportRef,{...payload,createdAt:serverTimestamp(),createdByUid:s.uid,createdBy:currentProfile.displayName||currentProfile.username||''});
     if(validSource)tx.update(subRef,{status:'money_ready',hourlyStatus:'finalized',hourlyReportId:reportRef.id,finalReport:{...calculated},...(signature?{pickupSignature:signature,signatureStatus:'SIGNED'}:sigPatch.pickupSignature===null?{pickupSignature:null,signatureStatus:'PENDING'}:{}),updatedAt:serverTimestamp()});
-    Object.assign(batch.drafts[name],{hourlyReportId:reportRef.id,sourceSubmissionId:validSource,finalized:true,finalizedAt:Date.now(),savedAt:Date.now(),employeeSheetFinalRow:savedRow,employeeSheetFinalFingerprint:fingerprint,employeeSheetReportRevision:Number(raw.employeeSheetRevision||0)+1});
+    Object.assign(batch.drafts[name],{hourlyReportId:reportRef.id,sourceSubmissionId:validSource,finalized:true,finalizedAt:Date.now(),savedAt:Date.now(),employeeSheetFinalRow:savedRow,employeeSheetFinalFingerprint:fingerprint,employeeSheetReportRevision:Number(raw.employeeSheetRevision||0)+1});delete batch.drafts[name].employeeSheetPendingSignature;delete batch.drafts[name].employeeSheetPendingSignatureFingerprint;delete batch.drafts[name].employeeSheetIncompleteProblems;delete batch.drafts[name].employeeSheetIncompleteProcessedAt;
     batch.employeeSheetRevision=Number(raw.employeeSheetRevision||0)+1;
     tx.set(ref,{...raw,date:s.date,team:batch.team,drafts:batch.drafts,bar:batch.bar,barManual:batch.barManual||{},employeeSheetRevision:batch.employeeSheetRevision,updatedAt:serverTimestamp(),updatedByUid:s.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});
     return {batch,report:{...(before||{}),...payload,id:reportRef.id},before,route,rows:merge.rows,fields:{[name]:Object.fromEntries(ES_FIELDS.map(f=>[f,true]))}};
@@ -14084,8 +14084,8 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     try{
       const out=await esCommit(sign.name,payload,sign.fingerprint);committed=true;
       esSignature=null;$('esSignatureModal').classList.add('hidden');$('esConflictModal')?.classList.add('hidden');
-      esStatus(label(sign.name)+' signed · Final Report updated · preparing print.');
-      try{await printCommitted(out.report,popup);esStatus(label(sign.name)+' signed · receipt ready to print.');}
+      esStatus(label(sign.name)+(out?.incompleteDraft?' signed draft saved · incomplete · preparing print.':' signed · Final Report updated · preparing print.'));
+      try{await printCommitted(out.report,popup);esStatus(label(sign.name)+(out?.incompleteDraft?' signed incomplete draft · receipt ready to print.':' signed · receipt ready to print.'));}
       catch(printError){popup?.close?.();esStatus(label(sign.name)+' signature saved, but printing needs retry: '+(printError?.message||String(printError)),true);}
       return true;
     }catch(err){popup?.close?.();es14HandleError(err);$('esSignStatus').textContent=err.message||String(err);if(err.esAmountsChanged)$('esSignReview')?.classList.remove('hidden');return false;}
@@ -14174,4 +14174,105 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     let amBasis=0,pmBasis=0;const shift=String(row.shift||'').toUpperCase();if(['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift))amBasis=Number(r.grandTotal||r.totalAM||0);else if(shift==='PM')pmBasis=Number(r.grandTotal||r.totalPM||0);else if(['DOUBLE','LONG'].includes(shift)){amBasis=Number(r.totalAM||0);pmBasis=Math.max(0,Number(r.grandTotal||0)-Number(r.totalAM||0));}
     const am=p.AM?L.roundCent(Math.max(0,amBasis)*0.015):0,pm=p.PM?L.roundCent(Math.max(0,pmBasis)*0.015):0,total=L.roundCent(am+pm);r.busserTipOutAM=am;r.busserTipOutPM=pm;r.busserTipOut=total;r.totalShared=total;r.busserRate=Number(r.grandTotal||0)>0?total/Number(r.grandTotal)*100:0;r.busserAM=shift==='PM'?'N/A':(p.AM?'WITH':'WITHOUT');r.busserPM=['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift)?'N/A':(p.PM?'WITH':'WITHOUT');r.totalTips=L.roundCent(Number(r.paidTip||0)+Number((r.payCardTipFee??r.cardFee)||0)+total);r.busserPolicyVersion='TEAM_BUSSER_AM_PM_OVERRIDE_V1';r.busserPresence={AM:p.AM,PM:p.PM};if(shift==='LONG'){r.busserSalesThrough4PM=r.totalAM;r.salesWithoutBusser=p.AM?0:r.totalAM;r.busserSalesBasis=(p.AM?amBasis:0)+(p.PM?pmBasis:0);}return r;};
   const summary=esUpdateSummary;esUpdateSummary=function(){const out=summary.apply(this,arguments),s=esSession;if(s&&$('esBusserRule')){const p=plan(s.baseBatch||{},s.date);$('esBusserRule').textContent=`BUSSER · AM ${p.AM?'ON':'OFF'} · PM ${p.PM?'ON':'OFF'} · Server 1.5% when ON · Bartender 0%`;}return out;};
+})();
+
+
+/* ES1.8.19 — Manager/Owner Daily-only hourly pay + incomplete Process workflow.
+ * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
+ * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
+ * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
+ * Incomplete Process saves a signed draft and prints it with a clear INCOMPLETE mark;
+ * it does not silently create a finalized hourlyReports row with invented values.
+ */
+(function installES1818HourlyPayAndIncompleteProcess(){
+  const RATE_BARTENDER=new Map([
+    ['dorothy makovicka',7],['libby lane',6],['angela gizzard',5],['sarah kibler',5],['caitlin dillon',5]
+  ]);
+  const RATE_SERVER_SPECIAL=new Map([
+    ['sara swift',5],['sarah swift',5],['adrieanna walker',3],['adrienna walker',3],['adriena walker',3]
+  ]);
+  function canonicalPerson(r){
+    try{return monthlyReportCanonicalPerson(r)||canonicalEmployeeName(r?.personName||r?.employee||'').split(' · ')[0].trim();}
+    catch(e){return String(r?.personName||r?.employee||'').trim();}
+  }
+  function reportRole(r){return String(r?.position||r?.role||'').trim();}
+  function reportHours(r){
+    const m=Number(r?.totalMinutesWork);if(r?.totalMinutesWork!==null&&r?.totalMinutesWork!==undefined&&r?.totalMinutesWork!==''&&Number.isFinite(m)&&m>0)return m/60;
+    const h=Number(r?.totalHoursWork??r?.totalHours);return Number.isFinite(h)&&h>0?h:0;
+  }
+  function hourlyRate(r){
+    const hours=reportHours(r);if(!(hours>0))return null; // user: no hours -> skip hourly pay
+    const role=reportRole(r).toLowerCase(),name=canonicalPerson(r).toLowerCase();
+    if(/host|cashier/.test(role))return 15;
+    if(role==='bartender')return RATE_BARTENDER.has(name)?RATE_BARTENDER.get(name):null;
+    if(role==='server')return RATE_SERVER_SPECIAL.has(name)?RATE_SERVER_SPECIAL.get(name):2.13;
+    return null;
+  }
+  function hourlyPay(r){const rate=hourlyRate(r),hours=reportHours(r);return rate===null?null:monthlyReportRound(hours*rate);}
+  function rateText(r){const x=hourlyRate(r);return x===null?'—':fmtMoney(x)+'/hr';}
+  function payText(r){const x=hourlyPay(r);return x===null?'—':fmtMoney(x);}
+  window.fz1818HourlyRate=hourlyRate;window.fz1818HourlyPay=hourlyPay;window.fz1818ReportHours=reportHours;
+
+  // Daily Report detail + summary (Manager / Owner Final Report only).
+  const openDetail=window.openSmallReportDetail;
+  window.openSmallReportDetail=function(reportId){
+    const out=openDetail.apply(this,arguments);if(!['manager','owner'].includes(currentProfile?.role||''))return out;const r=latestHourlyReports.find(x=>x.id===reportId),grid=$('smallReportDetailBody')?.querySelector('.sr-detail-grid');
+    if(r&&grid&&!grid.querySelector('[data-es1817-hourly]')){
+      const anchor=[...grid.querySelectorAll('.accent')][0]||null;
+      const items=[['Total Hours',reportHours(r)>0?reportHours(r).toFixed(2):'—'],['Hourly Rate',rateText(r)],['Hourly Pay',payText(r)]];
+      for(const [k,v] of items){const d=document.createElement('div');d.dataset.es1817Hourly='1';d.innerHTML=`<span>${esc(k)}</span><b>${esc(v)}</b>`;grid.insertBefore(d,anchor);}
+    }return out;
+  };
+  const renderDaily=window.renderSmallReport;
+  window.renderSmallReport=function(){const out=renderDaily.apply(this,arguments);if(!['manager','owner'].includes(currentProfile?.role||''))return out;const summary=$('smallReportSummary');if(summary&&!summary.querySelector('[data-es1817-kpi]')){const rows=smallReportFilteredRows(),hours=rows.reduce((a,r)=>a+reportHours(r),0),pay=rows.reduce((a,r)=>a+(hourlyPay(r)||0),0);const a=document.createElement('div');a.className='kpi';a.dataset.es1817Kpi='1';a.innerHTML=`<span>Total Hours</span><b>${hours.toFixed(2)}</b>`;const b=document.createElement('div');b.className='kpi';b.dataset.es1817Kpi='1';b.innerHTML=`<span>Hourly Pay</span><b>${fmtMoney(pay)}</b><div class="small">Report only · Hours × Hourly Rate</div>`;summary.append(a,b);}return out;};
+
+  // Daily PDF: add compact wage lines without changing existing payout math/layout.
+  const pdfContent=pdfReportContent;
+  pdfReportContent=function(r,index,total){let c=pdfContent(r,index,total);if(!['manager','owner'].includes(currentProfile?.role||''))return c;const hours=reportHours(r),rate=hourlyRate(r),pay=hourlyPay(r);if(rate!==null&&pay!==null){c+=`BT /F2 8.5 Tf 28 120 Td (${pdfEscape('Total Hours: '+hours.toFixed(2)+' | Hourly Rate: '+fmtMoney(rate)+'/hr')}) Tj ET\n`;c+=`BT /F2 8.5 Tf 28 107 Td (${pdfEscape('Hourly Pay: '+fmtMoney(pay)+' (report only)')}) Tj ET\n`;}return c;};
+
+
+  // Daily printable HTML gets wage columns.
+  const printable=buildSmallReportPrintableHtml;
+  buildSmallReportPrintableHtml=function(rows){
+    let html=printable(rows);if(!['manager','owner'].includes(currentProfile?.role||''))return html;
+    html=html.replace('<th>Paid Tips</th>','<th>Hourly Rate</th><th>Hourly Pay</th><th>Paid Tips</th>');
+    let i=0;html=html.replace(/<td>(\d+(?:\.\d+)?)<\/td>\s*<td>(\$[^<]+)<\/td>/g,(m,hours,paidTips)=>{const r=rows[i++];return `<td>${hours}</td><td>${esc(rateText(r))}</td><td>${esc(payText(r))}</td><td>${paidTips}</td>`;});
+    return html;
+  };
+
+  // ES1.8.19: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+
+  // Incomplete-row review/process helpers.
+  function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
+  function reviewHtml(name,issues){const row=esSession.rows.find(r=>r.name===name),r=esSession.results[name]||{};return `<div class="es1817-missing"><b>Missing / needs review before Final Report</b><ul>${issues.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><small>Process will save a signed INCOMPLETE draft and print it. It will not invent missing values or silently finalize this row.</small></div><div class="es1815-review-item"><span>Employee</span><b>${esc(tt15Label(name))}</b></div><div class="es1815-review-item"><span>Work date</span><b>${esc(esSession.date)}</b></div><div class="es1815-review-item"><span>Shift</span><b>${esc(row.shift||'—')}</b></div><div class="es1815-review-item"><span>Position</span><b>${esc(row.role||'—')}</b></div><div class="es1815-review-item es1815-total"><span>Current Paid Out</span><b>${esc(esMoney(r.totalPaidOut||0))}</b></div>`;}
+  function installMissingStyle(){if($('es1817Style'))return;const st=document.createElement('style');st.id='es1817Style';st.textContent='.es1817-missing{grid-column:1/-1;border:2px solid #e9b949;background:#fff8dc;border-radius:12px;padding:12px;color:#5b4300}.es1817-missing ul{margin:8px 0 8px 22px}.es1817-missing li{margin:3px 0}';document.head.appendChild(st);}
+  function drawClear(){const c=$('esSignatureCanvas');c?.getContext('2d')?.clearRect(0,0,1000,320);}
+  async function openIncomplete(name,issues){
+    if(!esAllowed()||esSession?.busy||esSignature)return false;installMissingStyle();let ready=false;esSetBusy(true);esStatus('Checking latest data before incomplete review…');
+    try{await es182PrepareSignature(name);ready=true;}catch(e){es14HandleError(e);}finally{esSetBusy(false);es14Paint();esRenderRouting();}
+    if(!ready)return false;const row=esSession.rows.find(r=>r.name===name),r=esSession.results[name];issues=problems(name);if(!issues.length)return false;
+    esSignature={name,fingerprint:esFingerprint(r),strokes:[],current:null,scroll:es14CaptureScroll(),fzIncomplete:true,fzProblems:issues};
+    $('esSignatureTitle').textContent=tt15Label(name)+' — Incomplete Review & Sign';$('esSignSummary').textContent='Review what is missing. Sign below, then Process to save this incomplete draft and print.';$('esSignStatus').textContent='This will stay OUT of finalized Daily/Monthly totals until the missing data is completed and saved again.';drawClear();$('esSignatureModal').classList.remove('hidden');
+    const review=$('es1815Review');if(review)review.innerHTML=reviewHtml(name,issues);const edit=$('esSignEdit');if(edit)edit.hidden=true;$('esSignCancel').textContent='Cancel';$('esSignSave').textContent='Process';$('esSignSave').disabled=true;$('esSignCancel').focus();return true;
+  }
+  const normalSign=window.employeeSheetSign,normalSave=window.employeeSheetSave;
+  window.employeeSheetSave=async function(name){const p=problems(name);if(p.length)return openIncomplete(name,p);return normalSave.apply(this,arguments);};
+  window.employeeSheetSign=async function(name){const p=problems(name);if(p.length)return openIncomplete(name,p);const edit=$('esSignEdit');if(edit)edit.hidden=false;if($('esSignCancel'))$('esSignCancel').textContent='Close';return normalSign.apply(this,arguments);};
+
+  const commit=esCommit;
+  esCommit=async function(name,signature=null,expected=''){
+    if(!(signature&&esSignature?.fzIncomplete&&esSignature.name===name))return commit.apply(this,arguments);
+    const s=esSession,row=s?.rows?.find(r=>r.name===name);if(!s||!row)throw new Error('Employee row not found.');const issues=esSignature.fzProblems||problems(name);const draft=await es16SaveDraft(name);const calc={...(s.results[name]||esCalculate(row,s.working||esBuildBatch(s.baseBatch,s.rows,s.date,s.routing),esFindReport(s.reports,name))),date:s.date,employee:name,position:row.role,shift:row.shift,pickupSignature:signature,signatureStatus:'SIGNED',status:'incomplete_draft',fzIncompleteDraft:true,incompleteProblems:issues};
+    s.draftSaves ||= {};s.draftSaves[name]={...(s.draftSaves[name]||{}),row:esClone(row),pendingSignature:signature,pendingSignatureFingerprint:esFingerprint(calc),incompleteProblems:issues,savedAt:Date.now()};esPersistLocal();
+    if(draft?.shared&&s.cloudReady&&es14IsOnline())try{const ref=doc(db,'hourlyV1Batches',s.date);await runTransaction(db,async tx=>{const snap=await tx.get(ref);if(!snap.exists())return;const raw=snap.data(),next=esClone(raw);next.drafts ||= {};next.drafts[name] ||= {};Object.assign(next.drafts[name],{employeeSheetPendingSignature:signature,employeeSheetPendingSignatureFingerprint:esFingerprint(calc),employeeSheetIncompleteProblems:issues,employeeSheetIncompleteProcessedAt:Date.now()});tx.set(ref,{...next,updatedAt:serverTimestamp(),updatedByUid:s.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});});}catch(e){console.warn('Incomplete signed draft cloud signature:',e);}
+    return {report:calc,incompleteDraft:true,draft};
+  };
+  const thermal=esThermalHtml;
+  esThermalHtml=function(report){let html=thermal(report);if(report?.fzIncompleteDraft)html=html.replace(/<body([^>]*)>/i,'<body$1><div style="padding:10px 12px;margin:8px;border:3px solid #c2410c;background:#fff7ed;font-weight:900;text-align:center">INCOMPLETE — SIGNED DRAFT<br><small style="font-weight:600">Missing: '+esc((report.incompleteProblems||[]).join(' | '))+'</small></div>');return html;};
+
+  // Restore Complete Sign modal button labels after an incomplete review was used.
+  const signAgain=window.employeeSheetSign;window.employeeSheetSign=async function(name){const p=problems(name);if(p.length)return openIncomplete(name,p);const edit=$('esSignEdit');if(edit)edit.hidden=false;if($('esSignCancel'))$('esSignCancel').textContent='Close';if($('es1815Review'))$('es1815Review').innerHTML='';return normalSign.apply(this,arguments);};
+
+  // Force an immediate repaint when Final Report is already open so new wage columns appear.
+  try{frRenderIfOpen();}catch(e){}
 })();

@@ -14,7 +14,7 @@
 <link href="manifest.webmanifest" rel="manifest"/>
 <link href="icon-180.png" rel="apple-touch-icon"/>
 <title>Fred Zhang Tip Calculator</title>
-<script src="./install-app-v13849.js?v=13849-es18160"></script>
+<script src="./install-app-v13849.js?v=13849-es18190"></script>
 <style>
 :root{--navy:#101a30;--navy2:#1b2946;--gold:#f59e0b;--bg:#f4f6f8;--card:#fff;--line:#dde3ea;--ink:#111827;--muted:#6b7280;--green:#0f9d58;--red:#d93025;--blue:#2563eb}
 *{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Arial,sans-serif}
@@ -1646,7 +1646,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 .fz-role-home-hero .eyebrow{font-size:12px;letter-spacing:.16em;font-weight:950;color:#9ee9f4}
 .fz-role-home-hero h2{margin:6px 0 4px!important;color:#fff!important;font-size:32px!important}
 .fz-role-home-hero p{margin:0;color:rgba(255,255,255,.78)}
-.fz-role-menu{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:18px}
+.fz-role-menu{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-top:18px}
 .fz-role-menu button{border:1px solid #cfe0eb;background:linear-gradient(145deg,#fff,#eef7fc);border-radius:22px;min-height:150px;padding:20px;text-align:left;cursor:pointer;box-shadow:0 13px 30px rgba(29,77,111,.10);color:#102b43;transition:.15s ease}
 .fz-role-menu button:hover{transform:translateY(-3px);box-shadow:0 18px 36px rgba(29,77,111,.15)}
 .fz-role-menu .icon{font-size:31px;display:block;margin-bottom:12px}
@@ -1733,10 +1733,10 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 #ownerSalesTable .owner-clock-grid{min-width:0}
 #ownerSalesTable .owner-clock-grid>label{min-width:0}
 </style>
-<link rel="stylesheet" href="employee-sheet-v1.css?v=es18160"/>
+<link rel="stylesheet" href="employee-sheet-v1.css?v=es18190"/>
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.49 · ES1.8.16 · FAST REPORT · AUTO UPDATE · PASSKEY FORMAT FIX · SESSION LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.49 · ES1.8.19 · FAST REPORT · AUTO UPDATE · PASSKEY FORMAT FIX · SESSION LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -2096,7 +2096,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 </div>
 <!-- ES1.3: Employee Table retired from navigation. Inert DOM kept for existing shared references; no data is removed. -->
-<section class="staffPanel hidden ownerOnly" id="ownerSalesTable" hidden inert aria-hidden="true" style="display:none!important"><div class="card owner-table-card">
+<section class="staffPanel hidden" id="ownerSalesTable"><div class="card owner-table-card">
 <div class="owner-table-toolbar"><div><h2>Employee Table</h2><p>Choose a section and fill it for the whole team.</p></div><div><label for="ownerTableDate">Work Date</label><input id="ownerTableDate" type="date" onchange="ownerTableDateChanged()"></div></div>
 <div class="owner-group-buttons" id="ownerTableGroups" aria-label="Input sections"></div>
 <div class="owner-group-buttons owner-sales-buttons" id="ownerTableSalesGroups" aria-label="Sales checkpoints"></div>
@@ -2809,7 +2809,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 })();
 </script>
 <script src="hourly-logic-v13840.js?v=13849"></script>
-<script src="app-v13849.js?v=13849-es18160" type="module"></script>
+<script src="app-v13849.js?v=13849-es18190" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2940,7 +2940,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
     if(role==="employee"){$("fzRoleHome")?.classList.add("hidden");$("staffApp")?.classList.add("hidden");$("employeeApp")?.classList.remove("hidden");return}
     if(!["manager","owner"].includes(role))return;
     hideOperational();const home=ensureRoleHome();if(!home)return;const isOwner=role==="owner";
-    home.innerHTML=`<div class="fz-role-home-hero" data-fz-home-role="${role}"><div class="eyebrow">${isOwner?"OWNER ACCESS":"MANAGER ACCESS"}</div><h2>${isOwner?"Owner Home":"Manager Home"}</h2><p>Login once, then move between your authorized workspaces without signing in again.</p></div><div class="fz-role-menu"><button type="button" onclick="fzOpenTodayTeam()"><span class="icon">👥</span><b>Today's Team</b><small>Name, position and shift · Edit Team · Manage Employee.</small></button><button type="button" onclick="employeeSheetOpen()"><span class="icon">▤</span><b>Employee Sheet</b><small>One-page entry · Live calculation · Save, Sign &amp; Print.</small></button><button type="button" onclick="fzOpenFinalReport()"><span class="icon">📊</span><b>Final Report</b><small>Daily reports + Monthly / Period summary · PDF and XLS.</small></button></div>`;
+    home.innerHTML=`<div class="fz-role-home-hero" data-fz-home-role="${role}"><div class="eyebrow">${isOwner?"OWNER ACCESS":"MANAGER ACCESS"}</div><h2>${isOwner?"Owner Home":"Manager Home"}</h2><p>Login once, then move between your authorized workspaces without signing in again.</p></div><div class="fz-role-menu"><button type="button" onclick="fzOpenTodayTeam()"><span class="icon">👥</span><b>Today's Team</b><small>Name, position and shift · Edit Team · Manage Employee.</small></button><button type="button" onclick="employeeSheetOpen()"><span class="icon">▤</span><b>Employee Sheet</b><small>One-page entry · Live calculation · Save, Sign &amp; Print.</small></button><button type="button" onclick="ownerTableOpen()"><span class="icon">▦</span><b>Employee Table</b><small>Whole-team entry by section · Manager / Owner.</small></button><button type="button" onclick="fzOpenFinalReport()"><span class="icon">📊</span><b>Final Report</b><small>Daily reports + Monthly / Period summary · PDF and XLS.</small></button></div>`;
     home.classList.remove("hidden");document.body.classList.add("fz-staff-logged-in");window.scrollTo({top:0,left:0,behavior:"instant"});
   };
   window.fzOpenManagerTools=function(){
@@ -2983,7 +2983,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13849.js?v=13849-es18160',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13849.js?v=13849-es18190',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -3110,7 +3110,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13840.js?v=13849-es18160"></script>
+<script type="module" src="host-cashier-tip-v13840.js?v=13849-es18190"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
