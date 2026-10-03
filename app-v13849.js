@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18200",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18210",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -6124,7 +6124,7 @@ function calculatedHourlyAdjustment(r){
 }
 function smallReportPaidOut(r){
   return Number.isFinite(Number(r.totalPaidOut)) && r.totalPaidOut!=null
-    ? Number(r.totalPaidOut) : howRoundCent(Math.max(0,Number(r.totalBeforeMeal||0)-Number(r.meal||0)));
+    ? Number(r.totalPaidOut) : howRoundCent(Number(r.totalBeforeMeal||0)-Number(r.meal||0));
 }
 function smallReportGrandTotal(r){
   return Number.isFinite(Number(r.grandTotalTip)) && r.grandTotalTip!=null
@@ -6168,17 +6168,18 @@ function thermalReportPaidOut(r){
   const bartender=String(r?.position||"").toLowerCase()==="bartender";
   const barTipOut=Number(r?.barTipOut||0);
   const barTipReceived=Number(r?.bartenderBarTipReceived||0);
-  // Requested thermal receipt formula only:
-  // Server = Paid Tip - Bar Tip Out - Meal
-  // Bartender = Paid Tip + Bar Tip Out Received - Meal
+  // ES1.8.21 thermal receipt follows saved payout deductions.
+  // Server = Paid Tip - Busser - Bar Tip Out - Meal.
+  // Bartender = Paid Tip + Bar Tip Out Received - Meal.
+  const busser=Number(r?.busserTipOut||0);
   return howRoundCent(bartender
     ? paidTip + barTipReceived - meal
-    : paidTip - barTipOut - meal);
+    : paidTip - busser - barTipOut - meal);
 }
 // ES1.8.2 receipt-only informational totals. Cash is never paid twice.
 function thermalReportTipBeforeMeal(r){
-  const paid=Number(r?.paidTip||0),bar=Number(r?.barTipOut||0),received=Number(r?.bartenderBarTipReceived||0);
-  return howRoundCent(String(r?.position||'').toLowerCase()==='bartender'?paid+received:paid-bar);
+  const paid=Number(r?.paidTip||0),busser=Number(r?.busserTipOut||0),bar=Number(r?.barTipOut||0),received=Number(r?.bartenderBarTipReceived||0);
+  return howRoundCent(String(r?.position||'').toLowerCase()==='bartender'?paid+received:paid-busser-bar);
 }
 function thermalReportGrandTotalTip(r){return howRoundCent(thermalReportTipBeforeMeal(r)+Number(r?.cashTip||0));}
 function thermalReceiptMoney(v){
@@ -8330,8 +8331,8 @@ window.calculateHourlyV01=function(){
   lastHourlyResult.adjustmentOverride=override;
   lastHourlyResult.adjustmentPayoutVersion="13.8.29";
   lastHourlyResult.grandTotalAfterAdjustment=L.roundCent(lastHourlyResult.grandTotalTip+adjustment.adjustmentSalaryHourly);
-  lastHourlyResult.totalPaidOutBeforeAdjustment=L.roundCent(Math.max(0,lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal));
-  lastHourlyResult.totalPaidOut=L.roundCent(Math.max(0,lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal+adjustment.adjustmentSalaryHourly));
+  lastHourlyResult.totalPaidOutBeforeAdjustment=L.roundCent(lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal);
+  lastHourlyResult.totalPaidOut=L.roundCent(lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal+adjustment.adjustmentSalaryHourly);
   lastHourlyResult.formulaVersion="13.8.29";
   lastHourlyResult.payoutFormula="Total Before Meal - Meal + Accepted Adjustment";
   lastHourlyResult.hours={...hours};
@@ -9238,7 +9239,7 @@ function renderHourlyWizard(){
   if(hourlyWizardStep===5){
     body=`<h3 class="how-title">Tips & Meal</h3><p class="how-sub">Enter the final amounts from the receipt.</p>
       <div class="how-card">
-        <div class="how-info"><b>Paid Tip is used directly.</b><br>Busser is not subtracted a second time.</div>
+        <div class="how-info"><b>Cash Tip stays separate.</b><br>For Servers, Busser and BAR Tip Out are deducted from Paid Tip. If deductions exceed Paid Tip, Total Paid Out can be negative.</div>
         ${howField("Paid Tip ($)","howPaid",howVal("hPaidTip"),"number","0.00")}
         ${howField("Pay Card Tip Fee ($)","howCardFee",howVal("hCardFee"),"number","0.00")}
         ${howField("Cash Tip ($)","howCash",howVal("hCashTip"),"number","0.00")}
@@ -9819,7 +9820,7 @@ function monthlyReportPaidOut(r){
   const saved=Number(r?.totalPaidOut);
   if(r?.totalPaidOut!==null && r?.totalPaidOut!==undefined && r?.totalPaidOut!=="" && Number.isFinite(saved))return saved;
   const adjustment=monthlyReportNum(r?.adjustmentSalaryHourly);
-  return Math.max(0,monthlyReportNum(r?.totalBeforeMeal)-monthlyReportNum(r?.meal)+adjustment);
+  return monthlyReportNum(r?.totalBeforeMeal)-monthlyReportNum(r?.meal)+adjustment;
 }
 function monthlyReportGrandTip(r){
   const saved=Number(r?.grandTotalTip);
@@ -10340,7 +10341,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.20';
+const ES_BUILD='ES1.8.21';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10549,8 +10550,8 @@ function esCalculate(row,batch,oldReport=null){
   Object.assign(r,adjustment);
   r.adjustmentOverride=override;r.adjustmentPayoutVersion='13.8.29';r.formulaVersion='13.8.29';r.payoutFormula='Total Before Meal - Meal + Accepted Adjustment';
   r.grandTotalAfterAdjustment=L.roundCent(r.grandTotalTip+adjustment.adjustmentSalaryHourly);
-  r.totalPaidOutBeforeAdjustment=L.roundCent(Math.max(0,r.totalBeforeMeal-r.meal));
-  r.totalPaidOut=L.roundCent(Math.max(0,r.totalBeforeMeal-r.meal+adjustment.adjustmentSalaryHourly));
+  r.totalPaidOutBeforeAdjustment=L.roundCent(r.totalBeforeMeal-r.meal);
+  r.totalPaidOut=L.roundCent(r.totalBeforeMeal-r.meal+adjustment.adjustmentSalaryHourly);
   r.hours={...hours};r.cardFee=L.parseMoney(row.cardFee);r.payCardTipFee=r.cardFee;
   if(row.shift==='LONG'&&!bt){r.busserSalesThrough4PM=r.totalAM;r.salesWithoutBusser=isWeekendDate(batch.date)?0:r.totalAM;r.busserSalesBasis=isWeekendDate(batch.date)?r.grandTotal:r.totalPM;r.busserPolicyVersion='LONG_MON_FRI_BAR_2_4_V1';}
   const profile=employeeWorkProfile(row.name);if(profile){r.personName=profile.personName;r.workProfile=profile.name;}
@@ -14276,3 +14277,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   // Force an immediate repaint when Final Report is already open so new wage columns appear.
   try{frRenderIfOpen();}catch(e){}
 })();
+
+
+/* ES1.8.21 — Negative payout + Busser deduction correction.
+   Server Total Before Meal deducts Busser + BAR from Paid Tip.
+   Cash Tip remains informational/already received and never offsets restaurant deductions.
+   Total Paid Out may be negative. */
