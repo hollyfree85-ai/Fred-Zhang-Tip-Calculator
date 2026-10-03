@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18140",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18160",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.14';
+const ES_BUILD='ES1.8.16';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -14032,4 +14032,146 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   const oldOpen=window.fzOpenMonthlyReport;window.fzOpenMonthlyReport=function(){const out=oldOpen?.apply(this,arguments);setTimeout(()=>{install();render();},0);return out;};
   if(typeof MutationObserver!=='undefined'){const observer=new MutationObserver(()=>{if(install())observer.disconnect();});if(document.body)observer.observe(document.body,{childList:true,subtree:true});}if(!install()&&typeof setTimeout==='function')setTimeout(install,500);
+})();
+
+
+/* ES1.8.16 — Sign Review + Process-to-Print.
+ * Additive UI/workflow only. Existing calculations and the Employee Sheet Print
+ * button are unchanged. Process requires a real signature, commits it using the
+ * existing guarded transaction, then prints that exact signed report.
+ */
+(function installES1815SignReview(){
+  function label(name){try{return typeof tt15Label==='function'?tt15Label(name):name;}catch(e){return name;}}
+  function money(v){return esMoney(Number(v)||0);}
+  function clockText(row){
+    if(!row)return '—';
+    if(row.shift==='DOUBLE')return `${row.clockIn||'—'}–${row.clockOut||'—'} / ${row.clockIn2||'—'}–${row.clockOut2||'—'}`;
+    return `${row.clockIn||'—'}–${row.clockOut||'—'}`;
+  }
+  function upperReview(name){
+    const row=esSession?.rows?.find(r=>r.name===name),r=esSession?.results?.[name];if(!row||!r)return '';
+    const bartender=row.role==='Bartender';
+    const fields=[
+      ['Employee',label(name)],['Work date',esSession.date],['Shift',row.shift||'—'],['Position',row.role||'—'],['Clock',clockText(row)],
+      ['Sales / Grand Total',money(r.grandTotal)],['Paid Tip',money(r.paidTip)],['Card Fee',money(r.payCardTipFee??r.cardFee)],
+      ['Busser AM',money(r.busserTipOutAM)],['Busser PM',money(r.busserTipOutPM)],
+      [bartender?'BAR Tip Out Received':'BAR Tip Out',money(bartender?r.bartenderBarTipReceived:r.barTipOut)],
+      ['Cash Tip',money(r.cashTip)],['Meal',money(r.meal)],['Total Before Meal',money(r.totalBeforeMeal)],
+      ['TOTAL PAID OUT',money(r.totalPaidOut)],['Grand Total Tip',money(r.grandTotalTip)]
+    ];
+    return fields.map(([k,v])=>`<div class="es1815-review-item${k==='TOTAL PAID OUT'?' es1815-total':''}"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+  }
+  function hostReview(name){
+    const s=hc15Session;if(!s)return '';const data=hc15View(s),r=hc15Report(data,name);
+    const fields=[['Employee',label(name)],['Work date',s.date],['Shift',r.shift||'—'],['Position',r.position||'Host / Cashier'],['Tip AM',money(r.hostCashierTipAM)],['Tip PM',money(r.hostCashierTipPM)],['TOTAL PAID OUT',money(r.totalPaidOut)]];
+    return fields.map(([k,v])=>`<div class="es1815-review-item${k==='TOTAL PAID OUT'?' es1815-total':''}"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('');
+  }
+  function signedEnough(sig){return !!sig&&sig.strokes.reduce((n,s)=>n+s.length,0)>=4;}
+  async function printCommitted(report,popup){
+    const html=esThermalHtml(report),android=/Android/i.test(navigator.userAgent||'');
+    if(android){
+      await prepareSmallReportPassPrntReturn(report);
+      try{const bridge=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');bridge.employeeSheet=true;localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(bridge));}catch(e){}
+      esPersistLocal();const link=document.createElement('a');link.href=esPassPrntUri(report,html);link.style.display='none';document.body.appendChild(link);link.click();link.remove();
+    }else popup?.setHtml(html);
+  }
+  async function upperProcess(e){
+    e?.preventDefault?.();e?.stopImmediatePropagation?.();
+    const sign=esSignature;if(!sign||esSession?.busy)return false;
+    if(!signedEnough(sign)){$('esSignStatus').textContent='Please sign inside the box first.';$('esSignSave').disabled=true;return false;}
+    const android=/Android/i.test(navigator.userAgent||''),popup=!android?es18OpenPrintPreview(null,label(sign.name)+' — Preparing signed receipt'):null;
+    const payload=esSerializeSignature(sign.strokes);esSetBusy(true);$('esSignStatus').textContent='Processing signature and preparing print…';let committed=false;
+    try{
+      const out=await esCommit(sign.name,payload,sign.fingerprint);committed=true;
+      esSignature=null;$('esSignatureModal').classList.add('hidden');$('esConflictModal')?.classList.add('hidden');
+      esStatus(label(sign.name)+' signed · Final Report updated · preparing print.');
+      try{await printCommitted(out.report,popup);esStatus(label(sign.name)+' signed · receipt ready to print.');}
+      catch(printError){popup?.close?.();esStatus(label(sign.name)+' signature saved, but printing needs retry: '+(printError?.message||String(printError)),true);}
+      return true;
+    }catch(err){popup?.close?.();es14HandleError(err);$('esSignStatus').textContent=err.message||String(err);if(err.esAmountsChanged)$('esSignReview')?.classList.remove('hidden');return false;}
+    finally{esSetBusy(false);esRenderRows();esRenderRouting();if(committed)es14RestoreScroll(sign.scroll,sign.name);}
+  }
+  async function hostProcess(){
+    const sign=hc15Sig,s=hc15Session;if(!sign||!s||s.busy)return false;
+    if(!signedEnough(sign)){$('hc15SignStatus').textContent='Please sign inside the box first.';$('hc15SignSave').disabled=true;return false;}
+    if(sign.date!==s.date||sign.uid!==s.uid){$('hc15SignStatus').textContent='Work date or login changed. Close and sign again.';return false;}
+    const android=/Android/i.test(navigator.userAgent||''),popup=!android?es18OpenPrintPreview(null,label(sign.name)+' — Preparing signed receipt'):null;
+    s.busy=true;hc15Render();$('hc15SignSave').disabled=true;$('hc15SignStatus').textContent='Processing signature and preparing print…';let committed=false;
+    try{
+      const report=await hc15Commit(sign.name,esSerializeSignature(sign.strokes),sign.fingerprint);committed=true;hc15Sig=null;$('hc15SignModal').classList.add('hidden');es14RestoreScroll(sign.scroll);esStatus(label(sign.name)+' signed · preparing print.');
+      try{await hc15PrintReport(report,popup);esStatus(label(sign.name)+' signed · receipt ready to print.');}
+      catch(printError){popup?.close?.();esStatus(label(sign.name)+' signature saved, but printing needs retry: '+(printError?.message||String(printError)),true);}
+      return true;
+    }catch(err){popup?.close?.();$('hc15SignStatus').textContent=err.message||String(err);return false;}
+    finally{s.busy=false;$('hc15SignSave').disabled=!signedEnough(hc15Sig);hc15Render();if(committed)es14RestoreScroll(sign.scroll);hc15Schedule(s);}
+  }
+  function installStyle(){
+    if($('es1815SignStyle'))return;const style=document.createElement('style');style.id='es1815SignStyle';style.textContent=`
+      .es1815-review{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px 12px;margin:10px 0 14px;padding:12px;border:1px solid #d8e2ef;border-radius:12px;background:#f8fbff;max-height:36vh;overflow:auto}
+      .es1815-review-item{display:flex;justify-content:space-between;gap:10px;padding:6px 8px;border-bottom:1px solid #e6edf5;font-size:13px}.es1815-review-item span{color:#5c6c82}.es1815-review-item b{text-align:right;color:#15263f}.es1815-review-item.es1815-total{grid-column:1/-1;background:#e6f1ff;border:1px solid #b7d2f2;border-radius:8px;font-size:15px}.es1815-review-item.es1815-total span,.es1815-review-item.es1815-total b{font-weight:900;color:#0d3c73}
+      .es1815-sign-label{font-weight:900;margin:8px 0 6px;color:#132841}.es-sign-actions .es1815-edit{background:#eef4fb;color:#17375f;border-color:#9fb7d2}.es-sign-actions button:disabled{opacity:.45}
+      @media(max-width:640px){.es1815-review{grid-template-columns:1fr;max-height:31vh}.es1815-review-item.es1815-total{grid-column:auto}.es-sign-card{max-height:95dvh;overflow:auto}}
+    `;document.head.appendChild(style);
+  }
+  function installUpper(){
+    const modal=$('esSignatureModal'),canvas=$('esSignatureCanvas'),actions=modal?.querySelector('.es-sign-actions');if(!modal||!canvas||!actions||modal.dataset.es1815==='1')return;
+    modal.dataset.es1815='1';installStyle();$('esSignatureTitle').textContent='Review & Sign';$('esSignSummary').textContent='Review the employee data below before signing.';
+    const review=document.createElement('div');review.id='es1815Review';review.className='es1815-review';canvas.insertAdjacentElement('beforebegin',review);
+    const labelEl=document.createElement('div');labelEl.className='es1815-sign-label';labelEl.textContent='Employee Signature';canvas.insertAdjacentElement('beforebegin',labelEl);
+    const edit=document.createElement('button');edit.type='button';edit.id='esSignEdit';edit.className='es1815-edit';edit.textContent='Edit';actions.insertBefore(edit,actions.firstChild);
+    $('esSignCancel').textContent='Close';$('esSignClear').hidden=true;$('esSignSave').textContent='Process';$('esSignSave').disabled=true;
+    edit.onclick=()=>{const sign=esSignature;if(esSession?.busy)return;$('esSignCancel').click();if(sign)es14RestoreScroll(sign.scroll,sign.name);};
+    $('esSignSave').addEventListener('click',upperProcess,true);
+    const update=()=>{$('esSignSave').disabled=!signedEnough(esSignature);};canvas.addEventListener('pointermove',update);canvas.addEventListener('pointerup',update);canvas.addEventListener('pointercancel',update);
+  }
+  function installHost(){
+    const modal=$('hc15SignModal'),canvas=$('hc15SignCanvas'),actions=modal?.querySelector('.es-sign-actions');if(!modal||!canvas||!actions||modal.dataset.es1815==='1')return;
+    modal.dataset.es1815='1';installStyle();const review=document.createElement('div');review.id='hc1815Review';review.className='es1815-review';canvas.insertAdjacentElement('beforebegin',review);
+    const labelEl=document.createElement('div');labelEl.className='es1815-sign-label';labelEl.textContent='Employee Signature';canvas.insertAdjacentElement('beforebegin',labelEl);
+    const edit=document.createElement('button');edit.type='button';edit.id='hc15SignEdit';edit.className='es1815-edit';edit.textContent='Edit';actions.insertBefore(edit,actions.firstChild);
+    $('hc15SignCancel').textContent='Close';$('hc15SignClear').hidden=true;$('hc15SignSave').textContent='Process';$('hc15SignSave').disabled=true;
+    edit.onclick=()=>{const sign=hc15Sig;if(hc15Session?.busy)return;$('hc15SignCancel').click();if(sign)es14RestoreScroll(sign.scroll);};
+    $('hc15SignSave').onclick=hostProcess;
+    const update=()=>{$('hc15SignSave').disabled=!signedEnough(hc15Sig);};canvas.addEventListener('pointermove',update);canvas.addEventListener('pointerup',update);canvas.addEventListener('pointercancel',update);
+  }
+  const init=esInit;esInit=function(...args){const out=init(...args);installUpper();installHost();return out;};
+  const sign=window.employeeSheetSign;window.employeeSheetSign=async function(name){const out=await sign.apply(this,arguments);requestAnimationFrame(()=>{installUpper();if(esSignature?.name===name){$('esSignatureTitle').textContent=label(name)+' — Review & Sign';$('esSignSummary').textContent='Review these values, sign below, then tap Process to save the signature and print.';$('es1815Review').innerHTML=upperReview(name);$('esSignSave').disabled=!signedEnough(esSignature);}});return out;};
+  const hsign=hc15Sign;hc15Sign=function(name){const out=hsign.apply(this,arguments);requestAnimationFrame(()=>{installHost();if(hc15Sig?.name===name){$('hc15SignTitle').textContent=label(name)+' — Review & Sign';$('hc15SignSummary').textContent='Review these values, sign below, then tap Process to save the signature and print.';$('hc1815Review').innerHTML=hostReview(name);$('hc15SignSave').disabled=!signedEnough(hc15Sig);}});return out;};
+})();
+
+
+/* ES1.8.16 — Today's Team Busser AM / PM presence override.
+ * Default preserves the existing policy: Mon–Fri AM off, PM on; Sat/Sun AM+PM on.
+ * The two Team checkboxes can override a holiday/special day. Bartenders remain 0%.
+ * The payroll engine file is untouched; this integration layer records and reports
+ * the actual AM/PM presence selected for this work date.
+ */
+(function installES1816TeamBusser(){
+  const copy=v=>JSON.parse(JSON.stringify(v));let updateCtx=null;
+  function fallback(date){return {AM:isWeekendDate(date),PM:true};}
+  function plan(batch,date){const d=fallback(date),x=batch?.todayTeamBusser||{};return {AM:typeof x.AM==='boolean'?x.AM:d.AM,PM:typeof x.PM==='boolean'?x.PM:d.PM};}
+  function same(a,b){return !!a&&!!b&&a.AM===b.AM&&a.PM===b.PM;}
+  function installUI(){
+    const page=$('todayTeamPage');if(!page||$('tt16Busser'))return;
+    const box=document.createElement('div');box.id='tt16Busser';box.className='tt16-busser';box.innerHTML='<b>Busser working</b><label><input type="checkbox" id="tt16BusserAM"> Busser AM</label><label><input type="checkbox" id="tt16BusserPM"> Busser PM</label><small>Default: Mon–Fri AM off / PM on; Sat–Sun AM + PM on. Change for holidays or special staffing.</small>';
+    const status=$('tt15Status');status?.insertAdjacentElement('afterend',box);
+    const style=document.createElement('style');style.id='tt16BusserStyle';style.textContent='.tt16-busser{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:10px 12px;margin:8px 0;border:1px solid #cbd9e8;border-radius:12px;background:#f5f9fe}.tt16-busser b{color:#12365f}.tt16-busser label{display:flex;align-items:center;gap:6px;font-weight:800}.tt16-busser input{width:20px;height:20px}.tt16-busser small{color:#64748b;flex-basis:100%}';document.head.appendChild(style);
+    for(const cp of ['AM','PM'])$('tt16Busser'+cp).addEventListener('change',()=>{const s=tt15State;if(!s?.editing||s.busy)return;s.busser ||= plan(s.batch,s.date);s.busser[cp]=$('tt16Busser'+cp).checked;s.busserTouched=true;tt15Render();});
+  }
+  function syncState(s,force=false){if(!s)return;const remote=plan(s.batch,s.date);if(force||!s.busser||(!s.editing&&!s.busserTouched)){s.busser=copy(remote);s.baseBusser=copy(remote);s.busserTouched=false;}return remote;}
+  const init=tt15Init;tt15Init=function(...args){const out=init(...args);installUI();return out;};
+  const render=tt15Render;tt15Render=function(...args){const s=tt15State;if(s)syncState(s,false);const out=render(...args);if($('tt16BusserAM')&&s){const editable=s.ready&&s.editing&&!s.busy;$('tt16BusserAM').checked=!!s.busser?.AM;$('tt16BusserPM').checked=!!s.busser?.PM;$('tt16BusserAM').disabled=!editable;$('tt16BusserPM').disabled=!editable;}return out;};
+  const oldMay=tt15MayLeave;tt15MayLeave=function(){const s=tt15State;if(!s)return oldMay();if(s.busy)return false;const dirtyBus=s.editing&&s.baseBusser&&!same(s.busser,s.baseBusser);const dirtyRows=s.editing&&!tt15Same(s.rows,s.baseRows);return !s.editing||(!dirtyRows&&!dirtyBus)||confirm('Leave without applying team or Busser edits? Existing saved reports are kept.');};
+  const build=tt15BuildTeam;tt15BuildTeam=function(raw,host,rows,date){
+    const remote=plan(raw,date);let chosen=remote;const s=updateCtx?.state;
+    if(s&&s.date===date){const base=s.baseBusser||remote,local=s.busser||base,localChanged=!same(local,base),remoteChanged=!same(remote,base);if(localChanged&&remoteChanged&&!same(local,remote))throw new Error('Another device changed Busser AM / PM for this date. Reload Today\'s Team and review.');chosen=localChanged?copy(local):remote;}
+    const out=build(raw,host,rows,date);out.batch.todayTeamBusser=copy(chosen);out.host.todayTeamBusser=copy(chosen);for(const d of Object.values(out.batch.drafts||{})){if(!d?.values)continue;d.values.hBusserAM=chosen.AM?'WITH':'WITHOUT';d.entered ||= {};d.entered.hBusserAM=true;d.hourlyWizardState={...(d.hourlyWizardState||{}),busserAM:chosen.AM?'WITH':'WITHOUT'};}return out;
+  };
+  const update=tt15UpdateTeam;tt15UpdateTeam=async function(){const s=tt15State;if(s&&!s.baseBusser)syncState(s,true);updateCtx={state:s};try{const ok=await update.apply(this,arguments);if(ok&&s){s.busser=plan(s.batch,s.date);s.baseBusser=copy(s.busser);s.busserTouched=false;}return ok;}finally{updateCtx=null;}};
+  document.addEventListener('click',e=>{if(e.target?.id==='tt15Edit'){const s=tt15State;if(s){syncState(s,true);s.baseBusser=copy(s.busser);s.busserTouched=false;tt15Render();}}if(e.target?.id==='tt15Cancel'){const s=tt15State;if(s){s.busser=plan(s.batch,s.date);s.baseBusser=copy(s.busser);s.busserTouched=false;tt15Render();}}});
+  const buildBatch=esBuildBatch;esBuildBatch=function(source,rows,date,route){const out=buildBatch(source,rows,date,route),p=plan(source,date);out.todayTeamBusser=copy(p);for(const row of rows){const d=out.drafts?.[row.name];if(!d)continue;d.values ||= {};d.entered ||= {};d.values.hBusserAM=p.AM?'WITH':'WITHOUT';d.entered.hBusserAM=true;d.hourlyWizardState={...(d.hourlyWizardState||{}),busserAM:p.AM?'WITH':'WITHOUT'};}return out;};
+  const calculate=esCalculate;esCalculate=function(row,batch,oldReport=null){const r=calculate(row,batch,oldReport),p=plan(batch,batch.date),L=window.FredTipCalculatorLogic;if(row.role==='Bartender'){r.busserAM='N/A';r.busserPM='N/A';r.busserTipOut=0;r.busserTipOutAM=0;r.busserTipOutPM=0;r.busserRate=0;r.totalShared=0;return r;}
+    let amBasis=0,pmBasis=0;const shift=String(row.shift||'').toUpperCase();if(['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift))amBasis=Number(r.grandTotal||r.totalAM||0);else if(shift==='PM')pmBasis=Number(r.grandTotal||r.totalPM||0);else if(['DOUBLE','LONG'].includes(shift)){amBasis=Number(r.totalAM||0);pmBasis=Math.max(0,Number(r.grandTotal||0)-Number(r.totalAM||0));}
+    const am=p.AM?L.roundCent(Math.max(0,amBasis)*0.015):0,pm=p.PM?L.roundCent(Math.max(0,pmBasis)*0.015):0,total=L.roundCent(am+pm);r.busserTipOutAM=am;r.busserTipOutPM=pm;r.busserTipOut=total;r.totalShared=total;r.busserRate=Number(r.grandTotal||0)>0?total/Number(r.grandTotal)*100:0;r.busserAM=shift==='PM'?'N/A':(p.AM?'WITH':'WITHOUT');r.busserPM=['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift)?'N/A':(p.PM?'WITH':'WITHOUT');r.totalTips=L.roundCent(Number(r.paidTip||0)+Number((r.payCardTipFee??r.cardFee)||0)+total);r.busserPolicyVersion='TEAM_BUSSER_AM_PM_OVERRIDE_V1';r.busserPresence={AM:p.AM,PM:p.PM};if(shift==='LONG'){r.busserSalesThrough4PM=r.totalAM;r.salesWithoutBusser=p.AM?0:r.totalAM;r.busserSalesBasis=(p.AM?amBasis:0)+(p.PM?pmBasis:0);}return r;};
+  const summary=esUpdateSummary;esUpdateSummary=function(){const out=summary.apply(this,arguments),s=esSession;if(s&&$('esBusserRule')){const p=plan(s.baseBatch||{},s.date);$('esBusserRule').textContent=`BUSSER · AM ${p.AM?'ON':'OFF'} · PM ${p.PM?'ON':'OFF'} · Server 1.5% when ON · Bartender 0%`;}return out;};
 })();
