@@ -1289,7 +1289,7 @@ let ownerTableSession=null,ownerTableRequest=0,ownerTableSaving=false;
 const OWNER_TABLE_MONEY={grand:'hGrandTotal',totalAM:'hTotalAM',paid:'hPaidTip',cardFee:'hCardFee',cash:'hCashTip',meal:'hMeal'};
 const OWNER_TABLE_GROUPS={shift:'Shift',clock:'Clock In / Out',sales:'Sales',paid:'Paid Tip',cardFee:'Pay Card Tip Fee',cash:'Cash Tip',meal:'Meal'};
 const OWNER_TABLE_CLOCKS=['clockIn','clockOut','clockIn2','clockOut2'];
-function ownerTableAllowed(){return !!currentUser && ['manager','owner'].includes(currentProfile?.role||'');}
+function ownerTableAllowed(){return !!currentUser && currentProfile?.role==='owner';}
 function ownerTableStatus(message){if($('ownerTableStatus'))$('ownerTableStatus').textContent=message;}
 function ownerTableRow(s,name){
   const d=s.drafts?.[name]||{},v=d.values||{},shift=hv1DraftShift(d);
@@ -1467,7 +1467,7 @@ function ownerTableBuildBatch(source,session){
   hv1ApplyBarAutomation(s);return s;
 }
 window.ownerTableOpen=async function(){
-  if(!ownerTableAllowed()){alert('Manager / Owner only.');return;}
+  if(!ownerTableAllowed()){alert('Owner only.');return;}
   if(ownerTableSaving)return;
   if(ownerTableSession && Object.keys(ownerTableSession.dirty).length && !confirm('Discard unsaved table changes and reload?'))return;
   ownerTableSession=null;
@@ -1502,7 +1502,7 @@ window.ownerTableDateChanged=async function(){
   ownerTableSession=null;$('hv1Date').value=date;await window.ownerTableOpen();
 };
 window.ownerTableSave=async function(back=false){
-  if(!ownerTableAllowed()){alert('Manager / Owner only.');return false;}
+  if(!ownerTableAllowed()){alert('Owner only.');return false;}
   const session=ownerTableSession;
   if(ownerTableSaving || !session || session.uid!==currentUser.uid)return false;
   if(session.date!==hv1DateValue()){ownerTableStatus('Work date changed. Reopen the table.');return false;}
@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18190",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18200",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.19';
+const ES_BUILD='ES1.8.20';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -14177,7 +14177,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.19 — Manager/Owner Daily-only hourly pay + incomplete Process workflow.
+/* ES1.8.20 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14240,7 +14240,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.19: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.20: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14256,7 +14256,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const review=$('es1815Review');if(review)review.innerHTML=reviewHtml(name,issues);const edit=$('esSignEdit');if(edit)edit.hidden=true;$('esSignCancel').textContent='Cancel';$('esSignSave').textContent='Process';$('esSignSave').disabled=true;$('esSignCancel').focus();return true;
   }
   const normalSign=window.employeeSheetSign,normalSave=window.employeeSheetSave;
-  window.employeeSheetSave=async function(name){const p=problems(name);if(p.length)return openIncomplete(name,p);return normalSave.apply(this,arguments);};
+  window.employeeSheetSave=async function(name){return normalSave.apply(this,arguments);};
   window.employeeSheetSign=async function(name){const p=problems(name);if(p.length)return openIncomplete(name,p);const edit=$('esSignEdit');if(edit)edit.hidden=false;if($('esSignCancel'))$('esSignCancel').textContent='Close';return normalSign.apply(this,arguments);};
 
   const commit=esCommit;
