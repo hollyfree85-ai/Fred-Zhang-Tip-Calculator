@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18250",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18260",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.25';
+const ES_BUILD='ES1.8.26';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10636,7 +10636,7 @@ function esOutput(row,field){
   const r=esSession.results[row.name]||{};
   if(field==='grandTotalTip')return esMoney(esGrandTotalTip(row,r));
   if(field==='hours')return r.totalMinutesWork==null?'—':`${Math.floor(r.totalMinutesWork/60)}h ${r.totalMinutesWork%60}m`;
-  if(field==='busserRate')return Number(r.busserRate||0).toFixed(3)+'%';
+  if(field==='busserRate')return Number(r.busserRate||0)+'%';
   if(field==='received'){
     if(row.role!=='Bartender')return '—';
     return `<strong>${esMoney(r.bartenderBarTipReceived)}</strong><span class="es-received-parts">${bartenderReceiptPeriods(r).map(p=>`BAR ${bartenderPeriodLabel(p.checkpoint)}: ${esMoney(p.amount)}`).join('<br>')||'Choose BAR routing'}</span>`;
@@ -14184,12 +14184,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const buildBatch=esBuildBatch;esBuildBatch=function(source,rows,date,route){const out=buildBatch(source,rows,date,route),p=plan(source,date);out.todayTeamBusser=copy(p);for(const row of rows){const d=out.drafts?.[row.name];if(!d)continue;d.values ||= {};d.entered ||= {};d.values.hBusserAM=p.AM?'WITH':'WITHOUT';d.entered.hBusserAM=true;d.hourlyWizardState={...(d.hourlyWizardState||{}),busserAM:p.AM?'WITH':'WITHOUT'};}return out;};
   const calculate=esCalculate;esCalculate=function(row,batch,oldReport=null){const r=calculate(row,batch,oldReport),p=plan(batch,batch.date),L=window.FredTipCalculatorLogic;if(row.role==='Bartender'){r.busserAM='N/A';r.busserPM='N/A';r.busserTipOut=0;r.busserTipOutAM=0;r.busserTipOutPM=0;r.busserRate=0;r.totalShared=0;return r;}
     let amBasis=0,pmBasis=0;const shift=String(row.shift||'').toUpperCase();if(['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift))amBasis=Number(r.grandTotal||r.totalAM||0);else if(shift==='PM')pmBasis=Number(r.grandTotal||r.totalPM||0);else if(['DOUBLE','LONG'].includes(shift)){amBasis=Number(r.totalAM||0);pmBasis=Math.max(0,Number(r.grandTotal||0)-Number(r.totalAM||0));}
-    const am=p.AM?L.roundCent(Math.max(0,amBasis)*0.015):0,pm=p.PM?L.roundCent(Math.max(0,pmBasis)*0.015):0,total=L.roundCent(am+pm);r.busserTipOutAM=am;r.busserTipOutPM=pm;r.busserTipOut=total;r.totalShared=total;r.busserRate=Number(r.grandTotal||0)>0?total/Number(r.grandTotal)*100:0;r.busserAM=shift==='PM'?'N/A':(p.AM?'WITH':'WITHOUT');r.busserPM=['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift)?'N/A':(p.PM?'WITH':'WITHOUT');r.totalTips=L.roundCent(Number(r.paidTip||0)+Number((r.payCardTipFee??r.cardFee)||0)+total);r.busserPolicyVersion='TEAM_BUSSER_AM_PM_OVERRIDE_V1';r.busserPresence={AM:p.AM,PM:p.PM};if(shift==='LONG'){r.busserSalesThrough4PM=r.totalAM;r.salesWithoutBusser=p.AM?0:r.totalAM;r.busserSalesBasis=(p.AM?amBasis:0)+(p.PM?pmBasis:0);}return r;};
+    const am=p.AM?L.roundCent(Math.max(0,amBasis)*0.015):0,pm=p.PM?L.roundCent(Math.max(0,pmBasis)*0.015):0,total=L.roundCent(am+pm);r.busserTipOutAM=am;r.busserTipOutPM=pm;r.busserTipOut=total;r.totalShared=total;r.busserRate=(['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift)?p.AM:shift==='PM'?p.PM:(p.AM||p.PM))?1.5:0;r.busserAM=shift==='PM'?'N/A':(p.AM?'WITH':'WITHOUT');r.busserPM=['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift)?'N/A':(p.PM?'WITH':'WITHOUT');r.totalTips=L.roundCent(Number(r.paidTip||0)+Number((r.payCardTipFee??r.cardFee)||0)+total);r.busserPolicyVersion='TEAM_BUSSER_AM_PM_OVERRIDE_V1';r.busserPresence={AM:p.AM,PM:p.PM};if(shift==='LONG'){r.busserSalesThrough4PM=r.totalAM;r.salesWithoutBusser=p.AM?0:r.totalAM;r.busserSalesBasis=(p.AM?amBasis:0)+(p.PM?pmBasis:0);}return r;};
   const summary=esUpdateSummary;esUpdateSummary=function(){const out=summary.apply(this,arguments),s=esSession;if(s&&$('esBusserRule')){const p=plan(s.baseBatch||{},s.date);$('esBusserRule').textContent=`BUSSER · AM ${p.AM?'ON':'OFF'} · PM ${p.PM?'ON':'OFF'} · Server 1.5% when ON · Bartender 0%`;}return out;};
 })();
 
 
-/* ES1.8.25 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.26 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14252,7 +14252,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.25: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.26: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
