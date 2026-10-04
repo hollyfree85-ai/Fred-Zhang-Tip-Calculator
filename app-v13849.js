@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18230",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18240",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.23';
+const ES_BUILD='ES1.8.24';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10351,6 +10351,11 @@ function esAllowed(){return !!currentUser && !currentUser.isAnonymous && ['manag
 function esDateValid(date){if(!/^\d{4}-\d{2}-\d{2}$/.test(date||''))return false;const d=new Date(date+'T12:00:00Z');return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===date;}
 function esDraftKey(date,uid=currentUser?.uid||''){return 'fz_employee_sheet_es1_'+uid+'_'+date;}
 function esMoney(v){return fmtMoney(Number(v)||0);}
+function esGrandTotalTip(row,r){
+  const paid=Number(r.paidTip)||0,cash=Number(r.cashTip)||0;
+  const bar=row.role==='Bartender'?(Number(r.bartenderBarTipReceived)||0):-(Number(r.barTipOut)||0);
+  return Math.round((paid+bar+cash)*100)/100;
+}
 function esStatus(text,error=false){const el=$('esStatus');if(el){el.textContent=text;el.dataset.error=error?'1':'0';}}
 function esFixedRole(name){return employeeWorkProfile(name)?.position||'';}
 function esNormalizeClock(v){return ownerTableFormatClock(String(v||''));}
@@ -10542,7 +10547,7 @@ function esCalculate(row,batch,oldReport=null){
     }else am=totalBusser;
   }
   r.busserTipOutAM=am;r.busserTipOutPM=pm;
-  r.grandTotalTip=L.roundCent(r.totalBeforeMeal+r.cashTip);
+  r.grandTotalTip=esGrandTotalTip(row,r);
   const choice=row.adjustmentDecision,changedChoice=choice && choice!==oldReport?.adjustmentDecision;
   const override=changedChoice?null:(oldReport&&Object.prototype.hasOwnProperty.call(oldReport,'adjustmentOverride')?oldReport.adjustmentOverride:oldReport?.adjustmentDecision==='ACCEPTED'?oldReport.adjustmentSalaryHourly:null);
   const adjustment=L.calculateHourlyAdjustment({...r,adjustmentDecision:choice||oldReport?.adjustmentDecision,adjustmentOverride:override});
@@ -10604,7 +10609,7 @@ const ES_COLUMNS=[
  ['shift','Shift',145,'staff'],['clockIn','Clock In 1',130,'clocks'],['clockOut','Clock Out 1',130,'clocks'],['clockIn2','Clock In 2',130,'clocks'],['clockOut2','Clock Out 2',130,'clocks'],['hours','Total Hours',135,'clocks'],['role','Position',150,'staff'],
  ['totalAM','Total AM',165,'sales'],['total24','Total 2–4',165,'sales'],['grand','Grand Total',175,'sales'],['busserRate','Busser Tip Out %',155,'busser'],['busserAM','Busser AM',155,'busser'],['busserPM','Busser PM',155,'busser'],
  ['barTipAM','BAR Tip Out AM',160,'bar'],['barTip24','BAR Tip Out 2–4',160,'bar'],['barTipPM','BAR Tip Out PM',160,'bar'],['received','BAR Tip Out Received',220,'bar'],
- ['paid','Paid Tip',160,'tips'],['cardFee','Pay Card Tip Fee',160,'tips'],['cash','Cash Tip',155,'tips'],['meal','Meal',145,'tips'],['barAM','AM BAR Sales',125,'checks'],['bar24','2–4 BAR Sales',125,'checks'],['barPM','PM BAR Sales',125,'checks'],
+ ['paid','Paid Tip',160,'tips'],['cardFee','Pay Card Tip Fee',160,'tips'],['cash','Cash Tip',155,'tips'],['grandTotalTip','Grand Total Tip',195,'tips'],['meal','Meal',145,'tips'],['barAM','AM BAR Sales',125,'checks'],['bar24','2–4 BAR Sales',125,'checks'],['barPM','PM BAR Sales',125,'checks'],
  ['adjustmentDecision','Hourly Adjustment',230,'payout'],['payout','Paid Tip Out',190,'payout']
 ];
 function esOption(value,label,selected){return `<option value="${esc(value)}"${String(value)===String(selected)?' selected':''}>${esc(label)}</option>`;}
@@ -10629,6 +10634,7 @@ function esInput(row,field,label){
 }
 function esOutput(row,field){
   const r=esSession.results[row.name]||{};
+  if(field==='grandTotalTip')return esMoney(esGrandTotalTip(row,r));
   if(field==='hours')return r.totalMinutesWork==null?'—':`${Math.floor(r.totalMinutesWork/60)}h ${r.totalMinutesWork%60}m`;
   if(field==='busserRate')return Number(r.busserRate||0).toFixed(3)+'%';
   if(field==='received'){
@@ -10659,9 +10665,9 @@ function esRenderRows(){
   body.innerHTML=s.rows.map((row,idx)=>{
     const state=esRowStatus(row),displaySearch=(employeeWorkProfile(row.name)?.personName||row.name).toLowerCase(),show=!needle||displaySearch.includes(needle);
     const displayName=employeeWorkProfile(row.name)?.personName||row.name;
-    return `<tr data-es-index="${idx}"${!show?' hidden':''}><th scope="row" class="es-name"><b>${esc(displayName)}</b><small style="display:block;margin:.2rem 0;color:#60758a;font-weight:800">${esc(row.shift)} · ${esc(row.role)}</small><span class="es-state" data-kind="${state.kind}">${esc(state.text)}</span><div class="es-row-actions">${['Save','Sign','Print'].map(action=>`<button type="button" data-es-action="${action.toLowerCase()}" data-es-row="${idx}" aria-label="${action} ${esc(row.name)}">${action}</button>`).join('')}</div><span class="es-row-message"></span></th>${ES_COLUMNS.map(([field,label,,group])=>`<td data-es-col="${field}" class="es-cell es-${group}${field==='payout'?' es-payout':''}">${ES_FIELDS.includes(field)?esInput(row,field,label):`<div class="es-computed" data-es-out="${field}">${esOutput(row,field)}</div>`}</td>`).join('')}</tr>`;
+    return `<tr data-es-index="${idx}"${!show?' hidden':''}><th scope="row" class="es-name"><b>${esc(displayName)}</b><small style="display:block;margin:.2rem 0;color:#60758a;font-weight:800">${esc(row.shift)} · ${esc(row.role)}</small><span class="es-state" data-kind="${state.kind}">${esc(state.text)}</span><div class="es-row-actions">${['Save','Sign','Print'].map(action=>`<button type="button" data-es-action="${action.toLowerCase()}" data-es-row="${idx}" aria-label="${action} ${esc(row.name)}">${action}</button>`).join('')}</div><span class="es-row-message"></span></th>${ES_COLUMNS.map(([field,label,,group])=>`<td data-es-col="${field}" class="es-cell es-${group}${field==='payout'?' es-payout':field==='grandTotalTip'?' es-grand-tip':''}">${ES_FIELDS.includes(field)?esInput(row,field,label):`<div class="es-computed" data-es-out="${field}">${esOutput(row,field)}</div>`}</td>`).join('')}</tr>`;
   }).join('');
-  if(!s.rows.length)body.innerHTML=`<tr><td colspan="27" class="es-empty">Start with Team / BAR → select an employee → Add. No need to open individual forms.</td></tr>`;
+  if(!s.rows.length)body.innerHTML=`<tr><td colspan="${ES_COLUMNS.length+1}" class="es-empty">Start with Team / BAR → select an employee → Add. No need to open individual forms.</td></tr>`;
   esUpdateSummary();
 }
 function esUpdateComputed(){
@@ -14183,7 +14189,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.23 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.24 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14246,7 +14252,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.23: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.24: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}

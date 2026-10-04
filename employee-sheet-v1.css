@@ -565,3 +565,6 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 /* ES1.8.4: tip-only Host/Cashier; no clock columns. */
 #employeeSheet .hc184-toolbar{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 #employeeSheet #hc184Refresh{font-size:15px;white-space:normal}
+
+#employeeSheet .es-grand-tip{background:#eaf3ff!important}
+#employeeSheet .es-grand-tip .es-computed{font-size:22px;color:#174779}
