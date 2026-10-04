@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18200",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18230",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.20';
+const ES_BUILD='ES1.8.23';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10429,7 +10429,7 @@ function esValidateSales(row,route,complete=false){
   for(const field of ES_MONEY){
     if(field==='totalAM'&&!mask.totalAM || field==='total24'&&!mask.total24)continue;
     const raw=String(row[field]??'').trim();
-    if(raw && (!/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(raw)||!Number.isFinite(Number(raw))))errors.push(field+' must be 0 or more, with at most 2 decimals.');
+    if(raw && !es14MoneyValid(raw,field))errors.push(field+(field==='paid'?' must be a valid signed amount':' must be 0 or more')+', with at most 2 decimals.');
   }
   if(row.role==='Server'){
     let previous=0;
@@ -10624,7 +10624,8 @@ function esInput(row,field,label){
   }
   const clock=field.startsWith('clock');
   const disabled=(clock&&field.endsWith('2')&&row.shift!=='DOUBLE')||(field==='totalAM'&&!mask.totalAM)||(field==='total24'&&!mask.total24);
-  return `<input ${attr} type="text" inputmode="numeric"${clock?'':' data-es182-money="1" title="Type digits: 2000 = 20.00"'} autocomplete="off" spellcheck="false"${clock?' maxlength="5"':''} value="${esc(disabled?'':clock?row[field]:es182MoneyDisplay(row[field]))}" placeholder="${disabled?'—':clock?'HH:MM':'0.00'}"${disabled?' disabled':''}>`;
+  const sign=field==='paid'?`<button type="button" data-es-paid-sign="${esSession.rows.indexOf(row)}" title="Toggle Paid Tip positive / negative" aria-label="Toggle Paid Tip sign">±</button>`:'';
+  return `<input ${attr} type="text" inputmode="numeric"${clock?'':' data-es182-money="1" title="Type digits: 2000 = 20.00"'} autocomplete="off" spellcheck="false"${clock?' maxlength="5"':''} value="${esc(disabled?'':clock?row[field]:es182MoneyDisplay(row[field]))}" placeholder="${disabled?'—':clock?'HH:MM':'0.00'}"${disabled?' disabled':''}>${sign}`;
 }
 function esOutput(row,field){
   const r=esSession.results[row.name]||{};
@@ -10752,7 +10753,7 @@ function esChange(input,final){
   if(f==='role'&&esFixedRole(row.name))return;
   const before=esClone(row);let value=input.type==='checkbox'?input.checked:input.value;
   if(f.startsWith('clock')){value=esNormalizeClock(value);if(input.value!==value)input.value=value;}
-  if(final&&ES_MONEY.includes(f)&&es14MoneyValid(value)&&String(value).trim()!==''){value=es14MoneyText(value);input.value=es182MoneyDisplay(value);}
+  if(final&&ES_MONEY.includes(f)&&es14MoneyValid(value,f)&&String(value).trim()!==''){value=es14MoneyText(value);input.value=es182MoneyDisplay(value);}
   row[f]=value;
   if(f==='shift'){
     const old=before.shift;
@@ -11535,10 +11536,10 @@ function esInstallDesktopPage(){
  * Transactions read before writing and never erase another employee's input.
  */
 const ES14_DEBOUNCE_MS=650;
-function es14MoneyValid(v){const t=String(v??'').trim();return t===''||(/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/.test(t)&&Number.isFinite(Number(t)));}
-function es14MoneyText(v){const t=String(v??'').trim();return t===''?'':es14MoneyValid(t)?String(Number(t)):t;}
+function es14MoneyValid(v,field){const t=String(v??'').trim();return t===''||((field==='paid'?/^-?(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/:/^(?:\d+(?:\.\d{0,2})?|\.\d{1,2})$/).test(t)&&Number.isFinite(Number(t)));}
+function es14MoneyText(v){const t=String(v??'').trim();return t===''?'':es14MoneyValid(t,'paid')?String(Number(t)):t;}
 function es14Same(field,a,b){return ES_MONEY.includes(field)?es14MoneyText(a)===es14MoneyText(b):field.startsWith('clock')?esNormalizeClock(a)===esNormalizeClock(b):String(a??'')===String(b??'');}
-function es14CleanRow(row){const r=esClone(row);for(const f of ES_MONEY)if(es14MoneyValid(r[f]))r[f]=es14MoneyText(r[f]);return r;}
+function es14CleanRow(row){const r=esClone(row);for(const f of ES_MONEY)if(es14MoneyValid(r[f],f))r[f]=es14MoneyText(r[f]);return r;}
 function es14Conflict(name,field,base,local,remote){return {name,field,base:base??'',local:local??'',remote:remote??''};}
 function es14ConflictError(conflicts){const e=new Error('Another device edited the same field. Tap Review changes to choose the value; other employees can still be saved.');e.esConflicts=conflicts;return e;}
 function es14UniqueConflicts(items){return [...new Map(items.map(x=>[x.name+'\u0000'+x.field,x])).values()];}
@@ -11607,8 +11608,8 @@ function es14Patch(baseRows,editedRows,remoteRows,dirty,route,skipInvalid=true){
     const salesErrors=esValidateSales({...edited,paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);
     for(const field of ES_FIELDS){
       if(!changes[field]&&!changes.__new)continue;
-      const value=ES_MONEY.includes(field)&&es14MoneyValid(edited[field])?es14MoneyText(edited[field]):edited[field];
-      if(skipInvalid&&((ES_MONEY.includes(field)&&!es14MoneyValid(value))||(['totalAM','total24','grand'].includes(field)&&salesErrors.length))){skipped.push({name:edited.name,field});continue;}
+      const value=ES_MONEY.includes(field)&&es14MoneyValid(edited[field],field)?es14MoneyText(edited[field]):edited[field];
+      if(skipInvalid&&((ES_MONEY.includes(field)&&!es14MoneyValid(value,field))||(['totalAM','total24','grand'].includes(field)&&salesErrors.length))){skipped.push({name:edited.name,field});continue;}
       const original=base?.[field]??esDefaults(edited.name,'')[field];
       if(base&&es14Same(field,value,original))continue; // No remaining local edit.
       if(!es14Same(field,target[field],original)&&!es14Same(field,target[field],value)){
@@ -11723,7 +11724,7 @@ function es14HasPublishable(s){
   for(const row of s.rows){const changes=s.dirty[row.name];if(!changes)continue;
     if(changes.__new&&!s.baseRows.some(r=>r.name===row.name))return true;
     const salesErrors=esValidateSales({...row,paid:'0',cardFee:'0',cash:'0',meal:'0'},s.routing,false);
-    for(const f of ES_FIELDS)if(changes[f]&&!conflicts.some(c=>c.name===row.name&&c.field===f)&&(!ES_MONEY.includes(f)||es14MoneyValid(row[f]))&&(!['grand','totalAM','total24'].includes(f)||!salesErrors.length))return true;
+    for(const f of ES_FIELDS)if(changes[f]&&!conflicts.some(c=>c.name===row.name&&c.field===f)&&(!ES_MONEY.includes(f)||es14MoneyValid(row[f],f))&&(!['grand','totalAM','total24'].includes(f)||!salesErrors.length))return true;
   }
   return ES_PERIODS.some(cp=>(s.routing[cp]||'')!==(s.baseRouting[cp]||'')&&!conflicts.some(c=>c.name==='BAR routing'&&c.field===cp));
 }
@@ -13029,7 +13030,7 @@ function es17RecoveryCheckDeviceDraft(date,uid){
   // date is currently open, or there is no Employee Sheet session at all.
   // Only an acknowledged, clean snapshot is safe to discard after Clear/Undo.
   if(!saved||typeof saved!=='object'||Array.isArray(saved)||saved.date&&saved.date!==date||!Array.isArray(saved.rows)||!Array.isArray(saved.baseRows))throw new Error(message);
-  if(esHasEdits(saved)||saved.rows.some(row=>!row||typeof row.name!=='string'||ES_MONEY.some(field=>!es14MoneyValid(row[field]))||!es16RowMatches(row,saved.baseRows.find(base=>base?.name===row.name))))throw new Error(message);
+  if(esHasEdits(saved)||saved.rows.some(row=>!row||typeof row.name!=='string'||ES_MONEY.some(field=>!es14MoneyValid(row[field],field))||!es16RowMatches(row,saved.baseRows.find(base=>base?.name===row.name))))throw new Error(message);
   if(saved.draftSaves!=null){
     if(typeof saved.draftSaves!=='object'||Array.isArray(saved.draftSaves))throw new Error(message);
     for(const [name,entry]of Object.entries(saved.draftSaves))if(!entry||typeof entry!=='object'||!entry.row||entry.row.name!==name||!saved.rows.some(row=>row.name===name))throw new Error(message);
@@ -13232,15 +13233,16 @@ function es182StableJson(value){
 }
 function es182MoneyDisplay(value){
   const text=String(value??'').trim();
-  return text===''?'':es14MoneyValid(text)?Number(text).toFixed(2):text;
+  return text===''?'':es14MoneyValid(text,'paid')?Number(text).toFixed(2):text;
 }
 function es182CentsDisplay(digits){
   let text=String(digits||'0').replace(/^0+(?=\d)/,'');
   if(!/^\d+$/.test(text)||text.length>14)return null;
   text=text.padStart(3,'0');return text.slice(0,-2)+'.'+text.slice(-2);
 }
-function es182MoneyPaste(text){
+function es182MoneyPaste(text,signed=false){
   text=String(text??'').trim();
+  if(signed&&text.startsWith('-')){const n=es182MoneyPaste(text.slice(1));return n===null?null:'-'+n;}
   if(/^\d+$/.test(text))return es182CentsDisplay(text);
   // An explicitly formatted dollar amount keeps its value. Do not strip a
   // minus, letters, an extra decimal or exponent and turn it into different money.
@@ -13249,8 +13251,11 @@ function es182MoneyPaste(text){
   if(!es14MoneyValid(clean))return null;
   const [whole,part='']=clean.split('.');return es182CentsDisplay((whole||'0')+part.padEnd(2,'0'));
 }
-function es182MoneyEdit(value,type,data,start,end,replace=false){
-  value=String(value??'');start=Math.max(0,Number(start)||0);end=Math.max(start,Number(end)||0);
+function es182MoneyEdit(value,type,data,start,end,replace=false,signed=false){
+  value=String(value??'');
+  if(signed&&data==='-'&&/^insert/.test(type))return value.startsWith('-')?value.slice(1):'-'+(value||'0.00');
+  const negative=signed&&value.startsWith('-');
+  start=Math.max(0,Number(start)||0);end=Math.max(start,Number(end)||0);
   const digits=value.replace(/\D/g,''),a=value.slice(0,start).replace(/\D/g,'').length,b=value.slice(0,end).replace(/\D/g,'').length;
   let result;
   if(type==='insertText'||type==='insertReplacementText'||type==='insertCompositionText'){
@@ -13260,7 +13265,7 @@ function es182MoneyEdit(value,type,data,start,end,replace=false){
   else if(type==='deleteContentForward')result=replace?'':a!==b?digits.slice(0,a)+digits.slice(b):digits.slice(0,a)+digits.slice(a+1);
   else if(type==='deleteByCut')result=replace?'':digits.slice(0,a)+digits.slice(b);
   else return null;
-  return es182CentsDisplay(result);
+  const out=es182CentsDisplay(result);return out===null?null:(negative?'-':'')+out;
 }
 const es182MoneyStates=new WeakMap();
 function es182IsMoneyInput(el){
@@ -13279,6 +13284,7 @@ function es182SetMoneyInput(el,value,notify=true){
 }
 function es182InstallMoneyInputs(){
   if(window.__fz182MoneyInstalled)return;window.__fz182MoneyInstalled=true;
+  document.addEventListener('click',e=>{const b=e.target.closest?.('[data-es-paid-sign]');if(!b)return;const el=b.parentElement.querySelector('input[data-es-field="paid"]');if(!es182IsMoneyInput(el))return;es182SetMoneyInput(el,el.value.startsWith('-')?el.value.slice(1):'-'+(el.value||'0.00'));},true);
   document.addEventListener('focusin',e=>{
     const el=e.target;if(!es182IsMoneyInput(el))return;
     el.inputMode='numeric';el.setAttribute('data-es182-money','1');el.value=es182MoneyDisplay(el.value);
@@ -13290,7 +13296,7 @@ function es182InstallMoneyInputs(){
     const el=e.target;if(!es182IsMoneyInput(el)||e.isComposing)return;
     const state=es182MoneyState(el),snap=es182MoneySnapshot(el,state);state.before=snap;
     if(e.inputType==='insertFromPaste'||e.inputType==='insertFromDrop')return;
-    const value=es182MoneyEdit(snap.value,e.inputType,e.data,snap.start,snap.end,snap.replace);
+    const value=es182MoneyEdit(snap.value,e.inputType,e.data,snap.start,snap.end,snap.replace,el.dataset.esField==='paid');
     if(!e.cancelable)return; // Samsung/IME fallback is handled by the input event.
     if(value!==null){e.preventDefault();es182SetMoneyInput(el,value);}
     else if(/^insert/.test(e.inputType||'')||/^delete/.test(e.inputType||'')){e.preventDefault();state.before=null;}
@@ -13299,8 +13305,8 @@ function es182InstallMoneyInputs(){
     const el=e.target;if(!es182IsMoneyInput(el)||e.fz182MoneyReady)return;
     const state=es182MoneyState(el),snap=state.before;state.before=null;
     if(e.isComposing){e.stopImmediatePropagation();return;}
-    let value=snap?es182MoneyEdit(snap.value,e.inputType,e.data,snap.start,snap.end,snap.replace):null;
-    if(value===null)value=es182MoneyPaste(el.value);
+    let value=snap?es182MoneyEdit(snap.value,e.inputType,e.data,snap.start,snap.end,snap.replace,el.dataset.esField==='paid'):null;
+    if(value===null)value=es182MoneyPaste(el.value,el.dataset.esField==='paid');
     if(el.value==='')value='0.00';
     if(value===null){el.value=snap?.value??'';e.stopImmediatePropagation();esStatus('Enter digits only, or paste an amount such as 20.00.',true);return;}
     es182SetMoneyInput(el,value,false);
@@ -13308,13 +13314,13 @@ function es182InstallMoneyInputs(){
   document.addEventListener('paste',e=>{
     const el=e.target;if(!es182IsMoneyInput(el))return;
     const text=e.clipboardData?.getData('text');if(text==null)return;
-    e.preventDefault();const value=es182MoneyPaste(text);
-    if(value===null){esStatus('Amount not pasted. Use digits or an amount such as 20.00; no negative values.',true);return;}
+    e.preventDefault();const value=es182MoneyPaste(text,el.dataset.esField==='paid');
+    if(value===null){esStatus('Amount not pasted. Use digits or an amount such as 20.00; negative values are allowed only for Paid Tip.',true);return;}
     es182SetMoneyInput(el,value);
   },true);
   document.addEventListener('compositionend',e=>{
     const el=e.target;if(!es182IsMoneyInput(el))return;
-    const value=es182MoneyPaste(el.value);if(value!==null)es182SetMoneyInput(el,value);
+    const value=es182MoneyPaste(el.value,el.dataset.esField==='paid');if(value!==null)es182SetMoneyInput(el,value);
   },true);
   document.addEventListener('focusout',e=>{
     const el=e.target;if(!es182IsMoneyInput(el))return;
@@ -14177,7 +14183,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.20 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.23 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14240,7 +14246,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.20: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.23: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
