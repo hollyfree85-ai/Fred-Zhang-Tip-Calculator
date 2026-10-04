@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18300",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18310",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.30';
+const ES_BUILD='ES1.8.31';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -14189,7 +14189,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.30 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.31 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14252,7 +14252,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.30: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.31: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14383,9 +14383,10 @@ function os29CleanImage(src,w,h,mode){
 /* Owner voice entry: Indonesian digit dictation and explicit final commands. */
 function ov30Digits(text){
  const map={nol:'0',kosong:'0',zero:'0',satu:'1',dua:'2',tiga:'3',empat:'4',lima:'5',enam:'6',tujuh:'7',delapan:'8',sembilan:'9'};
- let t=String(text||'').toLowerCase().trim().replace(/[.,!?]+$/,'').replace(/\s+/g,' '),minus=false;
+ let t=String(text||'').toLowerCase().trim().replace(/[.,!?]+$/,'').replace(/([a-z])-([a-z])/g,'$1 $2').replace(/\s+/g,' '),minus=false;
  if(/^(minus|negatif)\b/.test(t)){minus=true;t=t.replace(/^(minus|negatif)\s*/,'');}else if(t.startsWith('-')){minus=true;t=t.slice(1);}
  if(!t)return null;
+ t=t.replace(/(dua|tiga|empat|lima) kali (nol|kosong|satu|dua|tiga|empat|lima|enam|tujuh|delapan|sembilan)/g,(_,n,d)=>Array(Number(map[n])).fill(d).join(' '));
  const tokens=t.split(' ');let digits='';for(const token of tokens){if(map[token]!==undefined)digits+=map[token];else if(/^\d+$/.test(token))digits+=token;else return null;}
  if(digits.length>12)return null;return {digits,minus};
 }
@@ -14403,7 +14404,7 @@ function ov30Amount(text,field){const t=String(text||'').trim();if(['clockIn','c
  function status(t){if($('ov30Status'))$('ov30Status').textContent=t;}
  function pause(){serial++;if(rec){rec.onend=null;rec.abort();rec=null;}if($('ov30Listen'))$('ov30Listen').textContent='🎤 Bicara';}
  function stop(){pause();state=null;lastEdit=null;$('ov30Panel')?.classList.add('hidden');document.querySelectorAll('.ov30-active').forEach(e=>e.classList.remove('ov30-active'));}
- function show(){if(!valid())return stop();document.querySelectorAll('.ov30-active').forEach(e=>e.classList.remove('ov30-active'));const el=input();el?.classList.add('ov30-active');$('ov30Name').textContent=tt15Label(state.name)+' · '+state.date;const label=fields.find(x=>x[0]===state.field);$('ov30Field').textContent=(label?.[1]||state.field)+' — '+(el?.value||'kosong');$('ov30Preview').textContent=state.pending||'Ucapkan angka satu per satu, lalu “enter”.';}
+ function show(){if(!valid())return stop();document.querySelectorAll('.ov30-active').forEach(e=>e.classList.remove('ov30-active'));const el=input();el?.classList.add('ov30-active');$('ov30Name').textContent=tt15Label(state.name)+' · '+state.date;const label=fields.find(x=>x[0]===state.field);$('ov30Field').textContent=(label?.[1]||state.field)+' — '+(el?.value||'kosong');const parsed=ov30Amount(state.pending,state.field),d=ov30Digits(state.pending);$('ov30Preview').textContent=state.pending?('Digit: '+(d?(d.minus?'-':'')+d.digits:state.pending)+' → '+(parsed??'tidak valid')):'Ucapkan angka satu per satu.';}
  function move(delta){const a=list(),i=a.findIndex(x=>x[0]===state.field),next=a[i+delta];if(next){state.field=next[0];state.pending='';show();}else status(delta>0?'Kolom terakhir. Ucapkan “simpan” atau “tanda tangan”.':'Sudah kolom pertama.');}
  function apply(){if(!valid()||esSession.busy)return;if(!state.pending){status('Belum ada angka.');return;}const field=state.field,value=ov30Amount(state.pending,field),el=input();if(value===null||!el||el.disabled){status('Angka tidak valid. Jam: empat digit 24 jam. Uang: digit sen; minus hanya Paid Tip. Ulangi.');return;}lastEdit={field,value:el.value};el.value=value;esChange(el,true);status((fields.find(x=>x[0]===field)?.[1]||field)+' diisi '+value);state.pending='';move(1);show();}
  async function command(raw){const s=state;if(!valid(s)||esSession.busy)return;const text=String(raw||'').toLowerCase().trim().replace(/[.,!?]+$/,'').replace(/\s+/g,' ');$('ov30Transcript').textContent='Terdengar: '+raw;
@@ -14415,14 +14416,18 @@ function ov30Amount(text,field){const t=String(text||'').trim();if(['clockIn','c
  if(['batalkan terakhir','undo'].includes(text)){if(lastEdit){const el=input(lastEdit.field);if(el){el.value=lastEdit.value;esChange(el,true);s.field=lastEdit.field;lastEdit=null;show();status('Input terakhir dikembalikan.');}}return;}
  if(['kembali','sebelumnya'].includes(text)){move(-1);return;}if(['lanjut','berikutnya'].includes(text)){move(1);return;}
  if(aliases[text]){const el=input(aliases[text]);if(!el||el.disabled){status('Kolom tidak berlaku untuk shift ini.');return;}s.field=aliases[text];s.pending='';show();return;}
+ if(/^tambah /.test(text)){const extra=ov30Digits(text.slice(7)),base=ov30Digits(s.pending);if(!extra||extra.minus||!base){status('Ucapkan angka dulu, lalu tambah nol jika diperlukan.');return;}s.pending=(base.minus?'minus ':'')+base.digits+extra.digits;show();status('Digit ditambahkan. Periksa nilai, lalu enter.');return;}
  if(['enter','entar','ent er'].includes(text)){apply();return;}
  const enter=/\s+(enter|entar)\s*$/.test(text),numbers=enter?text.replace(/\s+(enter|entar)\s*$/,''):text;
- if(ov30Amount(numbers,s.field)===null){status('Tidak dikenali. Ucapkan digit satu per satu, atau nama kolom/perintah yang tersedia.');return;}s.pending=numbers;show();if(enter)apply();else status('Angka siap. Ucapkan “enter” atau tekan Terapkan.');
+ if(ov30Amount(numbers,s.field)===null){status('Tidak dikenali. Ucapkan digit satu per satu, atau nama kolom/perintah yang tersedia.');return;}s.pending=numbers;show();status('Periksa digit dan nilai di preview. Tekan Bicara lagi lalu ucapkan enter, atau tekan Terapkan.');
  }
  function listen(){if(!valid()||esSession.busy)return;if(rec){pause();return;}const API=window.SpeechRecognition||window.webkitSpeechRecognition;if(!API){status('Voice belum didukung browser ini. Coba Chrome Android; input manual tetap tersedia.');return;}
- const s=state,id=++serial,r=new API();rec=r;r.lang='id-ID';r.continuous=false;r.interimResults=true;r.maxAlternatives=1;let handled=false;r.onresult=e=>{if(id!==serial||!valid(s))return;for(let i=e.resultIndex;i<e.results.length;i++){const result=e.results[i],best=result[0];if(!result.isFinal){$('ov30Transcript').textContent='Mendengar: '+best.transcript;continue;}if(handled)continue;handled=true;if(best.confidence>0&&best.confidence<.6){status('Ucapan kurang jelas. Dekatkan mikrofon dan ulangi; tidak ada angka/perintah diterapkan.');return;}command(best.transcript).catch(err=>status(err.message));}};r.onerror=e=>{if(id===serial&&valid(s))status(e.error==='not-allowed'?'Izinkan mikrofon di browser.':'Tidak terbaca ('+e.error+'). Tekan Bicara untuk ulang.');};r.onend=()=>{if(id===serial){rec=null;$('ov30Listen').textContent='🎤 Bicara';}};try{r.start();$('ov30Listen').textContent='■ Berhenti mendengar';status('Mendengar satu ucapan. Dekatkan HP; ucapkan angka dan enter.');}catch(e){rec=null;status(e.message);}
+ const s=state,id=++serial,r=new API();rec=r;r.lang='id-ID';r.continuous=false;r.interimResults=true;r.maxAlternatives=3;const finals=new Map();let rejected=false;
+ r.onresult=e=>{if(id!==serial||!valid(s))return;for(let i=e.resultIndex;i<e.results.length;i++){const result=e.results[i],best=result[0];if(!result.isFinal){$('ov30Transcript').textContent='Mendengar: '+best.transcript;continue;}finals.set(i,{text:best.transcript,confidence:best.confidence});}$('ov30Transcript').textContent='Terdengar: '+Array.from(finals.entries()).sort((a,b)=>a[0]-b[0]).map(x=>x[1].text).join(' ');};
+ r.onerror=e=>{rejected=true;if(id===serial&&valid(s))status(e.error==='not-allowed'?'Izinkan mikrofon di browser.':'Tidak terbaca ('+e.error+'). Tekan Bicara untuk ulang.');};
+ r.onend=()=>{if(id!==serial)return;rec=null;$('ov30Listen').textContent='🎤 Bicara';if(!valid(s)||rejected)return;const pieces=Array.from(finals.entries()).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);if(pieces.some(p=>p.confidence>0&&p.confidence<.6)){status('Ucapan kurang jelas. Tidak diterapkan; ulangi lebih dekat.');return;}if(pieces.length)command(pieces.map(p=>p.text).join(' ')).catch(err=>status(err.message));else status('Belum terdengar. Tekan Bicara untuk ulang.');};try{r.start();$('ov30Listen').textContent='■ Berhenti mendengar';status('Mendengar satu ucapan. Dekatkan HP; ucapkan angka dan enter.');}catch(e){rec=null;status(e.message);}
  }
- function ui(){if($('ov30Panel'))return;const el=document.createElement('div');el.id='ov30Panel';el.className='hidden';el.innerHTML='<b id="ov30Name"></b><button id="ov30Close" type="button">✕ Stop</button><h3 id="ov30Field"></h3><div id="ov30Preview"></div><p id="ov30Transcript"></p><p id="ov30Status" aria-live="polite"></p><button id="ov30Listen" type="button">🎤 Bicara</button><button id="ov30Apply" type="button">Terapkan / Enter</button><button id="ov30Back" type="button">Kembali</button><button id="ov30Next" type="button">Lanjut</button><details><summary>Perintah suara</summary><p>Digit: nol, satu, dua, tiga, empat, lima, enam, tujuh, delapan, sembilan. “Enter” mengisi dan lanjut. Minus hanya Paid Tip.</p><p>Simpan / save; tanda tangan / sain; proses setelah tanda tangan; ulang; batalkan terakhir; kembali; lanjut; stop. Pindah kolom: jam masuk, jam keluar, total AM, total dua empat, grand total, paid tip, biaya kartu, cash tip, meal.</p><p>Jam 24 jam: satu nol tiga delapan enter → 10:38. Uang: dua nol tiga enam lima enter → 203.65. Satu ucapan per tekan Bicara, untuk mengurangi suara sekitar. Pengenalan suara mengikuti layanan browser dan dapat memerlukan internet.</p></details>';document.body.append(el);const style=document.createElement('style');style.textContent='#ov30Panel:not(.hidden){display:block;position:fixed;bottom:10px;right:10px;z-index:100020;max-width:420px;width:calc(100% - 44px);max-height:48dvh;overflow:auto;background:#f4fbff;color:#12344e;border:2px solid #2479c1;border-radius:14px;padding:12px;box-shadow:0 6px 30px #0005}#ov30Panel button{padding:10px;font-size:16px;margin:3px;border-radius:9px}#ov30Close{float:right}#ov30Preview{font-size:24px;font-weight:800}#ov30Status,#ov30Transcript{font-size:14px}input.ov30-active{outline:4px solid #1689df!important;background:#e4f3ff!important}';document.head.append(style);$('ov30Close').onclick=stop;$('ov30Listen').onclick=listen;$('ov30Apply').onclick=apply;$('ov30Back').onclick=()=>{pause();move(-1);};$('ov30Next').onclick=()=>{pause();move(1);};}
+ function ui(){if($('ov30Panel'))return;const el=document.createElement('div');el.id='ov30Panel';el.className='hidden';el.innerHTML='<b id="ov30Name"></b><button id="ov30Close" type="button">✕ Stop</button><h3 id="ov30Field"></h3><div id="ov30Preview"></div><p id="ov30Transcript"></p><p id="ov30Status" aria-live="polite"></p><button id="ov30Listen" type="button">🎤 Bicara</button><button id="ov30Apply" type="button">Terapkan / Enter</button><button id="ov30Back" type="button">Kembali</button><button id="ov30Next" type="button">Lanjut</button><details><summary>Perintah suara</summary><p>Digit: nol, satu, dua, tiga, empat, lima, enam, tujuh, delapan, sembilan. Setelah angka tampil, “Enter” pada ucapan berikutnya mengisi dan lanjut. “Tambah nol” menambahkan digit nol. Minus hanya Paid Tip.</p><p>Simpan / save; tanda tangan / sain; proses setelah tanda tangan; ulang; batalkan terakhir; kembali; lanjut; stop. Pindah kolom: jam masuk, jam keluar, total AM, total dua empat, grand total, paid tip, biaya kartu, cash tip, meal.</p><p>Jam 24 jam: satu nol tiga delapan enter → 10:38. Uang: dua nol tiga enam lima enter → 203.65. Satu ucapan per tekan Bicara, untuk mengurangi suara sekitar. Pengenalan suara mengikuti layanan browser dan dapat memerlukan internet.</p></details>';document.body.append(el);const style=document.createElement('style');style.textContent='#ov30Panel:not(.hidden){display:block;position:fixed;bottom:10px;right:10px;z-index:100020;max-width:420px;width:calc(100% - 44px);max-height:48dvh;overflow:auto;background:#f4fbff;color:#12344e;border:2px solid #2479c1;border-radius:14px;padding:12px;box-shadow:0 6px 30px #0005}#ov30Panel button{padding:10px;font-size:16px;margin:3px;border-radius:9px}#ov30Close{float:right}#ov30Preview{font-size:24px;font-weight:800}#ov30Status,#ov30Transcript{font-size:14px}input.ov30-active{outline:4px solid #1689df!important;background:#e4f3ff!important}';document.head.append(style);$('ov30Close').onclick=stop;$('ov30Listen').onclick=listen;$('ov30Apply').onclick=apply;$('ov30Back').onclick=()=>{pause();move(-1);};$('ov30Next').onclick=()=>{pause();move(1);};}
  function open(name){if(!permitted())return;stop();ui();state={name,session:esSession,uid:currentUser.uid,date:esSession.date,field:'clockIn',pending:''};const a=list();state.field=a[0]?.[0]||'paid';$('ov30Panel').classList.remove('hidden');$('ov30Transcript').textContent='';show();status('Tekan Bicara untuk tiap ucapan. Kolom tetap bisa diisi manual.');}
  const render=esRenderRows;esRenderRows=function(...args){const out=render(...args);if(permitted())for(const tr of document.querySelectorAll('#esRows tr[data-es-index]')){const row=esSession.rows[Number(tr.dataset.esIndex)],host=tr.querySelector('.es-row-actions');if(!row||!host)continue;const b=document.createElement('button');b.type='button';b.textContent='🎤 Voice';b.onclick=()=>open(row.name);host.append(b);}if(state)show();return out;};
  document.addEventListener('visibilitychange',()=>{if(document.hidden)pause();});document.addEventListener('focusin',e=>{if(!valid())return;const el=e.target,idx=Number(el.dataset?.esRow);if(el.dataset?.esField&&esSession.rows[idx]?.name===state.name&&fields.some(x=>x[0]===el.dataset.esField)){pause();state.field=el.dataset.esField;state.pending='';show();}});setInterval(()=>{if(state&&!valid())stop();},1500);
