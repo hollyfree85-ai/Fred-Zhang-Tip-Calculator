@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18270",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18280",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.27';
+const ES_BUILD='ES1.8.28';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -14189,7 +14189,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.27 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.28 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14252,7 +14252,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.27: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.28: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14308,7 +14308,7 @@ function os27Parse(text){
  function loadScript(url,key){if(window[key])return Promise.resolve();return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=()=>{s.remove();reject(new Error('Scanner could not load. Check internet connection; manual input is available.'));};document.head.append(s);});}
  function modal(){if($('os27Modal'))return;const el=document.createElement('div');el.id='os27Modal';el.className='hidden';el.innerHTML=`<div class="os27-panel" role="dialog" aria-modal="true" aria-labelledby="os27Title"><h2 id="os27Title">Scan receipt</h2><p id="os27Target"></p><div class="os27-buttons"><button id="os27Camera" type="button">Take Photo</button><button id="os27Choose" type="button">Photo / PDF</button><button id="os27Close" type="button">Close</button></div><input hidden id="os27Capture" type="file" accept="image/*" capture="environment"><input hidden id="os27File" type="file" accept="image/*,application/pdf"><label>PDF page <input id="os27Page" type="number" min="1" max="10" value="1"></label><button id="os27Read" type="button">Read selected page again</button><p id="os27Status" aria-live="polite">Choose a clear receipt photo or PDF.</p><img id="os27Preview" alt="Receipt source" hidden><div id="os27Results" hidden>${[['grand','Grand Total'],['paid','Paid Tip'],['cardFee','Pay Card Tip Fee']].map(([f,l])=>`<label>${l}<input id="os27-${f}" type="text" inputmode="decimal" autocomplete="off"><small id="os27-source-${f}"></small></label>`).join('')}<details><summary>Recognized receipt text</summary><pre id="os27Text"></pre></details><label><input id="os27Confirm" type="checkbox">I checked the employee, date, and all three amounts against the receipt.</label><button id="os27Apply" type="button" disabled>Use Results</button><p>Only these three columns are filled. Existing values are replaced after your review. The sheet keeps its usual save/sync behavior.</p></div></div>`;document.body.append(el);
  const style=document.createElement('style');style.textContent='#os27Modal:not(.hidden){position:fixed;inset:0;background:#0009;z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px} .os27-panel{background:white;color:#16334a;padding:20px;border-radius:16px;max-width:700px;width:100%;max-height:92dvh;overflow:auto}.os27-panel label{display:block;margin:12px 0}.os27-panel input[type=text]{display:block;width:100%;padding:10px;font-size:20px;box-sizing:border-box}.os27-panel button{padding:10px;margin:4px}.os27-panel small{display:block;white-space:pre-wrap}.os27-panel pre{white-space:pre-wrap}.os27-panel img{max-width:100%;max-height:340px;object-fit:contain}.os27-panel input[type=checkbox]{width:22px;height:22px}.os27-panel #os27Status{font-weight:700}';document.head.append(style);
- $('os27Camera').onclick=()=>{if(allowed())$('os27Capture').click();};$('os27Choose').onclick=()=>{if(allowed())$('os27File').click();};$('os27Close').onclick=close;
+ $('os27Camera').textContent='Scan with Camera';$('os27Camera').onclick=async()=>{const a=active;if(!valid(a)||a.reading)return;try{const f=await os28CameraScan(()=>valid(a));if(f&&valid(a)){a.file=f;read(a);}}catch(e){if(valid(a))$('os27Status').textContent=e.message;}};$('os27Choose').onclick=()=>{if(allowed())$('os27File').click();};$('os27Close').onclick=close;
  for(const id of ['os27Capture','os27File'])$(id).onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(f&&active){active.file=f;read(active);}};
  $('os27Read').onclick=()=>{if(active?.file&&!active.reading)read(active);};$('os27Confirm').onchange=()=>{$('os27Apply').disabled=!$('os27Confirm').checked||!active?.result;};$('os27Apply').onclick=apply;
  }
@@ -14330,3 +14330,35 @@ function os27Parse(text){
  }
  const render=esRenderRows;esRenderRows=function(...args){const out=render(...args);if(allowed())for(const tr of document.querySelectorAll('#esRows tr[data-es-index]')){const row=esSession.rows[Number(tr.dataset.esIndex)],host=tr.querySelector('.es-row-actions');if(!row||!host)continue;const btn=document.createElement('button');btn.type='button';btn.textContent='Scan';btn.setAttribute('aria-label','Scan receipt for '+tt15Label(row.name));btn.onclick=()=>open(row.name);host.append(btn);}return out;};
 })();
+
+/* Four-corner receipt scanner: camera preview, crop, perspective correction. */
+function os28QuadMap(q,u,v){
+ const [a,b,c,d]=q,dx1=b.x-c.x,dx2=d.x-c.x,dx3=a.x-b.x+c.x-d.x,dy1=b.y-c.y,dy2=d.y-c.y,dy3=a.y-b.y+c.y-d.y;
+ const den=dx1*dy2-dx2*dy1;let g=0,h=0;
+ if(Math.abs(dx3)+Math.abs(dy3)>1e-8){if(Math.abs(den)<1e-8)throw new Error('Corners overlap. Adjust the four corners.');g=(dx3*dy2-dx2*dy3)/den;h=(dx1*dy3-dx3*dy1)/den;}
+ const z=g*u+h*v+1;return {x:((b.x-a.x+g*b.x)*u+(d.x-a.x+h*d.x)*v+a.x)/z,y:((b.y-a.y+g*b.y)*u+(d.y-a.y+h*d.y)*v+a.y)/z};
+}
+function os28QuadValid(q){if(q.length!==4)return false;let sign=0;for(let i=0;i<4;i++){const a=q[i],b=q[(i+1)%4],c=q[(i+2)%4],z=(b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x);if(Math.abs(z)<25)return false;if(sign&&Math.sign(z)!==sign)return false;sign=Math.sign(z);}return true;}
+async function os28CameraScan(ownerCheck){
+ if(!ownerCheck())throw new Error('Owner session required.');
+ if(!navigator.mediaDevices?.getUserMedia)throw new Error('Live scanner unavailable in this browser. Open the app in Chrome using HTTPS.');
+ const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:#07111d;z-index:100010;color:white;display:flex;flex-direction:column;padding:12px;box-sizing:border-box';
+ overlay.innerHTML='<h3 style="margin:4px">Receipt Scanner</h3><p data-help style="margin:6px">Place the entire receipt inside the frame. Hold steady and keep the text sharp.</p><div data-stage style="position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:auto"><video autoplay playsinline muted style="width:100%;height:100%;object-fit:contain"></video><canvas hidden style="max-width:100%;max-height:100%;touch-action:none"></canvas><div data-guide style="position:absolute;inset:7% 20%;border:2px dashed #6df2bc;pointer-events:none"></div></div><div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:10px"><button data-capture>Capture</button><button data-retake hidden>Retake</button><button data-use hidden>Scan cropped receipt</button><button data-cancel>Cancel</button></div>';
+ for(const b of overlay.querySelectorAll('button'))b.style.cssText='padding:12px 16px;border-radius:10px;font-size:16px';document.body.append(overlay);
+ const video=overlay.querySelector('video'),display=overlay.querySelector('canvas'),help=overlay.querySelector('[data-help]');let stream=null,source=null,q=null,drag=-1,done=false,watch=null;
+ return await new Promise(async(resolve,reject)=>{
+ function finish(file,error){if(done)return;done=true;clearInterval(watch);stream?.getTracks().forEach(t=>t.stop());video.srcObject=null;overlay.remove();error?reject(error):resolve(file);}
+ overlay.querySelector('[data-cancel]').onclick=()=>finish(null);
+ try{stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});if(done){stream.getTracks().forEach(t=>t.stop());return;}if(!ownerCheck()){finish(null,new Error('Owner session changed.'));return;}video.srcObject=stream;await video.play();watch=setInterval(()=>{if(!ownerCheck())finish(null,new Error('Owner session changed.'));},800);}catch(e){finish(null,new Error(e.name==='NotAllowedError'?'Camera permission is needed to scan. Allow camera in browser settings.':e.message));return;}
+ function draw(){const ctx=display.getContext('2d');ctx.drawImage(source,0,0,display.width,display.height);ctx.fillStyle='rgba(0,0,0,.45)';ctx.beginPath();ctx.rect(0,0,display.width,display.height);for(let i=3;i>=0;i--){const p=q[i];i===3?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y);}ctx.closePath();ctx.fill('evenodd');ctx.strokeStyle='#43efb2';ctx.lineWidth=4;ctx.beginPath();q.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();q.forEach((p,i)=>{ctx.beginPath();ctx.arc(p.x,p.y,18,0,2*Math.PI);ctx.fillStyle='#43efb2';ctx.fill();ctx.fillStyle='#07111d';ctx.font='bold 18px sans-serif';ctx.fillText(String(i+1),p.x-5,p.y+6);});}
+ overlay.querySelector('[data-capture]').onclick=()=>{if(!video.videoWidth)return;source=document.createElement('canvas');const scale=Math.min(1,2000/video.videoHeight,1800/video.videoWidth);source.width=Math.round(video.videoWidth*scale);source.height=Math.round(video.videoHeight*scale);source.getContext('2d').drawImage(video,0,0,source.width,source.height);display.width=source.width;display.height=source.height;q=[{x:source.width*.2,y:source.height*.07},{x:source.width*.8,y:source.height*.07},{x:source.width*.8,y:source.height*.93},{x:source.width*.2,y:source.height*.93}];video.hidden=true;display.hidden=false;overlay.querySelector('[data-guide]').hidden=true;overlay.querySelector('[data-capture]').hidden=true;overlay.querySelector('[data-retake]').hidden=false;overlay.querySelector('[data-use]').hidden=false;help.textContent='Drag corners 1–4 onto the receipt edges. Keep all text inside, then Scan cropped receipt.';draw();};
+ overlay.querySelector('[data-retake]').onclick=()=>{display.hidden=true;video.hidden=false;overlay.querySelector('[data-guide]').hidden=false;overlay.querySelector('[data-capture]').hidden=false;overlay.querySelector('[data-retake]').hidden=true;overlay.querySelector('[data-use]').hidden=true;help.textContent='Hold steady. Include the entire receipt.';};
+ function point(e){const r=display.getBoundingClientRect();return {x:Math.max(0,Math.min(display.width-1,(e.clientX-r.left)*display.width/r.width)),y:Math.max(0,Math.min(display.height-1,(e.clientY-r.top)*display.height/r.height))};}
+ display.onpointerdown=e=>{const p=point(e);drag=q.map(x=>Math.hypot(x.x-p.x,x.y-p.y)).reduce((best,d,i,arr)=>d<arr[best]?i:best,0);display.setPointerCapture(e.pointerId);q[drag]=p;draw();};display.onpointermove=e=>{if(drag<0)return;q[drag]=point(e);draw();};display.onpointerup=display.onpointercancel=()=>{drag=-1;};
+ overlay.querySelector('[data-use]').onclick=async()=>{if(!ownerCheck())return finish(null,new Error('Owner session changed.'));if(!os28QuadValid(q)){help.textContent='Adjust corners so they form a rectangle around the receipt without crossing.';return;}const btn=overlay.querySelector('[data-use]');btn.disabled=true;help.textContent='Straightening and enhancing receipt…';await new Promise(r=>requestAnimationFrame(r));try{
+ const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);let w=Math.max(dist(q[0],q[1]),dist(q[3],q[2])),h=Math.max(dist(q[0],q[3]),dist(q[1],q[2]));if(w<100||h<100)throw new Error('Receipt crop is too small. Retake closer and sharper.');const scale=Math.min(2,1600/w,3000/h);w=Math.round(w*scale);h=Math.round(h*scale);const src=source.getContext('2d').getImageData(0,0,source.width,source.height),out=document.createElement('canvas');out.width=w;out.height=h;const ctx=out.getContext('2d'),dst=ctx.createImageData(w,h),hist=new Uint32Array(256);
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){const p=os28QuadMap(q,x/(w-1),y/(h-1)),sx=Math.max(0,Math.min(source.width-1,Math.round(p.x))),sy=Math.max(0,Math.min(source.height-1,Math.round(p.y))),i=(sy*source.width+sx)*4,j=(y*w+x)*4,g=Math.round(src.data[i]*.299+src.data[i+1]*.587+src.data[i+2]*.114);dst.data[j]=dst.data[j+1]=dst.data[j+2]=g;dst.data[j+3]=255;hist[g]++;}
+ let count=0,lo=0,hi=255;for(let i=0;i<256;i++){count+=hist[i];if(count>=w*h*.02){lo=i;break;}}count=0;for(let i=255;i>=0;i--){count+=hist[i];if(count>=w*h*.02){hi=i;break;}}if(hi-lo>30)for(let j=0;j<dst.data.length;j+=4){const v=Math.max(0,Math.min(255,(dst.data[j]-lo)*255/(hi-lo)));dst.data[j]=dst.data[j+1]=dst.data[j+2]=v;}ctx.putImageData(dst,0,0);const blob=await new Promise(r=>out.toBlob(r,'image/png'));if(!blob)throw new Error('Could not prepare scanner image.');finish(new File([blob],'scanned-receipt.png',{type:'image/png'}));
+ }catch(e){btn.disabled=false;help.textContent=e.message;}};
+ });
+}
