@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18260",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18270",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.26';
+const ES_BUILD='ES1.8.27';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10636,7 +10636,7 @@ function esOutput(row,field){
   const r=esSession.results[row.name]||{};
   if(field==='grandTotalTip')return esMoney(esGrandTotalTip(row,r));
   if(field==='hours')return r.totalMinutesWork==null?'—':`${Math.floor(r.totalMinutesWork/60)}h ${r.totalMinutesWork%60}m`;
-  if(field==='busserRate')return Number(r.busserRate||0)+'%';
+  if(field==='busserRate')return Number(Number(r.busserRate||0).toFixed(3))+'%';
   if(field==='received'){
     if(row.role!=='Bartender')return '—';
     return `<strong>${esMoney(r.bartenderBarTipReceived)}</strong><span class="es-received-parts">${bartenderReceiptPeriods(r).map(p=>`BAR ${bartenderPeriodLabel(p.checkpoint)}: ${esMoney(p.amount)}`).join('<br>')||'Choose BAR routing'}</span>`;
@@ -14184,12 +14184,12 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const buildBatch=esBuildBatch;esBuildBatch=function(source,rows,date,route){const out=buildBatch(source,rows,date,route),p=plan(source,date);out.todayTeamBusser=copy(p);for(const row of rows){const d=out.drafts?.[row.name];if(!d)continue;d.values ||= {};d.entered ||= {};d.values.hBusserAM=p.AM?'WITH':'WITHOUT';d.entered.hBusserAM=true;d.hourlyWizardState={...(d.hourlyWizardState||{}),busserAM:p.AM?'WITH':'WITHOUT'};}return out;};
   const calculate=esCalculate;esCalculate=function(row,batch,oldReport=null){const r=calculate(row,batch,oldReport),p=plan(batch,batch.date),L=window.FredTipCalculatorLogic;if(row.role==='Bartender'){r.busserAM='N/A';r.busserPM='N/A';r.busserTipOut=0;r.busserTipOutAM=0;r.busserTipOutPM=0;r.busserRate=0;r.totalShared=0;return r;}
     let amBasis=0,pmBasis=0;const shift=String(row.shift||'').toUpperCase();if(['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift))amBasis=Number(r.grandTotal||r.totalAM||0);else if(shift==='PM')pmBasis=Number(r.grandTotal||r.totalPM||0);else if(['DOUBLE','LONG'].includes(shift)){amBasis=Number(r.totalAM||0);pmBasis=Math.max(0,Number(r.grandTotal||0)-Number(r.totalAM||0));}
-    const am=p.AM?L.roundCent(Math.max(0,amBasis)*0.015):0,pm=p.PM?L.roundCent(Math.max(0,pmBasis)*0.015):0,total=L.roundCent(am+pm);r.busserTipOutAM=am;r.busserTipOutPM=pm;r.busserTipOut=total;r.totalShared=total;r.busserRate=(['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift)?p.AM:shift==='PM'?p.PM:(p.AM||p.PM))?1.5:0;r.busserAM=shift==='PM'?'N/A':(p.AM?'WITH':'WITHOUT');r.busserPM=['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift)?'N/A':(p.PM?'WITH':'WITHOUT');r.totalTips=L.roundCent(Number(r.paidTip||0)+Number((r.payCardTipFee??r.cardFee)||0)+total);r.busserPolicyVersion='TEAM_BUSSER_AM_PM_OVERRIDE_V1';r.busserPresence={AM:p.AM,PM:p.PM};if(shift==='LONG'){r.busserSalesThrough4PM=r.totalAM;r.salesWithoutBusser=p.AM?0:r.totalAM;r.busserSalesBasis=(p.AM?amBasis:0)+(p.PM?pmBasis:0);}return r;};
+    const am=p.AM?L.roundCent(Math.max(0,amBasis)*0.015):0,pm=p.PM?L.roundCent(Math.max(0,pmBasis)*0.015):0,total=L.roundCent(am+pm);r.busserTipOutAM=am;r.busserTipOutPM=pm;r.busserTipOut=total;r.totalShared=total;r.busserRate=amBasis+pmBasis>0?((p.AM?Math.max(0,amBasis):0)+(p.PM?Math.max(0,pmBasis):0))/(amBasis+pmBasis)*1.5:0;r.busserAM=shift==='PM'?'N/A':(p.AM?'WITH':'WITHOUT');r.busserPM=['AM',SHIFT_EARLY,SHIFT_MIDDLE].includes(shift)?'N/A':(p.PM?'WITH':'WITHOUT');r.totalTips=L.roundCent(Number(r.paidTip||0)+Number((r.payCardTipFee??r.cardFee)||0)+total);r.busserPolicyVersion='TEAM_BUSSER_AM_PM_OVERRIDE_V1';r.busserPresence={AM:p.AM,PM:p.PM};if(shift==='LONG'){r.busserSalesThrough4PM=r.totalAM;r.salesWithoutBusser=p.AM?0:r.totalAM;r.busserSalesBasis=(p.AM?amBasis:0)+(p.PM?pmBasis:0);}return r;};
   const summary=esUpdateSummary;esUpdateSummary=function(){const out=summary.apply(this,arguments),s=esSession;if(s&&$('esBusserRule')){const p=plan(s.baseBatch||{},s.date);$('esBusserRule').textContent=`BUSSER · AM ${p.AM?'ON':'OFF'} · PM ${p.PM?'ON':'OFF'} · Server 1.5% when ON · Bartender 0%`;}return out;};
 })();
 
 
-/* ES1.8.26 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.27 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14252,7 +14252,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.26: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.27: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14287,4 +14287,46 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   // Force an immediate repaint when Final Report is already open so new wage columns appear.
   try{frRenderIfOpen();}catch(e){}
+})();
+
+/* Owner-only receipt scan. Local OCR, explicit review, three fields only. */
+function os27Parse(text){
+ const labels={grand:/^Grand\s+Total\b/i,paid:/^Paid\s+Tips?\b/i,cardFee:/^Pay\s+Card\s+Tip\s+Fee\b/i},out={};
+ const lines=String(text||'').split(/\r?\n/).map(x=>x.trim());
+ for(const [field,label] of Object.entries(labels)){
+  const hits=[];
+  for(const line of lines){if(!label.test(line))continue;const tail=line.replace(label,'').trim();const m=tail.match(/(?:^|\s)(\(?-?\$?\s*\d[\d,]*\.\d{2}\)?-?)\s*$/);if(!m)continue;
+   let raw=m[1].replace(/[$,\s]/g,'');const neg=raw.startsWith('(')||raw.endsWith('-');raw=raw.replace(/[()]/g,'').replace(/-$/,'');const value=(neg?-1:1)*Number(raw);if(Number.isFinite(value)&&es14MoneyValid(String(value),field))hits.push({value,source:line});
+  }
+  out[field]=hits.length===1?hits[0]:{value:null,source:hits.length?'Multiple matching lines — choose one PDF page or enter manually.':'Not reliably read — enter manually.'};
+ }return out;
+}
+(function installOwnerScan27(){
+ let active=null,worker=null,ocrLoad=null,pdfLoad=null;const used=new Set();
+ const allowed=()=>!!currentUser&&!currentUser.isAnonymous&&currentProfile?.role==='owner'&&esSession?.ready;
+ function valid(a){return active===a&&allowed()&&esSession===a.session&&currentUser.uid===a.uid&&esSession.date===a.date&&!esSession.busy;}
+ function loadScript(url,key){if(window[key])return Promise.resolve();return new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=url;s.onload=resolve;s.onerror=()=>{s.remove();reject(new Error('Scanner could not load. Check internet connection; manual input is available.'));};document.head.append(s);});}
+ function modal(){if($('os27Modal'))return;const el=document.createElement('div');el.id='os27Modal';el.className='hidden';el.innerHTML=`<div class="os27-panel" role="dialog" aria-modal="true" aria-labelledby="os27Title"><h2 id="os27Title">Scan receipt</h2><p id="os27Target"></p><div class="os27-buttons"><button id="os27Camera" type="button">Take Photo</button><button id="os27Choose" type="button">Photo / PDF</button><button id="os27Close" type="button">Close</button></div><input hidden id="os27Capture" type="file" accept="image/*" capture="environment"><input hidden id="os27File" type="file" accept="image/*,application/pdf"><label>PDF page <input id="os27Page" type="number" min="1" max="10" value="1"></label><button id="os27Read" type="button">Read selected page again</button><p id="os27Status" aria-live="polite">Choose a clear receipt photo or PDF.</p><img id="os27Preview" alt="Receipt source" hidden><div id="os27Results" hidden>${[['grand','Grand Total'],['paid','Paid Tip'],['cardFee','Pay Card Tip Fee']].map(([f,l])=>`<label>${l}<input id="os27-${f}" type="text" inputmode="decimal" autocomplete="off"><small id="os27-source-${f}"></small></label>`).join('')}<details><summary>Recognized receipt text</summary><pre id="os27Text"></pre></details><label><input id="os27Confirm" type="checkbox">I checked the employee, date, and all three amounts against the receipt.</label><button id="os27Apply" type="button" disabled>Use Results</button><p>Only these three columns are filled. Existing values are replaced after your review. The sheet keeps its usual save/sync behavior.</p></div></div>`;document.body.append(el);
+ const style=document.createElement('style');style.textContent='#os27Modal:not(.hidden){position:fixed;inset:0;background:#0009;z-index:100000;display:flex;align-items:center;justify-content:center;padding:12px} .os27-panel{background:white;color:#16334a;padding:20px;border-radius:16px;max-width:700px;width:100%;max-height:92dvh;overflow:auto}.os27-panel label{display:block;margin:12px 0}.os27-panel input[type=text]{display:block;width:100%;padding:10px;font-size:20px;box-sizing:border-box}.os27-panel button{padding:10px;margin:4px}.os27-panel small{display:block;white-space:pre-wrap}.os27-panel pre{white-space:pre-wrap}.os27-panel img{max-width:100%;max-height:340px;object-fit:contain}.os27-panel input[type=checkbox]{width:22px;height:22px}.os27-panel #os27Status{font-weight:700}';document.head.append(style);
+ $('os27Camera').onclick=()=>{if(allowed())$('os27Capture').click();};$('os27Choose').onclick=()=>{if(allowed())$('os27File').click();};$('os27Close').onclick=close;
+ for(const id of ['os27Capture','os27File'])$(id).onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(f&&active){active.file=f;read(active);}};
+ $('os27Read').onclick=()=>{if(active?.file&&!active.reading)read(active);};$('os27Confirm').onchange=()=>{$('os27Apply').disabled=!$('os27Confirm').checked||!active?.result;};$('os27Apply').onclick=apply;
+ }
+ function close(){const a=active;active=null;if(a?.url)URL.revokeObjectURL(a.url);if(worker){worker.terminate().catch(()=>{});worker=null;}$('os27Modal')?.classList.add('hidden');}
+ function open(name){if(!allowed())return;modal();close();const row=esSession.rows.find(r=>r.name===name);if(!row)return;active={name,session:esSession,uid:currentUser.uid,date:esSession.date,file:null,reading:false};$('os27Title').textContent='Scan receipt';$('os27Target').textContent=tt15Label(name)+' · '+row.shift+' · '+row.role+' · '+esSession.date;$('os27Results').hidden=true;$('os27Preview').hidden=true;$('os27Confirm').checked=false;$('os27Apply').disabled=true;$('os27Page').value='1';$('os27Status').textContent='Choose a clear receipt photo or PDF. Review before applying.';$('os27Modal').classList.remove('hidden');}
+ async function ocr(source,a){if(!window.Tesseract){ocrLoad ||= loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js','Tesseract').catch(e=>{ocrLoad=null;throw e;});await ocrLoad;}if(!valid(a))throw new Error('Session changed.');const w=await Tesseract.createWorker('eng',1,{logger:m=>{if(valid(a))$('os27Status').textContent='Reading receipt… '+Math.round((m.progress||0)*100)+'%';}});if(!valid(a)){await w.terminate();throw new Error('Session changed.');}worker=w;try{const r=await w.recognize(source);return r.data.text;}finally{await w.terminate();if(worker===w)worker=null;}}
+ async function read(a){if(!valid(a)||a.reading)return;a.reading=true;a.result=null;$('os27Results').hidden=true;$('os27Apply').disabled=true;$('os27Confirm').checked=false;$('os27Status').textContent='Loading receipt…';try{
+ const f=a.file;if(f.size>20*1024*1024)throw new Error('File is over 20 MB. Use a smaller photo or PDF.');const bytes=await f.arrayBuffer();if(!valid(a))return;const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(x=>x.toString(16).padStart(2,'0')).join('');let text='';const pageNum=Number($('os27Page').value)||1;
+ if(f.type==='application/pdf'||/\.pdf$/i.test(f.name)){
+  pdfLoad ||= import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs').catch(e=>{pdfLoad=null;throw e;});const lib=await pdfLoad;lib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';const pdf=await lib.getDocument({data:new Uint8Array(bytes)}).promise;
+  try{if(pageNum<1||pageNum>Math.min(pdf.numPages,10)||!Number.isInteger(pageNum))throw new Error('Choose PDF page 1–'+Math.min(pdf.numPages,10)+'.');const page=await pdf.getPage(pageNum);const content=await page.getTextContent();let line='',lastY=null;const lines=[];for(const item of content.items){const y=item.transform[5];if(lastY!==null&&Math.abs(y-lastY)>3){lines.push(line);line='';}line+=(line?' ':'')+item.str;lastY=y;if(item.hasEOL){lines.push(line);line='';lastY=null;}}if(line)lines.push(line);text=lines.join('\n');const viewport=page.getViewport({scale:Math.min(2,1800/page.getViewport({scale:1}).width)});const canvas=document.createElement('canvas');canvas.width=viewport.width;canvas.height=viewport.height;await page.render({canvasContext:canvas.getContext('2d'),viewport}).promise;if(valid(a)){$('os27Preview').src=canvas.toDataURL('image/png');$('os27Preview').hidden=false;}if(Object.values(os27Parse(text)).some(x=>x.value===null))text=await ocr(canvas,a);}
+  finally{await pdf.destroy();}
+ }else if(f.type.startsWith('image/')){if(a.url)URL.revokeObjectURL(a.url);a.url=URL.createObjectURL(f);$('os27Preview').src=a.url;$('os27Preview').hidden=false;text=await ocr(f,a);}else throw new Error('Choose a photo or PDF.');
+ if(!valid(a))return;a.key=a.date+'|'+a.name+'|'+hash+'|'+pageNum;a.result=os27Parse(text);$('os27Text').textContent=text;for(const field of ['grand','paid','cardFee']){$('os27-'+field).value=a.result[field].value===null?'':a.result[field].value.toFixed(2);$('os27-source-'+field).textContent=a.result[field].source;}$('os27Results').hidden=false;$('os27Status').textContent='Review all three amounts. Missing or ambiguous fields stay blank. PDF: page '+pageNum+'.';
+ }catch(e){if(valid(a))$('os27Status').textContent=e.message||'Could not read receipt. Use manual input.';}finally{a.reading=false;}}
+ function apply(){const a=active;if(!valid(a)||a.reading||!a.result||!$('os27Confirm').checked)return;if(used.has(a.key)){$('os27Status').textContent='This receipt page was already applied to this employee in this session.';return;}const row=a.session.rows.find(r=>r.name===a.name);if(!row)return;const values={};for(const field of ['grand','paid','cardFee']){const t=$('os27-'+field).value.trim();if(!t||!es14MoneyValid(t,field)){$('os27Status').textContent='Check '+field+': enter a valid amount with up to two decimals.';return;}values[field]=String(Number(t));}
+ const candidate={...row,...values};const errs=esValidateSales(candidate,a.session.routing,false);if(errs.length){$('os27Status').textContent=errs.join(' ');return;}const idx=a.session.rows.indexOf(row);for(const field of ['grand','paid','cardFee']){const input=$('esRows')?.querySelector('input[data-es-row="'+idx+'"][data-es-field="'+field+'"]');if(!input){$('os27Status').textContent='Employee row changed. Close and reopen Scan.';return;}}
+ for(const field of ['grand','paid','cardFee']){const input=$('esRows').querySelector('input[data-es-row="'+idx+'"][data-es-field="'+field+'"]');input.value=values[field];esChange(input,true);}used.add(a.key);close();esStatus('Receipt applied to '+tt15Label(a.name)+'. Review the row and Save / Sign as usual.');
+ }
+ const render=esRenderRows;esRenderRows=function(...args){const out=render(...args);if(allowed())for(const tr of document.querySelectorAll('#esRows tr[data-es-index]')){const row=esSession.rows[Number(tr.dataset.esIndex)],host=tr.querySelector('.es-row-actions');if(!row||!host)continue;const btn=document.createElement('button');btn.type='button';btn.textContent='Scan';btn.setAttribute('aria-label','Scan receipt for '+tt15Label(row.name));btn.onclick=()=>open(row.name);host.append(btn);}return out;};
 })();
