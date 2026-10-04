@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18240",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18250",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -6124,7 +6124,7 @@ function calculatedHourlyAdjustment(r){
 }
 function smallReportPaidOut(r){
   return Number.isFinite(Number(r.totalPaidOut)) && r.totalPaidOut!=null
-    ? Number(r.totalPaidOut) : howRoundCent(Math.max(0,Number(r.totalBeforeMeal||0)-Number(r.meal||0)));
+    ? Number(r.totalPaidOut) : howRoundCent(Number(r.totalBeforeMeal||0)-Number(r.meal||0));
 }
 function smallReportGrandTotal(r){
   return Number.isFinite(Number(r.grandTotalTip)) && r.grandTotalTip!=null
@@ -8330,8 +8330,8 @@ window.calculateHourlyV01=function(){
   lastHourlyResult.adjustmentOverride=override;
   lastHourlyResult.adjustmentPayoutVersion="13.8.29";
   lastHourlyResult.grandTotalAfterAdjustment=L.roundCent(lastHourlyResult.grandTotalTip+adjustment.adjustmentSalaryHourly);
-  lastHourlyResult.totalPaidOutBeforeAdjustment=L.roundCent(Math.max(0,lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal));
-  lastHourlyResult.totalPaidOut=L.roundCent(Math.max(0,lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal+adjustment.adjustmentSalaryHourly));
+  lastHourlyResult.totalPaidOutBeforeAdjustment=L.roundCent(lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal);
+  lastHourlyResult.totalPaidOut=L.roundCent(lastHourlyResult.totalBeforeMeal-lastHourlyResult.meal+adjustment.adjustmentSalaryHourly);
   lastHourlyResult.formulaVersion="13.8.29";
   lastHourlyResult.payoutFormula="Total Before Meal - Meal + Accepted Adjustment";
   lastHourlyResult.hours={...hours};
@@ -9819,7 +9819,7 @@ function monthlyReportPaidOut(r){
   const saved=Number(r?.totalPaidOut);
   if(r?.totalPaidOut!==null && r?.totalPaidOut!==undefined && r?.totalPaidOut!=="" && Number.isFinite(saved))return saved;
   const adjustment=monthlyReportNum(r?.adjustmentSalaryHourly);
-  return Math.max(0,monthlyReportNum(r?.totalBeforeMeal)-monthlyReportNum(r?.meal)+adjustment);
+  return monthlyReportNum(r?.totalBeforeMeal)-monthlyReportNum(r?.meal)+adjustment;
 }
 function monthlyReportGrandTip(r){
   const saved=Number(r?.grandTotalTip);
@@ -10340,7 +10340,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.24';
+const ES_BUILD='ES1.8.25';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10554,8 +10554,8 @@ function esCalculate(row,batch,oldReport=null){
   Object.assign(r,adjustment);
   r.adjustmentOverride=override;r.adjustmentPayoutVersion='13.8.29';r.formulaVersion='13.8.29';r.payoutFormula='Total Before Meal - Meal + Accepted Adjustment';
   r.grandTotalAfterAdjustment=L.roundCent(r.grandTotalTip+adjustment.adjustmentSalaryHourly);
-  r.totalPaidOutBeforeAdjustment=L.roundCent(Math.max(0,r.totalBeforeMeal-r.meal));
-  r.totalPaidOut=L.roundCent(Math.max(0,r.totalBeforeMeal-r.meal+adjustment.adjustmentSalaryHourly));
+  r.totalPaidOutBeforeAdjustment=L.roundCent(r.totalBeforeMeal-r.meal);
+  r.totalPaidOut=L.roundCent(r.totalBeforeMeal-r.meal+adjustment.adjustmentSalaryHourly);
   r.hours={...hours};r.cardFee=L.parseMoney(row.cardFee);r.payCardTipFee=r.cardFee;
   if(row.shift==='LONG'&&!bt){r.busserSalesThrough4PM=r.totalAM;r.salesWithoutBusser=isWeekendDate(batch.date)?0:r.totalAM;r.busserSalesBasis=isWeekendDate(batch.date)?r.grandTotal:r.totalPM;r.busserPolicyVersion='LONG_MON_FRI_BAR_2_4_V1';}
   const profile=employeeWorkProfile(row.name);if(profile){r.personName=profile.personName;r.workProfile=profile.name;}
@@ -14189,7 +14189,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.24 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.25 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14252,7 +14252,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.24: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.25: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}

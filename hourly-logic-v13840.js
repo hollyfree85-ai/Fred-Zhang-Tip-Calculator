@@ -483,7 +483,7 @@
     );
     // V13.8.18/P24 contract: cash is already held by the employee.
     // Only an accepted adjustment is paid. Cash remains with the employee.
-    const totalPaidOut = roundCent(Math.max(0,totalBeforeMeal - meal + adjustment.adjustmentSalaryHourly));
+    const totalPaidOut = roundCent(totalBeforeMeal - meal + adjustment.adjustmentSalaryHourly);
 
     return {
       date: values.date || "",
