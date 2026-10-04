@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18210",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18220",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -6168,18 +6168,21 @@ function thermalReportPaidOut(r){
   const bartender=String(r?.position||"").toLowerCase()==="bartender";
   const barTipOut=Number(r?.barTipOut||0);
   const barTipReceived=Number(r?.bartenderBarTipReceived||0);
-  // ES1.8.21 thermal receipt follows saved payout deductions.
-  // Server = Paid Tip - Busser - Bar Tip Out - Meal.
-  // Bartender = Paid Tip + Bar Tip Out Received - Meal.
-  const busser=Number(r?.busserTipOut||0);
+  const busserTipOut=Number(r?.busserTipOut||0);
+  // ES1.8.22 payout contract:
+  // Positive Paid Tip is already net of Busser. Explicit $0.00 Paid Tip still owes
+  // Server Busser + BAR. Bartender remains Busser-free and receives BAR.
+  const serverBusserDeduction=!bartender && Math.abs(paidTip)<0.005 ? busserTipOut : 0;
   return howRoundCent(bartender
     ? paidTip + barTipReceived - meal
-    : paidTip - busser - barTipOut - meal);
+    : paidTip - serverBusserDeduction - barTipOut - meal);
 }
-// ES1.8.2 receipt-only informational totals. Cash is never paid twice.
+// Receipt informational totals. Cash is never paid twice.
 function thermalReportTipBeforeMeal(r){
-  const paid=Number(r?.paidTip||0),busser=Number(r?.busserTipOut||0),bar=Number(r?.barTipOut||0),received=Number(r?.bartenderBarTipReceived||0);
-  return howRoundCent(String(r?.position||'').toLowerCase()==='bartender'?paid+received:paid-busser-bar);
+  const paid=Number(r?.paidTip||0),bar=Number(r?.barTipOut||0),received=Number(r?.bartenderBarTipReceived||0),busser=Number(r?.busserTipOut||0);
+  const bartender=String(r?.position||'').toLowerCase()==='bartender';
+  const serverBusserDeduction=!bartender && Math.abs(paid)<0.005 ? busser : 0;
+  return howRoundCent(bartender?paid+received:paid-serverBusserDeduction-bar);
 }
 function thermalReportGrandTotalTip(r){return howRoundCent(thermalReportTipBeforeMeal(r)+Number(r?.cashTip||0));}
 function thermalReceiptMoney(v){
@@ -9239,7 +9242,7 @@ function renderHourlyWizard(){
   if(hourlyWizardStep===5){
     body=`<h3 class="how-title">Tips & Meal</h3><p class="how-sub">Enter the final amounts from the receipt.</p>
       <div class="how-card">
-        <div class="how-info"><b>Cash Tip stays separate.</b><br>For Servers, Busser and BAR Tip Out are deducted from Paid Tip. If deductions exceed Paid Tip, Total Paid Out can be negative.</div>
+        <div class="how-info"><b>Paid Tip rule:</b><br>If Paid Tip is above $0, Busser is already included and is not subtracted again. If Paid Tip is exactly $0.00, Server Busser + BAR are still owed and payout may be negative.</div>
         ${howField("Paid Tip ($)","howPaid",howVal("hPaidTip"),"number","0.00")}
         ${howField("Pay Card Tip Fee ($)","howCardFee",howVal("hCardFee"),"number","0.00")}
         ${howField("Cash Tip ($)","howCash",howVal("hCashTip"),"number","0.00")}
@@ -10341,7 +10344,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.21';
+const ES_BUILD='ES1.8.22';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -14277,9 +14280,3 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   // Force an immediate repaint when Final Report is already open so new wage columns appear.
   try{frRenderIfOpen();}catch(e){}
 })();
-
-
-/* ES1.8.21 — Negative payout + Busser deduction correction.
-   Server Total Before Meal deducts Busser + BAR from Paid Tip.
-   Cash Tip remains informational/already received and never offsets restaurant deductions.
-   Total Paid Out may be negative. */

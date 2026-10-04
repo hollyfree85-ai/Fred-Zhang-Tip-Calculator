@@ -432,21 +432,29 @@
     const totals = deriveTotals(values);
     const busser = calculateBusser(Object.assign({}, values, totals, { position }));
     const bar = calculateBarTipOut(Object.assign({}, values, totals, { position }));
-    const paidTip = roundCent(parseMoney(
-      values.paidTips !== undefined ? values.paidTips : values.paidTip
-    ));
+    const paidTipRaw = values.paidTips !== undefined ? values.paidTips : values.paidTip;
+    const paidTipProvided = paidTipRaw !== null
+      && paidTipRaw !== undefined
+      && String(paidTipRaw).trim() !== "";
+    const paidTip = roundCent(parseMoney(paidTipRaw));
     const cardFee = roundCent(parseMoney(
       values.cardFee !== undefined ? values.cardFee : values.payCardTipFee
     ));
     const cashTip = roundCent(parseMoney(values.cashTip));
     const meal = roundCent(parseMoney(values.meal));
 
-    // ES1.8.21 payout rule: Cash Tip never covers restaurant deductions.
-    // Server: deduct Busser + BAR from Paid Tip, even when the result is negative.
-    // Bartender: no Busser/BAR deduction; BAR received is added separately by the app routing layer.
+    // Paid Tip contract:
+    // - A positive Paid Tip is already net of Busser, so Busser is NOT deducted again.
+    // - An explicit $0.00 Paid Tip means there was no card-tip payout available to absorb
+    //   the restaurant deductions, so Server Busser + BAR remain owed and can make payout negative.
+    // - A blank Paid Tip is still an incomplete draft; do not treat blank as explicit zero here.
     const totalTips = roundCent(paidTip + cardFee + busser.tipOut);
+    const explicitZeroPaidTip = paidTipProvided && Math.abs(paidTip) < 0.005;
+    const serverBusserDeduction = position === "Bartender" ? 0 : (explicitZeroPaidTip ? busser.tipOut : 0);
     const totalBeforeMeal = roundCent(
-      position === "Bartender" ? paidTip + bar.total : paidTip - busser.tipOut - bar.total
+      position === "Bartender"
+        ? paidTip + bar.total
+        : paidTip - serverBusserDeduction - bar.total
     );
     const grandTotalTip = roundCent(totalBeforeMeal + cashTip);
     const totalPaidOutBeforeAdjustment = roundCent(totalBeforeMeal - meal);
@@ -483,8 +491,8 @@
     const grandTotalAfterAdjustment = roundCent(
       grandTotalTip + adjustment.adjustmentSalaryHourly
     );
-    // ES1.8.21: cash is already held by the employee and never offsets deductions.
-    // A payout may be negative when Paid Tip does not cover Busser/BAR/Meal.
+    // V13.8.18/P24 contract: cash is already held by the employee.
+    // Only an accepted adjustment is paid. Cash remains with the employee.
     const totalPaidOut = roundCent(totalBeforeMeal - meal + adjustment.adjustmentSalaryHourly);
 
     return {
