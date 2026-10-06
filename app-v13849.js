@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18420",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18430",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10323,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.42';
+const ES_BUILD='ES1.8.43';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12381,7 +12381,7 @@ async function tt15WriteEmployee(original,changes){
     if(!original.name&&current)throw new Error('That employee already exists. Use Edit or Restore instead.');
     if(original.name&&Number(current?.revision||0)!==Number(original.revision||0))throw new Error('This employee was edited on another device. Close the editor and choose Edit again.');
     if(entries.some(e=>e.active&&tt15Key(e.name)!==key&&tt15Key(e.displayName)===tt15Key(label)))throw new Error('Another active employee already uses that display name.');
-    const value={name,displayName:label,defaultRole:changes.defaultRole,phone:String(changes.phone||'').slice(0,40),active:changes.active!==false,revision:Number(current?.revision||0)+1};
+    const value={...current,name,displayName:label,defaultRole:changes.defaultRole,phone:String(changes.phone||'').slice(0,40),active:changes.active!==false,revision:Number(current?.revision||0)+1};
     // Legacy HC membership list gets only HC employees. Server accounts are not
     // injected into the Host/Cashier dropdown. Neither auth nor old reports move.
     const legacy={...(raw.entries||{})};
@@ -14187,7 +14187,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.42 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.43 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14250,7 +14250,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.42: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.43: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14288,7 +14288,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.42: output destinations; report calculations are untouched. */
+/* ES1.8.43: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14298,34 +14298,35 @@ function es35PhoneNumber(raw){
   return digits;
 }
 function es35PhonePanel(view){
-  const dialog=view.dialog,status=dialog.querySelector('[role="status"]');
-  let panel=dialog.querySelector('[data-phone-panel]');
-  if(panel){panel.hidden=!panel.hidden;return;}
+  const dialog=view.dialog,status=dialog.querySelector('[role="status"]');let panel=dialog.querySelector('[data-phone-panel]');if(panel){panel.hidden=!panel.hidden;return;}
+  if(!view.report){status.textContent='Download this report PDF to share it.';return;}
   panel=document.createElement('section');panel.dataset.phonePanel='';panel.style.cssText='padding:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center';
-  panel.innerHTML='<label>Phone number with country code <input type="tel" autocomplete="tel" placeholder="+12565551234" aria-label="Recipient phone number"></label><button type="button" data-wa>WhatsApp</button><button type="button" data-sms>Messages / SMS</button><p style="width:100%;margin:0">Opens a message draft. Review the recipient and tap Send there. The message contains report text; signature images are available in the printer preview.</p>';
+  panel.innerHTML='<label>Employee phone <input type="tel" autocomplete="tel" aria-label="Employee phone"></label><button type="button" data-share-pdf>Share PDF to Messages / WhatsApp</button><button type="button" data-download-pdf>Download PDF</button><button type="button" data-copy>Copy message + phone</button><button type="button" data-sms>Open Messages draft</button><textarea readonly aria-label="Message preview" style="width:100%;min-height:150px"></textarea><p>Share PDF opens your phone’s share menu. Choose Messages and the employee recipient. If unavailable, download the PDF, open the Messages draft, then attach the file. Always review the recipient before Send.</p>';
   dialog.querySelector('.fz18-actions').after(panel);
-  for(const channel of ['wa','sms'])panel.querySelector('[data-'+channel+']').onclick=()=>{
+  const report=view.report,name=smallReportCanonicalPerson(report)||report.employee||'Team member';
+  const body=es43ReceiptMessage(name,report.date),input=panel.querySelector('input');panel.querySelector('textarea').value=body;
+  const blob=simplePdfBlob([{...report,totalPaidOut:smallReportPaidOut(report),employeeGrandTotal:smallReportGrandTotal(report)}]);
+  const filename='Tip_Receipt_'+String(name).replace(/[^a-z0-9]+/gi,'_')+'_'+String(report.date||todayLocal()).replace(/[^0-9-]/g,'')+'.pdf';
+  const file=new File([blob],filename,{type:'application/pdf'});
+  panel.querySelector('[data-download-pdf]').onclick=()=>es18DownloadRaw(blob,filename);
+  panel.querySelector('[data-share-pdf]').onclick=async()=>{
     try{
-      const digits=es35PhoneNumber(panel.querySelector('input').value);
-      const body=String(view.shareText||view.dialog.querySelector('iframe').contentDocument?.body?.innerText||'').trim();
-      if(!body)throw new Error('Report text is unavailable. Download the PDF and attach it manually.');
-      const href=channel==='wa'?'https://wa.me/'+digits+'?text='+encodeURIComponent(body):'sms:+'+digits+(es18IsAppleMobile()?'&':'?')+'body='+encodeURIComponent(body);
-      const link=document.createElement('a');link.href=href;if(channel==='wa'){link.target='_blank';link.rel='noopener noreferrer';}document.body.appendChild(link);link.click();link.remove();
-      status.textContent='Message draft opened. Tap Send in '+(channel==='wa'?'WhatsApp':'Messages')+' to send it.';
-    }catch(e){status.textContent=e.message;}
+      const digits=es35PhoneNumber(input.value);
+      if(!navigator.share||!navigator.canShare?.({files:[file]})){status.textContent='File sharing is unavailable here. Download PDF, then open Messages draft and attach the PDF.';return;}
+      // Share files in the original user gesture. The OS selects app and recipient.
+      await navigator.share({files:[file],title:'Tip Calculation Receipt — '+name,text:body});
+      status.textContent='PDF handed to the selected app. Confirm the recipient '+digits+' and press Send there.';
+    }catch(e){status.textContent=e.name==='AbortError'?'Sharing canceled. Receipt is kept.':(e.message||String(e));}
   };
-  const input=panel.querySelector('input');
-  let edited=false;input.addEventListener('input',()=>{edited=true;});
-  if(view.report){
-    status.textContent='Looking up employee phone number…';
-    es36EmployeePhone(view.report).then(phone=>{
-      if(view.closed||!panel.isConnected||edited)return;
-      if(phone){input.value=phone;status.textContent='Employee number loaded. Review it, then choose Messages / SMS.';}
-      else status.textContent='No saved phone number found. Enter a number or update Manage Employee.';
-    }).catch(()=>{if(!view.closed&&!edited)status.textContent='Phone lookup could not finish. Enter the number manually or retry.';});
-  }
-  input.focus();
+  panel.querySelector('[data-copy]').onclick=async()=>{try{const number='+'+es35PhoneNumber(input.value);await navigator.clipboard.writeText(number+'\n\n'+body);status.textContent='Employee phone and message copied.';}catch(e){status.textContent='Select and copy the phone/message manually.';}};
+  panel.querySelector('[data-sms]').onclick=()=>{try{const digits=es35PhoneNumber(input.value);const a=document.createElement('a');a.href='sms:+'+digits+(es18IsAppleMobile()?'&':'?')+'body='+encodeURIComponent(body);document.body.appendChild(a);a.click();a.remove();status.textContent='Messages draft opened. Attach the downloaded PDF before Send.';}catch(e){status.textContent=e.message;}};
+  let edited=false;input.oninput=()=>{edited=true;};status.textContent='Looking up employee phone…';
+  es36EmployeePhone(report).then(phone=>{if(view.closed||edited)return;input.value=phone||'';status.textContent=phone?'Employee phone loaded. Share PDF or download and attach it in Messages.':'No saved phone. Import employee contacts or enter a number.';}).catch(()=>{if(!view.closed&&!edited)status.textContent='Could not load employee phone. Enter a number or import contacts.';});
 }
+function es43ReceiptMessage(name,date){
+ return 'Hi '+name+',\n\nThank you for your hard work and teamwork today! We appreciate everything you do for The Juicy Seafood.\n\nPlease find attached your Tip Calculation receipt for '+date+'. Review the details and let management know if you have any questions.\n\nThank you again, and have a great rest of your day!\nThe Juicy Seafood Management';
+}
+
 function es35ReceiptOutput(report,popup,sheet){
   const html=esThermalHtml(report),view=popup&&!popup.closed?popup:es18OpenPrintPreview(null,(report.employee||'Employee')+' — Report');
   view.report=report;view.setHtml(html);
@@ -14350,28 +14351,22 @@ function es35ReceiptOutput(report,popup,sheet){
 
 /* Employee identity comes from the report, never the logged-in manager. */
 async function es36EmployeePhone(report){
-  const name=tt15CanonicalName(smallReportCanonicalPerson(report)||report.employee||'');
-  if(!name)return '';
-  const key=normalizeEmployeeNameKey(canonicalEmployeeName(name));
-  const work=async()=>{
-    let data=null;
-    try{const snap=await getDocFromServer(doc(db,'hostCashierTipReports','employee-roster'));data=snap.exists()?snap.data():{};}catch(e){}
-    // An explicit employee entry owns the phone, including an intentionally blank value.
-    const entry=Object.values(data?.directoryEntries||{}).find(x=>normalizeEmployeeNameKey(canonicalEmployeeName(x.name||''))===key);
-    if(entry)return entry.active===false?'':es36StoredPhone(entry.phone);
-    await refreshEmployeePhoneDirectory(true);
-    const hit=employeePhoneDirectory.get(key);
-    return hit&&hit.source!=='recovered-2026-08-24'?es36StoredPhone(hit.phone):'';
-  };
-  let timer;
-  try{return await Promise.race([work(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Phone lookup timed out')),8000);})]);}
-  finally{clearTimeout(timer);}
+ const key=es43ContactKey(smallReportCanonicalPerson(report)||report.employee||'');if(!key)return '';
+ let saved={};try{saved=JSON.parse(localStorage.getItem('fz_owner_employee_contacts43')||'{}');}catch(e){}
+ const cached=saved[key];
+ try{
+   const data=await es43ReadRoster();const entry=Object.values(data.directoryEntries||{}).find(x=>es43ContactKey(x.name)===key);
+   if(entry)return entry.active===false?'':es36StoredPhone(entry.phone);
+ }catch(e){if(cached?.phone)return es36StoredPhone(cached.phone);}
+ if(cached?.phone)return es36StoredPhone(cached.phone);
+ const hit=[...employeePhoneDirectory.values()].find(x=>es43ContactKey(x.name)===key&&x.source!=='recovered-2026-08-24');return es36StoredPhone(hit?.phone);
 }
+
 function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
 
-/* ES1.8.42 — all active team editing lives inside Employee Sheet. */
+/* ES1.8.43 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
   window.es41Team={get:()=>state,edit:(i,k,v)=>{const r=state?.rows[i];if(!r||state.busy)return;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';state.dirty=true;persist(state);paint();},remove:i=>{if(!state||state.busy)return;state.rows.splice(i,1);state.dirty=true;persist(state);paint();}};
@@ -14470,7 +14465,7 @@ function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
 }
 
-/* ES1.8.42 — retired Employee Table routes redirect to Employee Sheet. */
+/* ES1.8.43 — retired Employee Table routes redirect to Employee Sheet. */
 (function retireEmployeeTable39(){
   window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
   window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
@@ -14482,7 +14477,7 @@ function es38MergeUnverified(remote,edited){
   for(const key of ['fzOpenRoleHome','fzOpenManagerTools']){const fn=window[key];if(typeof fn==='function')window[key]=function(...args){const out=fn.apply(this,args);remove();return out;};}
 })();
 
-/* ES1.8.42 — assignment controls are embedded in the employee rows. */
+/* ES1.8.43 — assignment controls are embedded in the employee rows. */
 window.es41Install=function(){
   const panel=$('es38Team');if(!panel)return;
   const details=panel.querySelector('details');details.hidden=true;
@@ -14531,4 +14526,48 @@ window.es41PaintRows=function(){
  const render=esRenderRows;esRenderRows=function(...a){const out=render(...a);window.es41PaintRows();return out;};
  const host=hc15Render;hc15Render=function(...a){const out=host(...a);window.es41PaintRows();return out;};
  const init=esInit;esInit=function(...a){const out=init(...a);window.es41Install();return out;};
+})();
+
+/* Private contact import; no employee contact list is embedded in public DEPLOY. */
+function es43ContactKey(name){
+ let n=normalizeEmployeeNameKey(tt15CanonicalName(name||''));
+ if(n==='breanna eaton')n='breanna';return n;
+}
+async function es43ReadRoster(){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),6000);
+ try{const token=await currentUser.getIdToken();const response=await fetch('https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(FIREBASE_CONFIG.projectId)+'/databases/(default)/documents/hostCashierTipReports/employee-roster',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:controller.signal});if(response.status===404)return {};if(!response.ok)throw new Error('Employee contacts read failed ('+response.status+').');const json=await response.json();return esDecodeFirestore({mapValue:{fields:json.fields||{}}});}finally{clearTimeout(timer);}
+}
+async function es43ImportContacts(payload){
+ if(currentProfile?.role!=='owner')throw new Error('Owner login required.');const uid=currentUser.uid;
+ const contacts=es43ValidateContacts(payload);
+ const result=await runTransaction(db,async tx=>{
+   if(currentProfile?.role!=='owner'||currentUser?.uid!==uid)throw new Error('Owner login changed.');
+   const ref=doc(db,'hostCashierTipReports','employee-roster'),snap=await tx.get(ref),raw=snap.exists()?snap.data():{},entries={...(raw.directoryEntries||{})};
+   const all=tt15DirectoryEntries(raw);
+   for(const c of contacts){
+     const match=all.find(x=>es43ContactKey(x.name)===es43ContactKey(c.name)),name=match?.name||canonicalEmployeeName(c.name),entryKey=tt15Key(name);
+     const existing=Object.values(entries).find(x=>es43ContactKey(x.name)===es43ContactKey(name))||match||{};
+     const oldKey=Object.keys(entries).find(k=>es43ContactKey(entries[k].name)===es43ContactKey(name));
+     const roles=c.roles.map(r=>r==='Cashier/Host'?'Host / Cashier':r),defaultRole=existing.defaultRole||esFixedRole(name)||roles[0]||'Server';
+     entries[oldKey||entryKey]={...existing,name,displayName:existing.displayName||canonicalEmployeeName(c.name),phone:c.phone,email:c.email,roles,defaultRole,active:existing.active!==false,revision:Number(existing.revision||0)+1,contactSource:'owner-import-2026-10-06'};
+   }
+   tx.set(ref,{...raw,directoryEntries:entries,...tt15Stamp()});return entries;
+ });
+ const cache={};for(const c of Object.values(result))cache[es43ContactKey(c.name)]={phone:c.phone||'',email:c.email||''};
+ localStorage.setItem('fz_owner_employee_contacts43',JSON.stringify(cache));tt15Directory.data={...tt15Directory.data,directoryEntries:result};tt15DirectoryPaint();tt15PaintNames();return contacts.length;
+}
+function es43ValidateContacts(payload){
+ if(!payload||!Array.isArray(payload.contacts)||!payload.contacts.length||payload.contacts.length>500)throw new Error('Select the supplied Employee Contacts JSON file.');
+ const seen=new Set();return payload.contacts.map(c=>{
+   const name=String(c.name||'').trim(),email=String(c.email||'').trim();if(!tt15NameValid(name)||!/^\S+@\S+\.\S+$/.test(email))throw new Error('Invalid employee name or email.');
+   const key=es43ContactKey(name);if(seen.has(key))throw new Error('Duplicate employee: '+name);seen.add(key);
+   const roles=c.roles;if(!Array.isArray(roles)||!roles.length||roles.some(r=>!['Server','Bartender','Cashier/Host','Host / Cashier'].includes(r)))throw new Error('Invalid roles for '+name);
+   return {name,email,phone:'+'+es35PhoneNumber(c.phone),roles};
+ });
+}
+(function(){
+ const init=esInit;esInit=function(...a){const out=init(...a);const actions=$('es41Actions');if(actions&&!$('es43Import')&&currentProfile?.role==='owner'){
+  const b=document.createElement('button');b.id='es43Import';b.type='button';b.textContent='Import employee HP + email';const input=document.createElement('input');input.type='file';input.accept='.json,application/json';input.hidden=true;actions.append(b,input);
+  b.onclick=()=>input.click();input.onchange=async()=>{if(!input.files?.[0])return;b.disabled=true;try{const payload=JSON.parse(await input.files[0].text());const n=es43ValidateContacts(payload).length;if(!confirm('Import '+n+' employee phone/email contacts from this file? Current report data stays unchanged.'))return;const count=await es43ImportContacts(payload);esStatus(count+' employee contacts saved to database.');}catch(e){esStatus('Contacts not imported: '+(e.message||e),true);}finally{b.disabled=false;input.value='';}};
+ }return out;};
 })();

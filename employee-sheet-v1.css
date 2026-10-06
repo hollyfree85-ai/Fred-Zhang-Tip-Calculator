@@ -569,7 +569,7 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 #employeeSheet .es-grand-tip{background:#eaf3ff!important}
 #employeeSheet .es-grand-tip .es-computed{font-size:22px;color:#174779}
 
-/* ES1.8.42: team controls must never overflow a locked flex viewport. */
+/* ES1.8.43: team controls must never overflow a locked flex viewport. */
 #employeeSheet.es-compact{display:block!important;overflow-y:auto!important;overscroll-behavior-y:contain;touch-action:pan-y pinch-zoom;scroll-padding-top:80px}
 #employeeSheet.es-compact> :not(.es-modal){flex-shrink:0;margin-bottom:10px}
 #employeeSheet.es-compact>.es-header{position:sticky;top:0;z-index:40}
@@ -585,6 +585,6 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 #employeeSheet #es38Team{padding:10px!important;margin:8px 0!important}
 #employeeSheet #es38Team>p{margin:6px 0;font-size:14px}
 
-/* ES1.8.42: Home has two workspace cards. */
+/* ES1.8.43: Home has two workspace cards. */
 #fzRoleHome .fz-role-menu{grid-template-columns:repeat(2,minmax(0,1fr))}
 @media(max-width:650px){#fzRoleHome .fz-role-menu{grid-template-columns:1fr}}
