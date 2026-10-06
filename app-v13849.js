@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18340",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18360",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -6323,24 +6323,7 @@ window.printSmallReportThermal=async function(reportId){
     alert(`Please collect ${r.employee||"employee"}'s signature first. PRINT is available only after the employee has signed.`);
     return;
   }
-  // On Android use Star's supported PassPRNT bridge for the paired TSP100IIIBI.
-  // Preserve only this authenticated Manager/Owner for the PassPRNT callback,
-  // then restore the exact Daily Report without forcing another login.
-  if(/Android/i.test(navigator.userAgent||"")){
-    try{
-      await prepareSmallReportPassPrntReturn(r);
-      if(!openSmallReportStarPassPrnt(r)){
-        await cancelSmallReportPassPrntReturn();
-        openSmallReportSystemThermalPrint(r);
-      }
-    }catch(e){
-      console.error("PassPRNT return bridge:",e);
-      await cancelSmallReportPassPrntReturn();
-      openSmallReportSystemThermalPrint(r);
-    }
-    return;
-  }
-  openSmallReportSystemThermalPrint(r);
+  es35ReceiptOutput(r,null,false);
 };
 
 function restoreSmallReportAfterPassPrnt(state){
@@ -10340,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.34';
+const ES_BUILD='ES1.8.36';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10970,14 +10953,7 @@ window.employeeSheetPrint=async function(name){
   esSetBusy(true);esStatus('Saving current row before printing…');
   try{
     const out=await esCommit(name),r=out.report,html=esThermalHtml(r);
-    if(android){
-      await prepareSmallReportPassPrntReturn(r);
-      try{const bridge=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');bridge.employeeSheet=true;localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(bridge));}catch(e){}
-      esPersistLocal();const link=document.createElement('a');link.href=esPassPrntUri(r,html);link.style.display='none';document.body.appendChild(link);link.click();link.remove();
-      esStatus('Sent to Star PassPRNT. The saved Daily Report is unchanged by printing.');
-    }else{
-      popup?.setHtml(html);esStatus('Receipt ready. Tap Print, then Close / Back to app.');
-    }
+    es35ReceiptOutput(r,popup,true);esStatus('Receipt ready. Choose Send to phone or Print to printer.');
   }catch(e){if(popup)popup.close();es14HandleError(e);if(android)await cancelSmallReportPassPrntReturn();}
   finally{esSetBusy(false);esRenderRows();esRenderRouting();}
 };
@@ -12259,13 +12235,13 @@ function tt15BuildTeam(raw,host,rows,date){
   return {batch:built,host:hc};
 }
 function tt15Message(text,error=false){const el=$('tt15Status');if(el){el.textContent=text;el.dataset.error=error?'1':'0';}}
-function tt15Close(){if(tt15State){tt15State.unsubs.forEach(u=>u());tt15State.unsubs=[];tt15State.open=false;}++tt15Token;$('tt15BartenderDuplicateModal')?.classList.add('hidden');$('todayTeamPage')?.classList.add('hidden');document.body.classList.remove('tt15-active');}
+function tt15Close(){if(tt15State){(tt15State.timers||[]).forEach(clearTimeout);tt15State.unsubs.forEach(u=>u());tt15State.unsubs=[];tt15State.open=false;}++tt15Token;$('tt15BartenderDuplicateModal')?.classList.add('hidden');$('todayTeamPage')?.classList.add('hidden');document.body.classList.remove('tt15-active');}
 function tt15Init(){
   if($('todayTeamPage'))return;const parent=$('staffApp');if(!parent)return;
   const page=document.createElement('section');page.id='todayTeamPage';page.className='staffPanel tt15-page hidden';
   page.innerHTML=`<header class="tt15-header"><button type="button" id="tt15Home">‹ Home</button><h2>Today's Team</h2><button type="button" id="tt15Sheet">Sheet ›</button></header>
     <div class="tt15-toolbar"><label>Work date<input id="tt15Date" type="date"></label><button type="button" id="tt15Edit">Edit Team</button><button type="button" id="tt15Manage">Manage Employee</button></div>
-    <div id="tt15Status" role="status" aria-live="polite"></div>
+    <div id="tt15Status" role="status" aria-live="polite"></div><button type="button" id="tt15Retry" hidden>Retry connection</button>
     <div class="tt15-team-grid"><table class="tt15-table"><thead><tr><th>Employee</th><th>Position</th><th>Shift</th><th></th></tr></thead><tbody id="tt15Rows"></tbody></table></div>
     <div class="tt15-actions"><button type="button" id="tt15AddRow">＋ Add row</button><button type="button" id="tt15Cancel">Cancel edits</button><button type="button" class="tt15-primary" id="tt15Update">Update Team</button></div>
     <p class="tt15-hint">Server / Bartender → upper sheet. Host / Cashier → lower sheet. Updating the team does not delete saved reports.</p>
@@ -12275,6 +12251,7 @@ function tt15Init(){
     <div id="tt15DirectoryEdit" class="hidden"><label>Employee name / display name<input id="tt15EmployeeName" maxlength="100" autocomplete="off"></label><label>Default position<select id="tt15EmployeeRole">${TT15_ROLES.map(r=>esOption(r,r,'Server')).join('')}</select></label><label>Phone (optional)<input id="tt15EmployeePhone" type="tel" maxlength="40" autocomplete="off"></label><div class="tt15-actions"><button id="tt15EmployeeCancel" type="button">Cancel</button><button id="tt15EmployeeSave" type="button" class="tt15-primary">Save Employee</button></div></div>
     <label class="tt15-show-inactive"><input id="tt15ShowInactive" type="checkbox"> Show deleted / restore</label><div id="tt15DirectoryStatus" role="status"></div><div id="tt15DirectoryList"></div></div></div>`;
   parent.appendChild(page);
+  $('tt15Retry').onclick=()=>{if(tt15MayLeave())window.fzOpenTodayTeam(tt15State.date);};
   $('tt15Home').onclick=()=>{if(!tt15MayLeave())return;tt15Close();window.fzOpenRoleHome();};
   $('tt15Sheet').onclick=()=>{if(!tt15MayLeave())return;const date=tt15State.date;tt15Close();window.employeeSheetOpen(date);};
   $('tt15Date').onchange=()=>{const value=$('tt15Date').value;if(tt15MayLeave())window.fzOpenTodayTeam(value);else $('tt15Date').value=tt15State.date;};
@@ -12301,11 +12278,11 @@ function tt15Render(){
   const directory=tt15DirectoryEntries(),editable=s.ready&&s.editing&&!s.busy;
   $('tt15Date').value=s.date;$('tt15Date').disabled=!!s.busy;
   $('tt15Edit').disabled=!s.ready||s.editing||s.busy;$('tt15Update').disabled=!editable;$('tt15AddRow').disabled=!editable;$('tt15Cancel').disabled=!s.editing||s.busy;
-  $('tt15Manage').disabled=!!s.busy;
+  $('tt15Manage').disabled=!!s.busy;$('tt15Retry').hidden=!!s.ready;$('tt15Retry').disabled=!!s.busy;
   $('tt15Rows').innerHTML=s.rows.map((r,i)=>{
     const options=directory.filter(e=>e.active||e.name===r.name);if(r.name&&!options.some(e=>e.name===r.name))options.push({name:r.name,displayName:r.name,active:false});
     return `<tr><td><select data-tt-index="${i}" data-tt-field="name" aria-label="Employee ${i+1}"${!editable?' disabled':''}>${esOption('','Select employee',r.name)}${options.map(e=>esOption(e.name,e.displayName+(e.active?'':' (inactive)'),r.name)).join('')}</select></td><td><select data-tt-index="${i}" data-tt-field="role" aria-label="Position ${i+1}"${!editable?' disabled':''}>${TT15_ROLES.map(x=>esOption(x,x,r.role)).join('')}</select></td><td><select data-tt-index="${i}" data-tt-field="shift" aria-label="Shift ${i+1}"${!editable?' disabled':''}>${esOption('','Choose shift',r.shift)}${(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>esOption(x,x==='DOUBLE'?'Double':x==='LONG'?'Long':x,r.shift)).join('')}</select></td><td><button type="button" data-tt-remove="${i}" aria-label="Remove ${esc(r.name||'row')} from this team"${!editable?' disabled':''}>✕</button></td></tr>`;
-  }).join('')||'<tr><td colspan="4">No team yet. Click Edit Team, then Add row.</td></tr>';
+  }).join('')||('<tr><td colspan="4">'+(s.ready?'No team yet. Click Edit Team, then Add row.':s.timedOut?'Team has not been verified. Tap Retry connection.':'Loading team from cloud…')+'</td></tr>');
 }
 window.fzOpenTodayTeam=async function(date){
   if(!esAllowed())return;tt15Init();if(tt15State?.busy)return;
@@ -12314,22 +12291,29 @@ window.fzOpenTodayTeam=async function(date){
   esStopRead();hc15Stop();frExit();tt15Close();tt15DirectoryStart();
   document.querySelectorAll('.staffPanel').forEach(e=>e.classList.add('hidden'));$('fzRoleHome')?.classList.add('hidden');$('staffApp')?.classList.remove('hidden');$('hourlyV1Workspace')?.classList.add('hidden');
   document.body.classList.remove('es-active','fz-final-report','hourly-v1-mode','hourly-v1-editing','hourly-v1-small-report');document.body.classList.add('tt15-active');$('todayTeamPage').classList.remove('hidden');
-  const token=++tt15Token,s={uid:currentUser.uid,date:workdate,open:true,ready:false,editing:false,busy:false,rows:[],baseRows:[],latestRows:[],batch:null,host:null,unsubs:[]};tt15State=s;
+  const token=++tt15Token,s={uid:currentUser.uid,date:workdate,open:true,ready:false,editing:false,busy:false,rows:[],baseRows:[],latestRows:[],batch:null,host:null,unsubs:[],timers:[]};tt15State=s;
   tt15Message('Loading team…');tt15Render();
   const accept=(kind,snap)=>{if(tt15State!==s||token!==tt15Token||!esAllowed()||currentUser.uid!==s.uid)return;s[kind]=snap.exists()?snap.data():{};s[kind+'Ready']=snap.metadata?.fromCache!==true&&snap.metadata?.hasPendingWrites!==true;
-    if(s.batch!==null&&s.host!==null){const rows=tt15TeamRows(s.batch,s.host);s.latestRows=tt15Copy(rows);s.ready=s.batchReady&&s.hostReady;
+    if(s.batch!==null&&s.host!==null){const rows=tt15TeamRows(s.batch,s.host);s.latestRows=tt15Copy(rows);s.ready=s.batchReady&&s.hostReady;if(s.ready){s.timedOut=false;s.timers.forEach(clearTimeout);s.timers=[];}
       if((!s.editing||tt15Same(s.rows,s.baseRows))&&!s.busy){const wasEmpty=!s.rows.length;s.rows=rows;s.baseRows=tt15Copy(rows);if(s.ready&&!rows.length)s.editing=true;else if(wasEmpty&&rows.length)s.editing=false;tt15Render();}
-      if(!s.busy)tt15Message(s.ready?(s.editing?'Edit team, then Update Team.':'Live · '+rows.length+' employees'):'Checking cloud…');}
+      if(!s.busy)tt15Message(s.ready?(s.editing?'Edit team, then Update Team.':'Live · '+rows.length+' employees'):(s.timedOut?'Connection is slow. Cached team is read-only. Tap Retry connection.':'Checking cloud…'));}
+    tt15Render();
   };
-  for(const [kind,col]of [['batch','hourlyV1Batches'],['host','hostCashierTipReports']])s.unsubs.push(onSnapshot(doc(db,col,workdate),{includeMetadataChanges:true},snap=>accept(kind,snap),e=>{if(tt15State===s){s.ready=false;tt15Message('Team could not sync: '+(e.message||e)+'. Reopen Today\'s Team to retry.',true);tt15Render();}}));
-  // HP/mobile safeguard: if realtime metadata stalls, perform one direct server read.
-  setTimeout(async()=>{
+  for(const [kind,col]of [['batch','hourlyV1Batches'],['host','hostCashierTipReports']])s.unsubs.push(onSnapshot(doc(db,col,workdate),{includeMetadataChanges:true},snap=>accept(kind,snap),e=>{if(tt15State===s){s.ready=false;tt15Message('Team could not sync: '+(e.message||e)+'. Tap Retry connection.',true);tt15Render();}}));
+  // Direct reads run independently; listeners can still recover after timeout.
+  s.timers.push(setTimeout(()=>{
     if(tt15State!==s||s.ready||token!==tt15Token)return;
-    try{
-      const [bs,hs]=await Promise.all([getDocFromServer(doc(db,'hourlyV1Batches',workdate)),getDocFromServer(doc(db,'hostCashierTipReports',workdate))]);
-      if(tt15State!==s||token!==tt15Token)return;accept('batch',bs);accept('host',hs);
-    }catch(e){if(tt15State===s&&!s.ready)tt15Message('Still connecting… Check connection or tap Home and reopen Today\'s Team.',true);}
-  },3500);
+    for(const [kind,col] of [['batch','hourlyV1Batches'],['host','hostCashierTipReports']]){
+      if(s[kind+'Ready'])continue;
+      getDocFromServer(doc(db,col,workdate)).then(snap=>accept(kind,snap)).catch(e=>{
+        if(tt15State===s&&token===tt15Token&&!s.ready){tt15Message('Team could not sync: '+(e.message||e)+'. Tap Retry connection.',true);}
+      });
+    }
+  },1500));
+  s.timers.push(setTimeout(()=>{
+    if(tt15State!==s||s.ready||token!==tt15Token)return;
+    s.timedOut=true;tt15Message('Connection is taking too long. Team editing stays locked until both sections are verified. Tap Retry connection.',true);tt15Render();
+  },10000));
 };
 async function tt15UpdateTeam(){
   const s=tt15State;if(!s?.ready||!s.editing||s.busy)return false;
@@ -12632,12 +12616,7 @@ async function hc15Action(name,action='save'){
   finally{s.busy=false;hc15Render();hc15Schedule(s);}
 }
 async function hc15PrintReport(report,popup){
-  const html=esThermalHtml(report);
-  if(/Android/i.test(navigator.userAgent||'')){
-    try{await prepareSmallReportPassPrntReturn(report);try{const b=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');b.employeeSheet=true;localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(b));}catch(e){}
-      const link=document.createElement('a');link.href=esPassPrntUri(report,html);link.style.display='none';document.body.appendChild(link);link.click();link.remove();
-    }catch(e){await cancelSmallReportPassPrntReturn();throw e;}
-  }else{popup?.setHtml(html);}
+  es35ReceiptOutput(report,popup,true);
 }
 function hc15Sign(name){
   const s=hc15Session;if(!s?.verified||s.busy)return;
@@ -13760,7 +13739,7 @@ function es18ShowDialog(dialog){
 function es18OpenPrintPreview(html=null,title='Print preview'){
   es18InstallUiStyles();window.es18ClosePrintPreview?.();
   const focus=document.activeElement,dialog=document.createElement('dialog');dialog.id='fz18PrintDialog';dialog.className='fz18-dialog';dialog.setAttribute('aria-label','Report print preview');
-  dialog.innerHTML='<header class="fz18-dialog-head"><h2></h2><button class="fz18-close" type="button">✕ Close / Back to app</button></header><div class="fz18-actions"><button data-print type="button" disabled>Print</button><button data-download type="button" hidden>Download PDF</button></div><div class="fz18-status" role="status">Preparing receipt. Your app stays signed in.</div><iframe title="Report preview"></iframe>';
+  dialog.innerHTML='<header class="fz18-dialog-head"><h2></h2><button class="fz18-close" type="button">✕ Close / Back to app</button></header><div class="fz18-actions"><button data-phone type="button" disabled>Send to phone</button><button data-print type="button" disabled>Print to printer</button><button data-download type="button" hidden>Download PDF</button></div><div class="fz18-status" role="status">Preparing receipt. Your app stays signed in.</div><iframe title="Report preview"></iframe>';
   dialog.querySelector('h2').textContent=title;
   const frame=dialog.querySelector('iframe'),print=dialog.querySelector('[data-print]'),status=dialog.querySelector('[role="status"]');
   const view={dialog,closed:false,ready:false,objectUrl:'',focus,oldOverflow:document.body.style.overflow,
@@ -13770,7 +13749,8 @@ function es18OpenPrintPreview(html=null,title='Print preview'){
       frame.srcdoc=String(content||'').replace('</head>',screen+'</head>');},
     setPdf(blob,filename){if(view.closed)return;view.ready=false;print.disabled=true;if(view.objectUrl)URL.revokeObjectURL(view.objectUrl);frame.removeAttribute('sandbox');frame.removeAttribute('srcdoc');view.objectUrl=URL.createObjectURL(blob);frame.src=view.objectUrl;const b=dialog.querySelector('[data-download]');b.hidden=false;b.onclick=()=>es18DownloadRaw(blob,filename);}
   };
-  frame.onload=()=>{if(view.closed)return;view.ready=true;print.disabled=false;status.textContent='Tap Print. After printing or canceling, use Close / Back to app.';try{frame.contentWindow.addEventListener('afterprint',()=>{if(!view.closed)status.textContent='Print dialog closed. Tap Close / Back to app to return to your report.';});}catch(e){}};
+  frame.onload=()=>{if(view.closed)return;view.ready=true;print.disabled=false;dialog.querySelector('[data-phone]').disabled=false;status.textContent='Tap Print. After printing or canceling, use Close / Back to app.';try{frame.contentWindow.addEventListener('afterprint',()=>{if(!view.closed)status.textContent='Print dialog closed. Tap Close / Back to app to return to your report.';});}catch(e){}};
+  dialog.querySelector('[data-phone]').onclick=()=>es35PhonePanel(view);
   print.onclick=()=>{if(!view.ready||view.closed)return;try{status.textContent='Finish or cancel the system print dialog, then tap Close / Back to app.';frame.contentWindow.focus();frame.contentWindow.print();}catch(e){status.textContent='System print is unavailable in this preview. Use Download PDF when available; Close returns to your app.';}};
   dialog.querySelector('.fz18-close').onclick=()=>view.close();dialog.addEventListener('cancel',e=>{e.preventDefault();view.close();});
   document.body.appendChild(dialog);document.body.style.overflow='hidden';es18PrintView=view;es18ShowDialog(dialog);
@@ -14080,12 +14060,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   function signedEnough(sig){return !!sig&&sig.strokes.reduce((n,s)=>n+s.length,0)>=4;}
   async function printCommitted(report,popup){
-    const html=esThermalHtml(report),android=/Android/i.test(navigator.userAgent||'');
-    if(android){
-      await prepareSmallReportPassPrntReturn(report);
-      try{const bridge=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');bridge.employeeSheet=true;localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(bridge));}catch(e){}
-      esPersistLocal();const link=document.createElement('a');link.href=esPassPrntUri(report,html);link.style.display='none';document.body.appendChild(link);link.click();link.remove();
-    }else popup?.setHtml(html);
+    es35ReceiptOutput(report,popup,true);
   }
   async function upperProcess(e){
     e?.preventDefault?.();e?.stopImmediatePropagation?.();
@@ -14189,7 +14164,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.34 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.36 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14252,7 +14227,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.34: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.36: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14289,3 +14264,86 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   try{frRenderIfOpen();}catch(e){}
 })();
 
+
+/* ES1.8.36: output destinations; report calculations are untouched. */
+function es35PhoneNumber(raw){
+  const value=String(raw||'').trim();
+  if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
+  let digits=value.replace(/\D/g,'');
+  if(!value.startsWith('+')&&digits.length===10)digits='1'+digits;
+  if(digits.length<8||digits.length>15||digits[0]==='0')throw new Error('Use the full international number with country code.');
+  return digits;
+}
+function es35PhonePanel(view){
+  const dialog=view.dialog,status=dialog.querySelector('[role="status"]');
+  let panel=dialog.querySelector('[data-phone-panel]');
+  if(panel){panel.hidden=!panel.hidden;return;}
+  panel=document.createElement('section');panel.dataset.phonePanel='';panel.style.cssText='padding:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center';
+  panel.innerHTML='<label>Phone number with country code <input type="tel" autocomplete="tel" placeholder="+12565551234" aria-label="Recipient phone number"></label><button type="button" data-wa>WhatsApp</button><button type="button" data-sms>Messages / SMS</button><p style="width:100%;margin:0">Opens a message draft. Review the recipient and tap Send there. The message contains report text; signature images are available in the printer preview.</p>';
+  dialog.querySelector('.fz18-actions').after(panel);
+  for(const channel of ['wa','sms'])panel.querySelector('[data-'+channel+']').onclick=()=>{
+    try{
+      const digits=es35PhoneNumber(panel.querySelector('input').value);
+      const body=String(view.shareText||view.dialog.querySelector('iframe').contentDocument?.body?.innerText||'').trim();
+      if(!body)throw new Error('Report text is unavailable. Download the PDF and attach it manually.');
+      const href=channel==='wa'?'https://wa.me/'+digits+'?text='+encodeURIComponent(body):'sms:+'+digits+(es18IsAppleMobile()?'&':'?')+'body='+encodeURIComponent(body);
+      const link=document.createElement('a');link.href=href;if(channel==='wa'){link.target='_blank';link.rel='noopener noreferrer';}document.body.appendChild(link);link.click();link.remove();
+      status.textContent='Message draft opened. Tap Send in '+(channel==='wa'?'WhatsApp':'Messages')+' to send it.';
+    }catch(e){status.textContent=e.message;}
+  };
+  const input=panel.querySelector('input');
+  let edited=false;input.addEventListener('input',()=>{edited=true;});
+  if(view.report){
+    status.textContent='Looking up employee phone number…';
+    es36EmployeePhone(view.report).then(phone=>{
+      if(view.closed||!panel.isConnected||edited)return;
+      if(phone){input.value=phone;status.textContent='Employee number loaded. Review it, then choose Messages / SMS.';}
+      else status.textContent='No saved phone number found. Enter a number or update Manage Employee.';
+    }).catch(()=>{if(!view.closed&&!edited)status.textContent='Phone lookup could not finish. Enter the number manually or retry.';});
+  }
+  input.focus();
+}
+function es35ReceiptOutput(report,popup,sheet){
+  const html=esThermalHtml(report),view=popup&&!popup.closed?popup:es18OpenPrintPreview(null,(report.employee||'Employee')+' — Report');
+  view.report=report;view.setHtml(html);
+  // Extract readable receipt text, excluding scripts, styles and signature images.
+  const parsed=new DOMParser().parseFromString(html,'text/html');parsed.querySelectorAll('style,script').forEach(n=>n.remove());
+  parsed.querySelectorAll('br').forEach(n=>n.replaceWith('\n'));parsed.querySelectorAll('tr,div,p,h1,h2,h3').forEach(n=>n.append('\n'));parsed.querySelectorAll('td,th').forEach(n=>n.append('  '));
+  view.shareText=(parsed.body.textContent||'').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+  if(/Android/i.test(navigator.userAgent||'')){
+    view.dialog.querySelector('[data-print]').onclick=async()=>{
+      const status=view.dialog.querySelector('[role="status"]'),button=view.dialog.querySelector('[data-print]');button.disabled=true;
+      try{
+        await prepareSmallReportPassPrntReturn(report);
+        if(sheet){try{const bridge=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');bridge.employeeSheet=true;localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(bridge));}catch(e){}esPersistLocal();}
+        if(sheet){const link=document.createElement('a');link.href=esPassPrntUri(report,html);document.body.appendChild(link);link.click();link.remove();}else if(!openSmallReportStarPassPrnt(report))throw new Error('Star PassPRNT launch failed.');
+        status.textContent='Opened Star PassPRNT. Finish printing there, then return to the app.';
+      }catch(e){await cancelSmallReportPassPrntReturn();status.textContent='Printer could not open: '+(e.message||e);}
+      finally{if(!view.closed)button.disabled=false;}
+    };
+  }
+  return view;
+}
+
+/* Employee identity comes from the report, never the logged-in manager. */
+async function es36EmployeePhone(report){
+  const name=tt15CanonicalName(smallReportCanonicalPerson(report)||report.employee||'');
+  if(!name)return '';
+  const key=normalizeEmployeeNameKey(canonicalEmployeeName(name));
+  const work=async()=>{
+    let data=null;
+    try{const snap=await getDocFromServer(doc(db,'hostCashierTipReports','employee-roster'));data=snap.exists()?snap.data():{};}catch(e){}
+    // An explicit employee entry owns the phone, including an intentionally blank value.
+    const entry=Object.values(data?.directoryEntries||{}).find(x=>normalizeEmployeeNameKey(canonicalEmployeeName(x.name||''))===key);
+    if(entry)return entry.active===false?'':es36StoredPhone(entry.phone);
+    await refreshEmployeePhoneDirectory(true);
+    const hit=employeePhoneDirectory.get(key);
+    return hit&&hit.source!=='recovered-2026-08-24'?es36StoredPhone(hit.phone):'';
+  };
+  let timer;
+  try{return await Promise.race([work(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Phone lookup timed out')),8000);})]);}
+  finally{clearTimeout(timer);}
+}
+function es36StoredPhone(raw){
+  try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
+}
