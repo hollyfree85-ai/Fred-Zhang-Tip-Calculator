@@ -2746,7 +2746,7 @@ window.logout = async function(){
   window.es18ClosePasskeys?.();
   try{localStorage.removeItem(PASS_PRNT_BRIDGE_KEY);}catch(e){}
 
-  ownerTableSession=null;++ownerTableRequest;$("ownerTableBody").innerHTML="";if($('ownerTableGroups'))$('ownerTableGroups').innerHTML='';
+  ownerTableSession=null;++ownerTableRequest;if($("ownerTableBody"))$("ownerTableBody").innerHTML="";if($('ownerTableGroups'))$('ownerTableGroups').innerHTML='';
   hv1RestoreSmallReportHome();
   hourlyWorkspaceRequested=false;hourlyV1Requested=false;hostCashierRequested=false;hourlyV1Mode=false;hv1EditingEmployee="";document.body.classList.remove("hourly-v1-mode","hourly-v1-editing","hourly-v1-small-report");
   applyHourlyWorkspaceMode(false);
@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18370",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18390",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10323,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.37';
+const ES_BUILD='ES1.8.39';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -14187,7 +14187,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.37 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.39 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14250,7 +14250,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.37: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.39: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14288,7 +14288,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.37: output destinations; report calculations are untouched. */
+/* ES1.8.39: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14370,3 +14370,112 @@ async function es36EmployeePhone(report){
 function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
+
+/* ES1.8.39 — all active team editing lives inside Employee Sheet. */
+(function installSheetTeam38(){
+  let state=null,serial=0;
+  const key=s=>'fz_sheet_team38_'+s.uid+'_'+s.date;
+  const copy=tt15Copy;
+  function current(s){return state===s&&esSession?.uid===s.uid&&esSession?.date===s.date&&esAllowed();}
+  function defaults(date,raw){const x=raw?.todayTeamBusser||{};return {AM:typeof x.AM==='boolean'?x.AM:isWeekendDate(date),PM:typeof x.PM==='boolean'?x.PM:true};}
+  function persist(s){try{localStorage.setItem(key(s),JSON.stringify({rows:s.rows,base:s.base,busser:s.busser,baseBusser:s.baseBusser,dirty:s.dirty,busserDirty:s.busserDirty}));}catch(e){}}
+  function message(text,error=false){const n=$('es38Status');if(n){n.textContent=text;n.style.color=error?'#9c362b':'#36576c';}}
+  function paint(){const s=state;if(!s||!current(s))return;const directory=tt15DirectoryEntries();
+    $('es38AM').checked=s.busser.AM;$('es38PM').checked=s.busser.PM;
+    for(const id of ['es38AM','es38PM','es38Add','es38Save','es38Retry'])$(id).disabled=s.busy;
+    $('es38Rows').innerHTML=s.rows.map((r,i)=>{
+      const options=directory.filter(e=>e.active||e.name===r.name);if(r.name&&!options.some(e=>e.name===r.name))options.push({name:r.name,displayName:r.name});
+      return `<div class="es38-row"><label>Employee<select data-i="${i}" data-k="name"${s.busy?' disabled':''}>${esOption('','Select employee',r.name)}${options.map(e=>esOption(e.name,e.displayName,r.name)).join('')}</select></label><label>Position<select data-i="${i}" data-k="role"${s.busy?' disabled':''}>${TT15_ROLES.map(x=>esOption(x,x,r.role)).join('')}</select></label><label>Shift<select data-i="${i}" data-k="shift"${s.busy?' disabled':''}>${esOption('','Select shift',r.shift)}${(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>esOption(x,x==='DOUBLE'?'Double':x==='LONG'?'Long':x,r.shift)).join('')}</select></label><button type="button" data-remove="${i}"${s.busy?' disabled':''}>Remove</button></div>`;
+    }).join('')||'<p>Add an employee here. Existing sales and reports are kept.</p>';
+  }
+  async function readDoc(col,date,s){
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),9000);
+    try{
+      const token=await currentUser.getIdToken();if(!current(s))throw new Error('Date or login changed.');
+      const url='https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(FIREBASE_CONFIG.projectId)+'/databases/(default)/documents/'+col+'/'+encodeURIComponent(date);
+      const response=await fetch(url,{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:controller.signal});
+      if(response.status===404)return {};
+      if(!response.ok)throw new Error('Team read failed ('+response.status+').');
+      const body=await response.json();return esDecodeFirestore({mapValue:{fields:body.fields||{}}});
+    }finally{clearTimeout(timer);}
+  }
+  async function load(s){
+    message('Checking saved team. You can edit a device draft now.');
+    try{
+      const results=await Promise.all([readDoc('hourlyV1Batches',s.date,s),readDoc('hostCashierTipReports',s.date,s)]);
+      if(!current(s))return;
+      const rows=tt15TeamRows(...results),busser=defaults(s.date,results[0]);
+      if(!s.dirty){s.rows=copy(rows);s.base=copy(rows);s.busser=busser;s.baseBusser=copy(busser);paint();}
+      s.verified=true;message(s.dirty?'Your team draft is kept. Apply Team checks the latest saved data.':'Team loaded. Edit here, then Apply Team.');
+    }catch(e){if(current(s))message('Team connection unavailable: '+(e.name==='AbortError'?'request timed out':e.message)+'. You can keep editing; Retry reloads saved team.',true);}
+  }
+  function start(){const session=esSession;if(!session||!esAllowed()||!$('es38Team'))return;
+    if(state?.date===session.date&&state?.uid===session.uid){paint();return;}
+    const s={uid:session.uid,date:session.date,rows:[],base:null,busser:defaults(session.date,session.rawBase),baseBusser:null,dirty:false,busserDirty:false,busy:false,id:++serial};state=s;
+    // Cached assignments are only a preview, never evidence of an empty server team.
+    const preview=tt15TeamRows(session.rawBase||{},hc15Session?.date===session.date?hc15Session.data||{}:{});s.rows=copy(preview);
+    try{const saved=JSON.parse(localStorage.getItem(key(s))||'null');if(saved?.dirty){Object.assign(s,saved);message('Restored your team device draft.');}}catch(e){}
+    paint();void load(s);
+  }
+  async function apply(){const s=state;if(!s||!current(s)||s.busy)return;
+    try{tt15Require(s.uid);tt15TeamValidate(s.rows);if(s.base&&s.rows.length===0&&s.base.length&&!confirm('Remove everyone from the active team? Saved reports are kept.'))return;if(!await tt15ConfirmDuplicateBartenders(s.rows))return;
+      // Share current money inputs before assignment changes when the sheet is synced.
+      esPersistLocal();if(esSession.cloudReady&&esHasEdits(esSession)){const ok=await es14AutoFlush(esSession);if(esHasEdits(esSession))throw new Error('Save or sync current sheet inputs before changing the team. Your team draft is kept.');}
+      if(!current(s))return;s.busy=true;paint();message('Applying team…');
+      const edited=copy(s.rows),base=s.base===null?null:copy(s.base),chosen=copy(s.busser);
+      const result=await runTransaction(db,async tx=>{
+        const ref=doc(db,'hourlyV1Batches',s.date),href=doc(db,'hostCashierTipReports',s.date),dref=doc(db,'hostCashierTipReports','employee-roster');
+        const bs=await tx.get(ref),hs=await tx.get(href),ds=await tx.get(dref);tt15Require(s.uid);if(!current(s))throw new Error('Date changed. Your draft is kept.');
+        const raw=bs.exists()?bs.data():{},host=hs.exists()?hs.data():{},remote=tt15TeamRows(raw,host);
+        // With no verified baseline only additions are merged; unseen people are never removed.
+        const rows=base===null?es38MergeUnverified(remote,edited):tt15MergeTeam(base,edited,remote);
+        const dir=tt15DirectoryEntries(ds.exists()?ds.data():{});
+        for(const r of rows)if(!remote.some(x=>x.name===r.name)&&!dir.some(e=>e.name===r.name&&e.active))throw new Error(r.name+' is not active. Add or restore them in Manage Employee.');
+        tt15TeamValidate(rows);
+        const remoteBusser=defaults(s.date,raw);
+        if(s.busserDirty&&s.baseBusser&&!tt15Same(s.baseBusser,remoteBusser)&&!tt15Same(chosen,remoteBusser))throw new Error('Busser settings changed on another device. Retry and review.');
+        const out=tt15BuildTeam(raw,host,rows,s.date);out.batch.todayTeamBusser=s.busserDirty?chosen:remoteBusser;
+        tx.set(ref,{...out.batch,...tt15Stamp()});tx.set(href,{...out.host,...tt15Stamp()});return {rows,busser:out.batch.todayTeamBusser};
+      });
+      if(!current(s))return;s.rows=copy(result.rows);s.base=copy(result.rows);s.busser=copy(result.busser);s.baseBusser=copy(result.busser);s.dirty=false;s.busserDirty=false;localStorage.removeItem(key(s));s.busy=false;
+      message('Team applied. Loading employee rows…');state=null;await window.employeeSheetOpen(s.date);
+    }catch(e){if(current(s)){message('Team was not applied: '+(e.message||e)+'. Your draft is kept.',true);persist(s);}}
+    finally{if(current(s)){s.busy=false;paint();}}
+  }
+  function install(){if(!$('employeeSheet')||$('es38Team'))return;tt15Init();
+    const panel=document.createElement('section');panel.id='es38Team';panel.style.cssText='margin:12px 0;padding:16px;border:1px solid #bfd1de;border-radius:18px;background:#f5faff';
+    panel.innerHTML='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><b>Busser working</b><label><input id="es38AM" type="checkbox"> Busser AM</label><label><input id="es38PM" type="checkbox"> Busser PM</label></div><p>Mon–Fri: AM off / PM on. Sat–Sun: AM + PM on.</p><details open><summary><b>Employees · Position · Shift</b></summary><div id="es38Rows"></div><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="es38Add">＋ Add employee / shift</button><button type="button" id="es38Manage">Manage Employee</button><button type="button" id="es38Save">Apply Team</button><button type="button" id="es38Retry">Retry / reload team</button></div></details><p id="es38Status" role="status" aria-live="polite"></p>';
+    $('employeeSheet').querySelector('.es-toolbar').after(panel);
+    const style=document.createElement('style');style.textContent='.es38-row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;padding:12px 0;border-bottom:1px solid #cbd9e8;margin-bottom:10px}.es38-row label{display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px}.es38-row select{width:100%;min-height:44px}#es38Team button{min-height:44px}#es38Team input[type=checkbox]{width:22px;height:22px;vertical-align:middle}';document.head.appendChild(style);
+    $('es38Add').onclick=()=>{if(!state||state.busy)return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();};
+    $('es38Rows').onchange=e=>{const s=state,k=e.target.dataset.k,i=Number(e.target.dataset.i);if(!s||s.busy||!k||!s.rows[i])return;const r=s.rows[i];r[k]=e.target.value;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===r.name)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';s.dirty=true;persist(s);paint();};
+    $('es38Rows').onclick=e=>{const b=e.target.closest('[data-remove]');if(!b||!state||state.busy)return;state.rows.splice(Number(b.dataset.remove),1);state.dirty=true;persist(state);paint();};
+    for(const cp of ['AM','PM'])$('es38'+cp).onchange=()=>{if(!state||state.busy)return;state.busser[cp]=$('es38'+cp).checked;state.busserDirty=true;state.dirty=true;persist(state);message('Busser change is a team draft. Apply Team to use it in calculations.');};
+    $('es38Save').onclick=apply;$('es38Retry').onclick=()=>{if(!state||state.busy)return;if(state.dirty&&!confirm('Reload saved team and discard this team draft? Employee sales inputs are kept.'))return;state.dirty=false;state.busserDirty=false;persist(state);void load(state);};
+    $('es38Manage').onclick=()=>{tt15DirectoryStart();$('tt15DirectoryPanel').classList.remove('hidden');tt15DirectoryPaint();};
+    for(const id of ['tt15DirectoryPanel','tt15BartenderDuplicateModal']){const modal=$(id);if(modal)$('employeeSheet').appendChild(modal);}
+    $('tt15SheetTeam')?.remove();$('hc15EditTeam')?.remove();
+    const empty=$('esRows')?.querySelector('.es-empty');if(empty)empty.textContent='Add employees above, then Apply Team.';
+  }
+  const init=esInit;esInit=function(...args){const out=init(...args);install();$('tt15SheetTeam')?.remove();return out;};
+  const open=window.employeeSheetOpen;window.employeeSheetOpen=async function(...args){const out=await open(...args);install();start();return out;};
+  const names=tt15PaintNames;tt15PaintNames=function(...args){const out=names(...args);if(state&&!state.busy)paint();return out;};
+  window.fzOpenTodayTeam=async function(date){return window.employeeSheetOpen(date);};
+  // Rename old home entry points so they open the unified sheet.
+  const home=window.fzOpenRoleHome;window.fzOpenRoleHome=function(...args){const out=home?.apply(this,args);document.querySelectorAll('button').forEach(b=>{if(b.textContent.trim()==="Today's Team")b.textContent='Employee Sheet';});return out;};
+})();
+function es38MergeUnverified(remote,edited){
+  const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
+}
+
+/* ES1.8.39 — retired Employee Table routes redirect to Employee Sheet. */
+(function retireEmployeeTable39(){
+  window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
+  window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
+  window.ownerTableSave=function(){return false;};
+  window.ownerTableBack=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
+  const selectors='[data-stab="ownerSalesTable"], [onclick*="ownerTableOpen"], [onclick*="ownerTableSave"], [onclick*="ownerTableBack"]';
+  function remove(){document.querySelectorAll(selectors).forEach(n=>n.remove());}
+  remove();
+  for(const key of ['fzOpenRoleHome','fzOpenManagerTools']){const fn=window[key];if(typeof fn==='function')window[key]=function(...args){const out=fn.apply(this,args);remove();return out;};}
+})();
