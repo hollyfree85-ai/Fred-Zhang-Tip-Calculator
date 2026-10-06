@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18430",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18440",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10323,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.43';
+const ES_BUILD='ES1.8.44';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -14187,7 +14187,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.43 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.44 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14250,7 +14250,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.43: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.44: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14288,7 +14288,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.43: output destinations; report calculations are untouched. */
+/* ES1.8.44: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14301,10 +14301,10 @@ function es35PhonePanel(view){
   const dialog=view.dialog,status=dialog.querySelector('[role="status"]');let panel=dialog.querySelector('[data-phone-panel]');if(panel){panel.hidden=!panel.hidden;return;}
   if(!view.report){status.textContent='Download this report PDF to share it.';return;}
   panel=document.createElement('section');panel.dataset.phonePanel='';panel.style.cssText='padding:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center';
-  panel.innerHTML='<label>Employee phone <input type="tel" autocomplete="tel" aria-label="Employee phone"></label><button type="button" data-share-pdf>Share PDF to Messages / WhatsApp</button><button type="button" data-download-pdf>Download PDF</button><button type="button" data-copy>Copy message + phone</button><button type="button" data-sms>Open Messages draft</button><textarea readonly aria-label="Message preview" style="width:100%;min-height:150px"></textarea><p>Share PDF opens your phone’s share menu. Choose Messages and the employee recipient. If unavailable, download the PDF, open the Messages draft, then attach the file. Always review the recipient before Send.</p>';
+  panel.innerHTML='<label>Employee phone <input type="tel" autocomplete="tel" aria-label="Employee phone"></label><button type="button" data-share-pdf>Share PDF to SMS</button><button type="button" data-download-pdf>Download PDF</button><button type="button" data-copy hidden>Copy message + phone</button><button type="button" data-sms>Open SMS draft</button><button type="button" data-retry-phone>Reload employee phone</button><button type="button" data-import-contacts hidden>Import employee contacts</button><input type="file" accept=".json,application/json" data-contact-file hidden><textarea readonly aria-label="Message preview" style="width:100%;min-height:150px"></textarea><p>Share PDF opens your phone’s share menu. Choose Messages and the employee recipient. If unavailable, download the PDF, open the Messages draft, then attach the file. Always review the recipient before Send.</p>';
   dialog.querySelector('.fz18-actions').after(panel);
   const report=view.report,name=smallReportCanonicalPerson(report)||report.employee||'Team member';
-  const body=es43ReceiptMessage(name,report.date),input=panel.querySelector('input');panel.querySelector('textarea').value=body;
+  const body=es43ReceiptMessage(name,report.date),input=panel.querySelector('input[type=tel]');panel.querySelector('textarea').value=body;
   const blob=simplePdfBlob([{...report,totalPaidOut:smallReportPaidOut(report),employeeGrandTotal:smallReportGrandTotal(report)}]);
   const filename='Tip_Receipt_'+String(name).replace(/[^a-z0-9]+/gi,'_')+'_'+String(report.date||todayLocal()).replace(/[^0-9-]/g,'')+'.pdf';
   const file=new File([blob],filename,{type:'application/pdf'});
@@ -14320,8 +14320,14 @@ function es35PhonePanel(view){
   };
   panel.querySelector('[data-copy]').onclick=async()=>{try{const number='+'+es35PhoneNumber(input.value);await navigator.clipboard.writeText(number+'\n\n'+body);status.textContent='Employee phone and message copied.';}catch(e){status.textContent='Select and copy the phone/message manually.';}};
   panel.querySelector('[data-sms]').onclick=()=>{try{const digits=es35PhoneNumber(input.value);const a=document.createElement('a');a.href='sms:+'+digits+(es18IsAppleMobile()?'&':'?')+'body='+encodeURIComponent(body);document.body.appendChild(a);a.click();a.remove();status.textContent='Messages draft opened. Attach the downloaded PDF before Send.';}catch(e){status.textContent=e.message;}};
-  let edited=false;input.oninput=()=>{edited=true;};status.textContent='Looking up employee phone…';
-  es36EmployeePhone(report).then(phone=>{if(view.closed||edited)return;input.value=phone||'';status.textContent=phone?'Employee phone loaded. Share PDF or download and attach it in Messages.':'No saved phone. Import employee contacts or enter a number.';}).catch(()=>{if(!view.closed&&!edited)status.textContent='Could not load employee phone. Enter a number or import contacts.';});
+  let edited=false;input.oninput=()=>{edited=true;};
+  const lookup=async()=>{status.textContent='Looking up employee phone…';try{const phone=await es36EmployeePhone(report);if(view.closed||edited)return;input.value=phone||'';status.textContent=phone?'Employee phone loaded. Tap Share PDF to SMS, then choose Messages.':'No phone saved for '+name+'. Owner: import Employee_Contacts_2026-10-06.json using Import employee contacts.';}catch(e){if(!view.closed&&!edited)status.textContent='Database lookup failed. Owner can import contacts here, or enter a number manually.';}};
+  panel.querySelector('[data-retry-phone]').onclick=()=>{edited=false;void lookup();};
+  if(currentProfile?.role==='owner'){
+    const button=panel.querySelector('[data-import-contacts]'),fileInput=panel.querySelector('[data-contact-file]');button.hidden=false;button.onclick=()=>fileInput.click();
+    fileInput.onchange=async()=>{if(!fileInput.files?.[0])return;button.disabled=true;try{const payload=JSON.parse(await fileInput.files[0].text());await es43ImportContacts(payload);edited=false;await lookup();}catch(e){status.textContent='Contacts not imported: '+(e.message||e);}finally{button.disabled=false;fileInput.value='';}};
+  }
+  void lookup();
 }
 function es43ReceiptMessage(name,date){
  return 'Hi '+name+',\n\nThank you for your hard work and teamwork today! We appreciate everything you do for The Juicy Seafood.\n\nPlease find attached your Tip Calculation receipt for '+date+'. Review the details and let management know if you have any questions.\n\nThank you again, and have a great rest of your day!\nThe Juicy Seafood Management';
@@ -14352,21 +14358,28 @@ function es35ReceiptOutput(report,popup,sheet){
 /* Employee identity comes from the report, never the logged-in manager. */
 async function es36EmployeePhone(report){
  const key=es43ContactKey(smallReportCanonicalPerson(report)||report.employee||'');if(!key)return '';
+ const entries=Object.values(tt15Directory.data?.directoryEntries||{}),live=entries.find(x=>es43ContactKey(x.name)===key);
+ if(live?.active===false)return '';
+ if(live?.phone&&es36StoredPhone(live.phone))return es36StoredPhone(live.phone);
  let saved={};try{saved=JSON.parse(localStorage.getItem('fz_owner_employee_contacts43')||'{}');}catch(e){}
- const cached=saved[key];
- try{
-   const data=await es43ReadRoster();const entry=Object.values(data.directoryEntries||{}).find(x=>es43ContactKey(x.name)===key);
-   if(entry)return entry.active===false?'':es36StoredPhone(entry.phone);
- }catch(e){if(cached?.phone)return es36StoredPhone(cached.phone);}
- if(cached?.phone)return es36StoredPhone(cached.phone);
- const hit=[...employeePhoneDirectory.values()].find(x=>es43ContactKey(x.name)===key&&x.source!=='recovered-2026-08-24');return es36StoredPhone(hit?.phone);
+ if(saved[key]?.phone)return es36StoredPhone(saved[key].phone);
+ const known=[...employeePhoneDirectory.values()].find(x=>es43ContactKey(x.name)===key&&x.source!=='recovered-2026-08-24');
+ if(known?.phone)return es36StoredPhone(known.phone);
+ let error=null;
+ try{const data=await es43ReadRoster();const entry=Object.values(data.directoryEntries||{}).find(x=>es43ContactKey(x.name)===key);if(entry?.active===false)return '';if(entry?.phone)return es36StoredPhone(entry.phone);}catch(e){error=e;}
+ // Legacy database contact directories may own the phone before owner imports the new roster.
+ let timer;try{
+   await Promise.race([refreshEmployeePhoneDirectory(true),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Contact lookup timed out')),6000);})]);
+   const hit=[...employeePhoneDirectory.values()].find(x=>es43ContactKey(x.name)===key&&x.source!=='recovered-2026-08-24');if(hit?.phone)return es36StoredPhone(hit.phone);
+ }catch(e){error ||= e;}finally{clearTimeout(timer);}
+ if(error)throw error;return '';
 }
 
 function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
 
-/* ES1.8.43 — all active team editing lives inside Employee Sheet. */
+/* ES1.8.44 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
   window.es41Team={get:()=>state,edit:(i,k,v)=>{const r=state?.rows[i];if(!r||state.busy)return;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';state.dirty=true;persist(state);paint();},remove:i=>{if(!state||state.busy)return;state.rows.splice(i,1);state.dirty=true;persist(state);paint();}};
@@ -14465,7 +14478,7 @@ function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
 }
 
-/* ES1.8.43 — retired Employee Table routes redirect to Employee Sheet. */
+/* ES1.8.44 — retired Employee Table routes redirect to Employee Sheet. */
 (function retireEmployeeTable39(){
   window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
   window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
@@ -14477,7 +14490,7 @@ function es38MergeUnverified(remote,edited){
   for(const key of ['fzOpenRoleHome','fzOpenManagerTools']){const fn=window[key];if(typeof fn==='function')window[key]=function(...args){const out=fn.apply(this,args);remove();return out;};}
 })();
 
-/* ES1.8.43 — assignment controls are embedded in the employee rows. */
+/* ES1.8.44 — assignment controls are embedded in the employee rows. */
 window.es41Install=function(){
   const panel=$('es38Team');if(!panel)return;
   const details=panel.querySelector('details');details.hidden=true;
