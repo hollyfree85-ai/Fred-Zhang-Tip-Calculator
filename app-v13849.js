@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18390",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18400",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10323,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.39';
+const ES_BUILD='ES1.8.40';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -14187,7 +14187,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.39 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.40 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14250,7 +14250,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.39: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.40: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14288,7 +14288,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.39: output destinations; report calculations are untouched. */
+/* ES1.8.40: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14371,7 +14371,7 @@ function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
 
-/* ES1.8.39 — all active team editing lives inside Employee Sheet. */
+/* ES1.8.40 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
   const key=s=>'fz_sheet_team38_'+s.uid+'_'+s.date;
@@ -14444,10 +14444,10 @@ function es36StoredPhone(raw){
   }
   function install(){if(!$('employeeSheet')||$('es38Team'))return;tt15Init();
     const panel=document.createElement('section');panel.id='es38Team';panel.style.cssText='margin:12px 0;padding:16px;border:1px solid #bfd1de;border-radius:18px;background:#f5faff';
-    panel.innerHTML='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><b>Busser working</b><label><input id="es38AM" type="checkbox"> Busser AM</label><label><input id="es38PM" type="checkbox"> Busser PM</label></div><p>Mon–Fri: AM off / PM on. Sat–Sun: AM + PM on.</p><details open><summary><b>Employees · Position · Shift</b></summary><div id="es38Rows"></div><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="es38Add">＋ Add employee / shift</button><button type="button" id="es38Manage">Manage Employee</button><button type="button" id="es38Save">Apply Team</button><button type="button" id="es38Retry">Retry / reload team</button></div></details><p id="es38Status" role="status" aria-live="polite"></p>';
+    panel.innerHTML='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><b>Busser working</b><label><input id="es38AM" type="checkbox"> Busser AM</label><label><input id="es38PM" type="checkbox"> Busser PM</label></div><p>Mon–Fri: AM off / PM on. Sat–Sun: AM + PM on.</p><details><summary><b>Employees · Position · Shift</b></summary><div id="es38Rows"></div><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="es38Add">＋ Add employee / shift</button><button type="button" id="es38Manage">Manage Employee</button><button type="button" id="es38Save">Apply Team</button><button type="button" id="es38Retry">Retry / reload team</button></div></details><p id="es38Status" role="status" aria-live="polite"></p>';
     $('employeeSheet').querySelector('.es-toolbar').after(panel);
     const style=document.createElement('style');style.textContent='.es38-row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;padding:12px 0;border-bottom:1px solid #cbd9e8;margin-bottom:10px}.es38-row label{display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px}.es38-row select{width:100%;min-height:44px}#es38Team button{min-height:44px}#es38Team input[type=checkbox]{width:22px;height:22px;vertical-align:middle}';document.head.appendChild(style);
-    $('es38Add').onclick=()=>{if(!state||state.busy)return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();};
+    $('es38Add').onclick=()=>{if(!state||state.busy)return;$('es38Team').querySelector('details').open=true;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();};
     $('es38Rows').onchange=e=>{const s=state,k=e.target.dataset.k,i=Number(e.target.dataset.i);if(!s||s.busy||!k||!s.rows[i])return;const r=s.rows[i];r[k]=e.target.value;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===r.name)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';s.dirty=true;persist(s);paint();};
     $('es38Rows').onclick=e=>{const b=e.target.closest('[data-remove]');if(!b||!state||state.busy)return;state.rows.splice(Number(b.dataset.remove),1);state.dirty=true;persist(state);paint();};
     for(const cp of ['AM','PM'])$('es38'+cp).onchange=()=>{if(!state||state.busy)return;state.busser[cp]=$('es38'+cp).checked;state.busserDirty=true;state.dirty=true;persist(state);message('Busser change is a team draft. Apply Team to use it in calculations.');};
@@ -14468,7 +14468,7 @@ function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
 }
 
-/* ES1.8.39 — retired Employee Table routes redirect to Employee Sheet. */
+/* ES1.8.40 — retired Employee Table routes redirect to Employee Sheet. */
 (function retireEmployeeTable39(){
   window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
   window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};

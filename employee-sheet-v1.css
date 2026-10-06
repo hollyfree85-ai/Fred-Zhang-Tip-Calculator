@@ -568,3 +568,12 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 
 #employeeSheet .es-grand-tip{background:#eaf3ff!important}
 #employeeSheet .es-grand-tip .es-computed{font-size:22px;color:#174779}
+
+/* ES1.8.40: team controls must never overflow a locked flex viewport. */
+#employeeSheet.es-compact{display:block!important;overflow-y:auto!important;overscroll-behavior-y:contain;touch-action:pan-y pinch-zoom;scroll-padding-top:80px}
+#employeeSheet.es-compact> :not(.es-modal){flex-shrink:0;margin-bottom:10px}
+#employeeSheet.es-compact>.es-header{position:sticky;top:0;z-index:40}
+#employeeSheet.es-compact:not(.es-desktop-page)>.es-grid{height:65dvh;min-height:260px;max-height:none;overflow:auto!important;touch-action:pan-y pinch-zoom}
+#employeeSheet.es-compact #es38Team{max-width:100%;box-sizing:border-box}
+#employeeSheet.es-compact #es38Team details:not([open]){margin-top:12px}
+#employeeSheet.es-compact #es38Team summary{cursor:pointer;min-height:44px}
