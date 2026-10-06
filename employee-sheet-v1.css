@@ -569,7 +569,7 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 #employeeSheet .es-grand-tip{background:#eaf3ff!important}
 #employeeSheet .es-grand-tip .es-computed{font-size:22px;color:#174779}
 
-/* ES1.8.40: team controls must never overflow a locked flex viewport. */
+/* ES1.8.41: team controls must never overflow a locked flex viewport. */
 #employeeSheet.es-compact{display:block!important;overflow-y:auto!important;overscroll-behavior-y:contain;touch-action:pan-y pinch-zoom;scroll-padding-top:80px}
 #employeeSheet.es-compact> :not(.es-modal){flex-shrink:0;margin-bottom:10px}
 #employeeSheet.es-compact>.es-header{position:sticky;top:0;z-index:40}
@@ -577,3 +577,10 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 #employeeSheet.es-compact #es38Team{max-width:100%;box-sizing:border-box}
 #employeeSheet.es-compact #es38Team details:not([open]){margin-top:12px}
 #employeeSheet.es-compact #es38Team summary{cursor:pointer;min-height:44px}
+
+/* No separate Today Team list. Only busser presence above the sheet. */
+#es38Team>details{display:none!important}
+#employeeSheet [data-es41-control] select,#employeeSheet select[data-es41-control]{width:100%;min-height:44px;margin:4px 0;font-size:17px}
+#employeeSheet [data-es41-pending]{background:#fff7df}
+#employeeSheet #es38Team{padding:10px!important;margin:8px 0!important}
+#employeeSheet #es38Team>p{margin:6px 0;font-size:14px}
