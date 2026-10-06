@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18360",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18370",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10323,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.36';
+const ES_BUILD='ES1.8.37';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10589,11 +10589,34 @@ function esPersistLocal(){
   try{localStorage.setItem(esDraftKey(s.date,s.uid),JSON.stringify({date:s.date,rows:s.rows,dirty:s.dirty,routing:s.routing,baseRows:s.baseRows,baseRouting:s.baseRouting,draftSaves:s.draftSaves||{},savedAt:Date.now(),scrollLeft:$('esGrid')?.scrollLeft||0,scrollTop:$('esGrid')?.scrollTop||0}));return true;}catch(e){esStatus('Device draft could not be saved. Free storage or reconnect before leaving.',true);return false;}
 }
 const ES_COLUMNS=[
- ['shift','Shift',145,'staff'],['clockIn','Clock In 1',130,'clocks'],['clockOut','Clock Out 1',130,'clocks'],['clockIn2','Clock In 2',130,'clocks'],['clockOut2','Clock Out 2',130,'clocks'],['hours','Total Hours',135,'clocks'],['role','Position',150,'staff'],
- ['totalAM','Total AM',165,'sales'],['total24','Total 2–4',165,'sales'],['grand','Grand Total',175,'sales'],['busserRate','Busser Tip Out %',155,'busser'],['busserAM','Busser AM',155,'busser'],['busserPM','Busser PM',155,'busser'],
- ['barTipAM','BAR Tip Out AM',160,'bar'],['barTip24','BAR Tip Out 2–4',160,'bar'],['barTipPM','BAR Tip Out PM',160,'bar'],['received','BAR Tip Out Received',220,'bar'],
- ['paid','Paid Tip',160,'tips'],['cardFee','Pay Card Tip Fee',160,'tips'],['cash','Cash Tip',155,'tips'],['grandTotalTip','Grand Total Tip',195,'tips'],['meal','Meal',145,'tips'],['barAM','AM BAR Sales',125,'checks'],['bar24','2–4 BAR Sales',125,'checks'],['barPM','PM BAR Sales',125,'checks'],
- ['adjustmentDecision','Hourly Adjustment',230,'payout'],['payout','Paid Tip Out',190,'payout']
+ ['shift','Shift',145,'staff'],
+ ['role','Position',150,'staff'],
+ ['clockIn','Clock In 1',130,'clocks'],
+ ['clockOut','Clock Out 1',130,'clocks'],
+ ['clockIn2','Clock In 2',130,'clocks'],
+ ['clockOut2','Clock Out 2',130,'clocks'],
+ ['paid','Paid Tip',160,'tips'],
+ ['cardFee','Pay Card Tip Fee',160,'tips'],
+ ['cash','Cash Tip',155,'tips'],
+ ['meal','Meal',145,'tips'],
+ ['barAM','AM BAR Sales',125,'checks'],
+ ['bar24','2–4 BAR Sales',125,'checks'],
+ ['barPM','PM BAR Sales',125,'checks'],
+ ['adjustmentDecision','Hourly Adjustment',230,'payout'],
+ ['totalAM','Total AM',165,'sales'],
+ ['total24','Total 2–4',165,'sales'],
+ ['grand','Grand Total',175,'sales'],
+ ['busserTotal','Busser Tip Out',170,'busser'],
+ ['busserRate','Busser Tip Out %',155,'busser'],
+ ['hours','Total Hours',135,'clocks'],
+ ['grandTotalTip','Grand Total Tip',195,'tips'],
+ ['payout','Paid Tip Out',190,'payout'],
+ ['busserAM','Busser AM',155,'busser'],
+ ['busserPM','Busser PM',155,'busser'],
+ ['barTipAM','BAR Tip Out AM',160,'bar'],
+ ['barTip24','BAR Tip Out 2–4',160,'bar'],
+ ['barTipPM','BAR Tip Out PM',160,'bar'],
+ ['received','BAR Tip Out Received',220,'bar']
 ];
 function esOption(value,label,selected){return `<option value="${esc(value)}"${String(value)===String(selected)?' selected':''}>${esc(label)}</option>`;}
 function esInput(row,field,label){
@@ -10624,7 +10647,7 @@ function esOutput(row,field){
     if(row.role!=='Bartender')return '—';
     return `<strong>${esMoney(r.bartenderBarTipReceived)}</strong><span class="es-received-parts">${bartenderReceiptPeriods(r).map(p=>`BAR ${bartenderPeriodLabel(p.checkpoint)}: ${esMoney(p.amount)}`).join('<br>')||'Choose BAR routing'}</span>`;
   }
-  const values={busserAM:r.busserTipOutAM,busserPM:r.busserTipOutPM,barTipAM:r.barBreakdown?.amFee,barTip24:r.barBreakdown?.fee24,barTipPM:r.barBreakdown?.pmFee,payout:r.totalPaidOut};
+  const values={busserTotal:r.busserTipOut,busserAM:r.busserTipOutAM,busserPM:r.busserTipOutPM,barTipAM:r.barBreakdown?.amFee,barTip24:r.barBreakdown?.fee24,barTipPM:r.barBreakdown?.pmFee,payout:r.totalPaidOut};
   return esMoney(values[field]);
 }
 function esRowStatus(row){
@@ -14164,7 +14187,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.36 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.37 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14227,7 +14250,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.36: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.37: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14265,7 +14288,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.36: output destinations; report calculations are untouched. */
+/* ES1.8.37: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
