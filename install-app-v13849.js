@@ -4,7 +4,7 @@
   if (window.__fzInstallSupport) return;
   window.__fzInstallSupport = true;
 
-  var APP_BUILD = 'ES1.8.50';
+  var APP_BUILD = 'ES1.8.51';
   var deferredPrompt = null;
   var swRegistration = null;
   var updateBusy = false;
