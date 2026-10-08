@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18650",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18660",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10323,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.65';
+const ES_BUILD='ES1.8.66';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10457,7 +10457,7 @@ function esValidateSales(row,route,complete=false){
 function esHours(row){return row.shift==='DOUBLE'?{hourInAM:row.clockIn,hourOutAM:row.clockOut,hourInPM:row.clockIn2,hourOutPM:row.clockOut2}:{hourIn:row.clockIn,hourOut:row.clockOut};}
 function esBuildBatch(source,rows,date,route){
   const s=esClone(source||{});
-  // ES1.8.65: preserve planned identity when an employee is removed/replaced.
+  // ES1.8.66: preserve planned identity when an employee is removed/replaced.
   s.performanceAssignments ||= {};
   for(const old of (source?.todayTeamAssignments||[])){const key=encodeURIComponent(old.name+'|'+old.role+'|'+old.shift);s.performanceAssignments[key] ||= {...old,date,plannedAt:Date.now()};}
   for(const name of source?.team||[]){const v=source.drafts?.[name]?.values||{};if(v.hShift){const role=v.hPosition||'Server',key=encodeURIComponent(name+'|'+role+'|'+v.hShift);s.performanceAssignments[key] ||= {name,role,shift:v.hShift,date,plannedAt:Date.now()};}}
@@ -12489,11 +12489,11 @@ function hc15Set(name,field,value){
 }
 function hc15Schedule(s=hc15Session){
   if(!s)return;clearTimeout(s.timer);if(s!==hc15Session||!s.verified||s.busy||s.writing||hc15Sig||hc15Credit||navigator.onLine===false)return;
-  if(Object.entries(s.edits).some(([k,e])=>!JSON.parse(k)[0]&&!s.conflicts.includes(k)&&hc15Valid(k,e.local)))s.timer=setTimeout(()=>void hc15Flush(s),700);
+  if(Object.entries(s.edits).some(([k,e])=>!s.conflicts.includes(k)&&hc15Valid(k,e.local)))s.timer=setTimeout(()=>void hc15Flush(s),700);
 }
 async function hc15Flush(s=hc15Session){
   if(s?.writing)return s.writing;if(!s||!s.verified||navigator.onLine===false)return false;
-  const edits=tt15Copy(Object.fromEntries(Object.entries(s.edits).filter(([k,e])=>!JSON.parse(k)[0]&&!s.conflicts.includes(k)&&hc15Valid(k,e.local))));if(!Object.keys(edits).length)return true;
+  const edits=tt15Copy(Object.fromEntries(Object.entries(s.edits).filter(([k,e])=>!s.conflicts.includes(k)&&hc15Valid(k,e.local))));if(!Object.keys(edits).length)return true;
   clearTimeout(s.timer);
   s.writing=(async()=>{
     const ref=doc(db,'hostCashierTipReports',s.date);
@@ -12532,7 +12532,7 @@ function hc15Report(data,name){
     barTipOut:0,barTipAM:0,barTipPM:0,amBarTipOut:0,pmBarTipOut:0,bartenderBarTipReceived:0,amBarSales:false,pmBarSales:false,
     totalBeforeMeal:total,grandTotalTip:total,grandTotalAfterAdjustment:total,totalPaidOutBeforeAdjustment:total,totalPaidOut:total,
     hourlyRate:0,hourlyMinimum:0,adjustmentCandidate:0,adjustmentEligible:false,adjustmentSalaryHourly:0,adjustmentDecision:'NONE',
-    hostCashierNoClock:true,
+    hostCashierNoClock:false,...hc15Hours(data,name),clockIn:data.staffDetails?.[name]?.clockIn||'',clockOut:data.staffDetails?.[name]?.clockOut||'',clockIn2:data.staffDetails?.[name]?.clockIn2||'',clockOut2:data.staffDetails?.[name]?.clockOut2||'',
     // Snapshot only: the same committed pool used for this employee's payout.
     hostCashierPoolSummary:hc185PoolSummaryFromData(data,m),
     hostCashierTipAM:am,hostCashierTipPM:pm,hostCashierPoolAM:m.poolAM,hostCashierPoolPM:m.poolPM,hostCashierCountAM:m.countAM,hostCashierCountPM:m.countPM,
@@ -12562,8 +12562,8 @@ function hc15Init(){
   section.innerHTML=`<div class="hc15-heading"><h3>Host / Cashier</h3><div class="hc184-toolbar"><button type="button" id="hc184Refresh">Refresh from server</button><button type="button" id="hc15EditTeam">Edit Team</button></div></div><div id="hc15Status" class="hc15-status" role="status"></div>
     <div id="hc15Pools" class="hc15-pools"><table><thead><tr><th>Shift</th><th>Cash</th><th>Credit</th><th>Pool / Staff</th></tr></thead><tbody>${['AM','PM'].map(cp=>`<tr><th>${cp}</th><td><input data-hc15-pool="cash${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Cash ${cp}" placeholder="0.00"></td><td><input data-hc15-pool="credit${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Credit ${cp}" placeholder="0.00"><button class="hc15-accounts" data-hc15-credit="${cp}" type="button">Accounts +</button></td><td id="hc15Pool${cp}">—</td></tr>`).join('')}</tbody></table></div>
     <div id="hc15Conflict" class="hidden"><p>Another device changed the same field. Choose which values to keep.</p><button type="button" id="hc15UseCloud">Use latest</button><button type="button" id="hc15KeepMine">Keep this device</button></div>
-    <table class="es-table hc15-table"><colgroup><col class="es-name-col"><col style="width:145px"><col style="width:170px"><col style="width:150px"><col style="width:150px"><col style="width:200px"></colgroup><thead><tr><th class="es-name">Host / Cashier<span>Save · Sign · Print</span></th>${['Shift','Position','Tip AM','Tip PM','Paid Tip Out'].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody id="hc15Rows"></tbody></table>
-    <p class="hc15-footnote">Cash + Credit is split equally within each shift, using the existing cent-rounding rule. Double receives AM + PM. No clock-in / clock-out required. Download uses saved reports from the server on both phone and laptop.</p>`;
+    <table class="es-table hc15-table"><colgroup><col class="es-name-col"><col style="width:145px"><col style="width:170px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:200px"></colgroup><thead><tr><th class="es-name">Host / Cashier<span>Save · Sign · Print</span></th>${['Shift','Position','Clock In 1','Clock Out 1','Clock In 2','Clock Out 2','Tip AM','Tip PM','Paid Tip Out'].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody id="hc15Rows"></tbody></table>
+    <p class="hc15-footnote">Cash + Credit is split equally within each shift, using the existing cent-rounding rule. Double receives AM + PM. Clock In/Out syncs to Team Performance; tip shares remain unchanged. Download uses saved reports from the server on both phone and laptop.</p>`;
   $('esGrid').appendChild(section);
   $('hc184Refresh').onclick=()=>hc184Refresh(hc15Session,true);
   $('hc15EditTeam').onclick=()=>window.fzOpenTodayTeam(hc15Session?.date||esSession?.date);
@@ -12585,7 +12585,7 @@ function hc15Render(){
   if($('hc15Rows').contains(document.activeElement)&&(esPan||performance.now()<esTouchUntil)){clearTimeout(s.renderTimer);s.renderTimer=setTimeout(hc15Render,180);return;}
   const data=hc15View(s),members=tt15TeamRows({},data),key=JSON.stringify(members);
   if(s.rowsKey!==key||!$('hc15Rows').children.length){
-    s.rowsKey=key;$('hc15Rows').innerHTML=members.map(r=>`<tr data-hc15-row="${tt15Key(r.name)}"><th class="es-name"><b>${esc(tt15Label(r.name))}</b><span class="es-state" data-hc15-state></span><div class="es-row-actions">${['Save','Sign','Print'].map(a=>`<button type="button" data-hc15-action="${a.toLowerCase()}" data-hc15-name="${esc(r.name)}">${a}</button>`).join('')}</div></th><td>${esc(r.shift)}</td><td>${esc(r.role)}</td><td data-hc15-out="am"></td><td data-hc15-out="pm"></td><td class="es-payout" data-hc15-out="total"></td></tr>`).join('')||'<tr><td colspan="6">No Host / Cashier on this date. Tap + Add row above, choose Cashier/Host and shift, then Apply changes.</td></tr>';
+    s.rowsKey=key;$('hc15Rows').innerHTML=members.map(r=>`<tr data-hc15-row="${tt15Key(r.name)}"><th class="es-name"><b>${esc(tt15Label(r.name))}</b><span class="es-state" data-hc15-state></span><div class="es-row-actions">${['Save','Sign','Print'].map(a=>`<button type="button" data-hc15-action="${a.toLowerCase()}" data-hc15-name="${esc(r.name)}">${a}</button>`).join('')}</div></th><td>${esc(r.shift)}</td><td>${esc(r.role)}</td>${["clockIn","clockOut","clockIn2","clockOut2"].map(field=>`<td><input type="text" inputmode="numeric" placeholder="HH:MM" aria-label="${field} ${esc(r.name)}" data-hc15-clock="${field}" data-hc15-name="${esc(r.name)}"></td>`).join("")}<td data-hc15-out="am"></td><td data-hc15-out="pm"></td><td class="es-payout" data-hc15-out="total"></td></tr>`).join('')||'<tr><td colspan="10">No Host / Cashier on this date. Tap + Add row above, choose Cashier/Host and shift, then Apply changes.</td></tr>';
   }
   for(const input of $('hc15Pools').querySelectorAll('input')){if(input!==document.activeElement)input.value=String(data[input.dataset.hc15Pool]??0);input.disabled=!s.verified||s.busy;}
   for(const input of $('hc15Rows').querySelectorAll('input[data-hc15-clock]')){const r=hc15Member(data,input.dataset.hc15Name);input.disabled=!s.verified||s.busy||(input.dataset.hc15Clock.endsWith('2')&&r?.shift!=='DOUBLE');if(input!==document.activeElement)input.value=data.staffDetails?.[input.dataset.hc15Name]?.[input.dataset.hc15Clock]||'';}
@@ -14213,7 +14213,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.65 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.66 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14276,7 +14276,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.65: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.66: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14314,7 +14314,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.65: output destinations; report calculations are untouched. */
+/* ES1.8.66: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14401,7 +14401,7 @@ function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
 
-/* ES1.8.65 — all active team editing lives inside Employee Sheet. */
+/* ES1.8.66 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
   window.es41Team={get:()=>state,add:()=>{start();if(!state||state.busy||!current(state))return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();},apply:()=>apply(),reload:()=>{start();if(state&&!state.busy)void load(state);},edit:(i,k,v)=>{const r=state?.rows[i];if(!r||state.busy)return;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';state.dirty=true;persist(state);paint();},remove:i=>{if(!state||state.busy)return;state.rows.splice(i,1);state.dirty=true;persist(state);paint();}};
@@ -14500,7 +14500,7 @@ function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
 }
 
-/* ES1.8.65 — retired Employee Table routes redirect to Employee Sheet. */
+/* ES1.8.66 — retired Employee Table routes redirect to Employee Sheet. */
 (function retireEmployeeTable39(){
   window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
   window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
@@ -14512,7 +14512,7 @@ function es38MergeUnverified(remote,edited){
   for(const key of ['fzOpenRoleHome','fzOpenManagerTools']){const fn=window[key];if(typeof fn==='function')window[key]=function(...args){const out=fn.apply(this,args);remove();return out;};}
 })();
 
-/* ES1.8.65 — assignment controls are embedded in the employee rows. */
+/* ES1.8.66 — assignment controls are embedded in the employee rows. */
 window.es41Install=function(){
   const panel=$('es38Team');if(!panel)return;
   const details=panel.querySelector('details');details.hidden=true;
@@ -14641,7 +14641,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.65 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
+/* ES1.8.66 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
 (function teamPerformance64(){
  const MAX={attendance:70,sidework:25,guest:5},ROLES=['Server','Bartender','Cashier/Host'];
  const normalizeRole=r=>r==='Bartender'?'Bartender':['Host','Cashier','Host / Cashier','Cashier/Host'].includes(r)?'Cashier/Host':'Server';
@@ -14717,7 +14717,7 @@ function es43ValidateContacts(payload){
  function exportRecap(){const w=currentWeek(),filter=roleFilter();const lines=[[t('Employee','Karyawan'),'Role',t('Week start','Mulai minggu'),t('Week end','Akhir minggu'),'Attendance /70','Sidework /25','Guest /5','Total /100',t('Reviewed','Direview'),t('Expected','Terjadwal'),t('Recommendation','Rekomendasi'),t('Reason','Alasan')]];for(const n of allNames()){const s=summaryFor(n,filter),r=recommend(s,config);lines.push([tt15Label(n),filter||'ALL',w.start,w.end,s.attendance,s.sidework,s.guest,s.total,s.reviewed,s.expected,actionText(r.code),reasonText(r.reason,s)]);}const csv='\ufeff'+lines.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});es18DownloadRaw(blob,'Team_Weekly_Recap_'+w.start+'.csv');}
 
  let sheetRows=[],sheetSubscriptions=[],sheetToken=0,sheetReady=false,sheetTimer=null;
- function projectSheets(batches,hosts){const out=[];for(const dateKey of new Set([...Object.keys(batches),...Object.keys(hosts)])){const batch=batches[dateKey]||{},host=hosts[dateKey]||{};const current=tt15TeamRows(batch,host),assignments=[...current];for(const old of Object.values(batch.performanceAssignments||{})){if(!current.some(r=>r.name===old.name)&&!assignments.some(r=>r.name===old.name&&r.role===old.role&&r.shift===old.shift))assignments.push(old);}for(const assignment of assignments){const name=assignment.name,role=normalizeRole(assignment.role),d=batch.drafts?.[name]||{},v=d.values||{},raw=d.employeeSheetRawRow||{},hc=host.staffDetails?.[name]||{},shift=assignment.shift||v.hShift||raw.shift||'',isHost=role==='Cashier/Host',double=shift==='DOUBLE';const ci=String(isHost?hc.clockIn||hc.in||'':double?v.hAmIn||raw.clockIn||'':v.hIn||raw.clockIn||''),co=String(isHost?hc.clockOut||hc.out||'':double?v.hAmOut||raw.clockOut||'':v.hOut||raw.clockOut||''),ci2=double?String(v.hPmIn||raw.clockIn2||''):'',co2=double?String(v.hPmOut||raw.clockOut2||''):'';const hasWork=!!(ci||co||ci2||co2||d.finalized||d.hourlyReportId||Number(v.hGrandTotal||raw.grand||0)!==0||Number(v.hPaidTip||raw.paid||0)!==0||Number(hc.sales||0)!==0);const employee=typeof tt15CanonicalName==='function'?tt15CanonicalName(name):name;out.push({employee,workAccount:name,date:dateKey,role,shift,actual:ci,clockOut:co,clockIn2:ci2,clockOut2:co2,scheduled:batch.performanceSchedule?.[name]?.start||host.performanceSchedule?.[name]?.start||'',hasWork,blank:!hasWork,...((batch.employeeAttendance54||{})[encodeURIComponent(name+'|'+assignment.role+'|'+shift)]||{}),sourceCollection:isHost?'hostCashierTipReports':'hourlyV1Batches'});}}return out;}
+ function projectSheets(batches,hosts){const out=[];for(const dateKey of new Set([...Object.keys(batches),...Object.keys(hosts)])){const batch=batches[dateKey]||{},host=hosts[dateKey]||{};const current=tt15TeamRows(batch,host),assignments=[...current];for(const old of Object.values(batch.performanceAssignments||{})){if(!current.some(r=>r.name===old.name)&&!assignments.some(r=>r.name===old.name&&r.role===old.role&&r.shift===old.shift))assignments.push(old);}for(const assignment of assignments){const name=assignment.name,role=normalizeRole(assignment.role),d=batch.drafts?.[name]||{},v=d.values||{},raw=d.employeeSheetRawRow||{},hc=host.staffDetails?.[name]||{},shift=assignment.shift||v.hShift||raw.shift||'',isHost=role==='Cashier/Host',double=shift==='DOUBLE';const ci=String(isHost?hc.clockIn||hc.in||'':double?v.hAmIn||raw.clockIn||'':v.hIn||raw.clockIn||''),co=String(isHost?hc.clockOut||hc.out||'':double?v.hAmOut||raw.clockOut||'':v.hOut||raw.clockOut||''),ci2=double?String(isHost?hc.clockIn2||'':v.hPmIn||raw.clockIn2||''):'',co2=double?String(isHost?hc.clockOut2||'':v.hPmOut||raw.clockOut2||''):'';const hasWork=!!(ci||co||ci2||co2||d.finalized||d.hourlyReportId||Number(v.hGrandTotal||raw.grand||0)!==0||Number(v.hPaidTip||raw.paid||0)!==0||Number(hc.sales||0)!==0);const employee=typeof tt15CanonicalName==='function'?tt15CanonicalName(name):name;out.push({employee,workAccount:name,date:dateKey,role,shift,actual:ci,clockOut:co,clockIn2:ci2,clockOut2:co2,scheduled:batch.performanceSchedule?.[name]?.start||host.performanceSchedule?.[name]?.start||'',hasWork,blank:!hasWork,...((batch.employeeAttendance54||{})[encodeURIComponent(name+'|'+assignment.role+'|'+shift)]||{}),sourceCollection:isHost?'hostCashierTipReports':'hourlyV1Batches'});}}return out;}
  window.fz48ProjectSheets=projectSheets;
  function sheetForCurrent(){const matches=r=>r.employee===person()&&r.date===$a('Date').value&&r.role===$a('Role').value&&r.shift===$a('Shift').value;return sheetRows.find(matches)||reviews.find(matches)?.sheetSource||null;}
  let recovery52Running=false;
@@ -14781,7 +14781,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.65: explicit attendance metadata, isolated from all tip arithmetic. */
+/* ES1.8.66: explicit attendance metadata, isolated from all tip arithmetic. */
 (function sheetAttendance54(){
  if(!window.es41PaintRows)return;
  const labels={normal:'Present / Hadir',callout:'Call Out',noshow:'No Show',ncns:'No Call No Show',swap:'Approved replacement / Pengganti disetujui',absence:'Approved / protected absence'};
@@ -14819,7 +14819,7 @@ function es43ValidateContacts(payload){
  if(typeof esUpdateComputed==='function'){const update=esUpdateComputed;esUpdateComputed=function(...args){const out=update.apply(this,args);window.es41PaintRows();return out;};}
 })();
 
-/* ES1.8.65: directory modal independent of retired team-page styling. */
+/* ES1.8.66: directory modal independent of retired team-page styling. */
 window.es59ManageEmployee=function(){
  if(!esAllowed())return;tt15Init();const panel=$('tt15DirectoryPanel');if(!panel){esStatus('Manage Employee could not open. Reopen Employee Sheet.');return;}
  document.body.appendChild(panel);panel.hidden=false;panel.classList.remove('hidden');panel.style.zIndex='2147483002';
@@ -14832,7 +14832,7 @@ window.es59ManageEmployee=function(){
  busy=true;try{const payload=JSON.parse(window.FZReceiptAndroid.contacts());await es43ImportContacts(payload,true);done=true;esStatus('Employee phone/email contacts synced to shared database.');}catch(e){console.warn('Private contact sync retry available',e.message);}finally{busy=false;}
 }const init=esInit;esInit=function(...a){const out=init(...a);void sync();return out;};})();
 
-/* ES1.8.65: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
+/* ES1.8.66: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
 (function(){if(typeof document==='undefined'||!document.addEventListener)return;let applying=false;
  document.addEventListener('click',async e=>{
   const b=e.target.closest?.('[data-es-action],[data-hc15-action],[data-es64-pending-action]'),team=window.es41Team?.get();
