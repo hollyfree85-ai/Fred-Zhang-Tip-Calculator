@@ -71,8 +71,8 @@ self.addEventListener("notificationclick",event=>{
   })());
 });
 
-const CACHE="fz-tip-v13849-es18520";
-const CORE=["./install-app-v13849.js?v=13849-es18520", "./", "./index.html", "./fresh-v13825.html", "./app-v13849.js?v=13849-es18520", "./employee-sheet-v1.css?v=es18520", "./hourly-logic-v13840.js?v=13849", "./host-cashier-tip-v13840.js?v=13849-es18520", "./simple-ui-v13824p1.js?v=138241a", "./board-hotfix-v13825.js?v=13825", "./firebase-config.js", "./push-config.js", "./manifest.webmanifest", "./money-ready-chime.wav", "./icon-192.png", "./caishen-intro.png"];
+const CACHE="fz-tip-v13849-es18530";
+const CORE=["./install-app-v13849.js?v=13849-es18530", "./", "./index.html", "./fresh-v13825.html", "./app-v13849.js?v=13849-es18530", "./employee-sheet-v1.css?v=es18530", "./hourly-logic-v13840.js?v=13849", "./host-cashier-tip-v13840.js?v=13849-es18530", "./simple-ui-v13824p1.js?v=138241a", "./board-hotfix-v13825.js?v=13825", "./firebase-config.js", "./push-config.js", "./manifest.webmanifest", "./money-ready-chime.wav", "./icon-192.png", "./caishen-intro.png"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();
