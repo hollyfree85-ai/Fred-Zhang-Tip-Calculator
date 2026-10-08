@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18630",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18640",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10323,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.63';
+const ES_BUILD='ES1.8.64';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10457,7 +10457,7 @@ function esValidateSales(row,route,complete=false){
 function esHours(row){return row.shift==='DOUBLE'?{hourInAM:row.clockIn,hourOutAM:row.clockOut,hourInPM:row.clockIn2,hourOutPM:row.clockOut2}:{hourIn:row.clockIn,hourOut:row.clockOut};}
 function esBuildBatch(source,rows,date,route){
   const s=esClone(source||{});
-  // ES1.8.63: preserve planned identity when an employee is removed/replaced.
+  // ES1.8.64: preserve planned identity when an employee is removed/replaced.
   s.performanceAssignments ||= {};
   for(const old of (source?.todayTeamAssignments||[])){const key=encodeURIComponent(old.name+'|'+old.role+'|'+old.shift);s.performanceAssignments[key] ||= {...old,date,plannedAt:Date.now()};}
   for(const name of source?.team||[]){const v=source.drafts?.[name]?.values||{};if(v.hShift){const role=v.hPosition||'Server',key=encodeURIComponent(name+'|'+role+'|'+v.hShift);s.performanceAssignments[key] ||= {name,role,shift:v.hShift,date,plannedAt:Date.now()};}}
@@ -12228,11 +12228,20 @@ async function tt15ConfirmDuplicateBartenders(rows){
   return true;
 }
 function tt15MergeTeam(base,edited,remote){
-  // Multi-role rows are ordered assignments. If another device changed the team after
-  // this editor opened, keep the local draft and require a reload instead of guessing.
-  if(!tt15Same(base,remote) && !tt15Same(edited,remote)){const e=new Error('Another device changed today\'s team. Reload and review; your edits are kept.');e.teamConflict=true;throw e;}
-  return tt15Copy(edited);
+  // Merge independent employee edits. Never overwrite conflicting edits to one person.
+  const key=r=>tt15Key(r.name),group=(rows,k)=>rows.filter(r=>key(r)===k);
+  const keys=[...new Set([...remote,...edited,...base].map(key))],out=[];
+  for(const k of keys){
+    const before=group(base,k),local=group(edited,k),server=group(remote,k);
+    const changed=!tt15Same(before,local),remoteChanged=!tt15Same(before,server);
+    if(changed&&remoteChanged&&!tt15Same(local,server)){
+      const e=new Error(tt15Label((local[0]||server[0]||before[0]).name)+' was edited on another device. Reload assignments and review this employee.');e.teamConflict=true;throw e;
+    }
+    out.push(...tt15Copy(changed?local:server));
+  }
+  return out;
 }
+function es64NamedAssignments(rows){return (rows||[]).filter(r=>String(r.name||'').trim());}
 function tt15BuildTeam(raw,host,rows,date){
   const batch=tt15Copy(raw||{});batch.date=date;batch.drafts ||= {};hv1EnsureBarState(batch);
   const workRows=tt15AssignmentWorkRows(rows);
@@ -14202,7 +14211,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.63 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.64 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14265,7 +14274,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.63: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.64: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14303,7 +14312,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.63: output destinations; report calculations are untouched. */
+/* ES1.8.64: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14390,7 +14399,7 @@ function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
 
-/* ES1.8.63 — all active team editing lives inside Employee Sheet. */
+/* ES1.8.64 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
   window.es41Team={get:()=>state,add:()=>{start();if(!state||state.busy||!current(state))return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();},apply:()=>apply(),reload:()=>{start();if(state&&!state.busy)void load(state);},edit:(i,k,v)=>{const r=state?.rows[i];if(!r||state.busy)return;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';state.dirty=true;persist(state);paint();},remove:i=>{if(!state||state.busy)return;state.rows.splice(i,1);state.dirty=true;persist(state);paint();}};
@@ -14439,11 +14448,11 @@ function es36StoredPhone(raw){
     paint();void load(s);
   }
   async function apply(){const s=state;if(!s||!current(s)||s.busy)return;
-    try{tt15Require(s.uid);tt15TeamValidate(s.rows);if(s.base&&s.rows.length===0&&s.base.length&&!confirm('Remove everyone from the active team? Saved reports are kept.'))return;if(!await tt15ConfirmDuplicateBartenders(s.rows))return;
+    try{const named=es64NamedAssignments(s.rows);tt15Require(s.uid);tt15TeamValidate(named);if(s.base&&named.length===0&&s.base.length&&!confirm('Remove everyone from the active team? Saved reports are kept.'))return;if(!await tt15ConfirmDuplicateBartenders(named))return;
       // Share current money inputs before assignment changes when the sheet is synced.
       esPersistLocal();if(esSession.cloudReady&&esHasEdits(esSession)){const ok=await es14AutoFlush(esSession);if(esHasEdits(esSession))throw new Error('Save or sync current sheet inputs before changing the team. Your team draft is kept.');}
       if(!current(s))return;s.busy=true;paint();message('Applying team…');
-      const edited=copy(s.rows),base=s.base===null?null:copy(s.base),chosen=copy(s.busser);
+      const edited=copy(named),base=s.base===null?null:copy(es64NamedAssignments(s.base)),chosen=copy(s.busser);
       const result=await runTransaction(db,async tx=>{
         const ref=doc(db,'hourlyV1Batches',s.date),href=doc(db,'hostCashierTipReports',s.date),dref=doc(db,'hostCashierTipReports','employee-roster');
         const bs=await tx.get(ref),hs=await tx.get(href),ds=await tx.get(dref);tt15Require(s.uid);if(!current(s))throw new Error('Date changed. Your draft is kept.');
@@ -14489,7 +14498,7 @@ function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
 }
 
-/* ES1.8.63 — retired Employee Table routes redirect to Employee Sheet. */
+/* ES1.8.64 — retired Employee Table routes redirect to Employee Sheet. */
 (function retireEmployeeTable39(){
   window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
   window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
@@ -14501,7 +14510,7 @@ function es38MergeUnverified(remote,edited){
   for(const key of ['fzOpenRoleHome','fzOpenManagerTools']){const fn=window[key];if(typeof fn==='function')window[key]=function(...args){const out=fn.apply(this,args);remove();return out;};}
 })();
 
-/* ES1.8.63 — assignment controls are embedded in the employee rows. */
+/* ES1.8.64 — assignment controls are embedded in the employee rows. */
 window.es41Install=function(){
   const panel=$('es38Team');if(!panel)return;
   const details=panel.querySelector('details');details.hidden=true;
@@ -14555,7 +14564,7 @@ window.es41PaintRows=function(){
       if(host){tr.children[1].innerHTML=select(r,i,'shift');tr.children[2].innerHTML=select(r,i,'role');}
     }else{
       $('esRows').querySelector('.es-empty')?.closest('tr')?.remove();
-      const row=pending.get(i)||document.createElement('tr');pending.delete(i);row.dataset.es41Pending='1';row.dataset.es41PendingIndex=String(i);row.innerHTML='<th class="es-name">'+select(r,i,'name')+`<button type="button" data-es41-remove="${i}"${s.busy?' disabled':''}>Remove row</button></th>`+ES_COLUMNS.map(([field])=>'<td>'+(field==='role'?select(r,i,'role'):field==='shift'?select(r,i,'shift'):field==='paid'?'Apply changes to activate this row.':'—')+'</td>').join('');if(!row.isConnected)$('esRows').appendChild(row);
+      const row=pending.get(i)||document.createElement('tr');pending.delete(i);row.dataset.es41Pending='1';row.dataset.es41PendingIndex=String(i);row.innerHTML='<th class="es-name">'+select(r,i,'name')+`<div class="es64-pending-actions">${["save","sign","print"].map(action=>`<button type="button" data-es64-pending-action="${action}" data-es64-index="${i}"${s.busy||!r.name?" disabled":""}>${action[0].toUpperCase()+action.slice(1)}</button>`).join("")}</div><button type="button" data-es41-remove="${i}"${s.busy?' disabled':''}>Remove row</button></th>`+ES_COLUMNS.map(([field])=>'<td>'+(field==='role'?select(r,i,'role'):field==='shift'?select(r,i,'shift'):field==='paid'?'Apply changes to activate this row.':'—')+'</td>').join('');if(!row.isConnected)$('esRows').appendChild(row);
     }
   }
   pending.forEach(n=>n.remove());
@@ -14630,8 +14639,8 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.63 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
-(function teamPerformance63(){
+/* ES1.8.64 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
+(function teamPerformance64(){
  const MAX={attendance:70,sidework:25,guest:5},ROLES=['Server','Bartender','Cashier/Host'];
  const normalizeRole=r=>r==='Bartender'?'Bartender':['Host','Cashier','Host / Cashier','Cashier/Host'].includes(r)?'Cashier/Host':'Server';
  const day=d=>Math.floor(Date.parse(d+'T12:00:00Z')/86400000),date=n=>new Date(n*86400000).toISOString().slice(0,10);
@@ -14770,7 +14779,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.63: explicit attendance metadata, isolated from all tip arithmetic. */
+/* ES1.8.64: explicit attendance metadata, isolated from all tip arithmetic. */
 (function sheetAttendance54(){
  if(!window.es41PaintRows)return;
  const labels={normal:'Present / Hadir',callout:'Call Out',noshow:'No Show',ncns:'No Call No Show',swap:'Approved replacement / Pengganti disetujui',absence:'Approved / protected absence'};
@@ -14808,7 +14817,7 @@ function es43ValidateContacts(payload){
  if(typeof esUpdateComputed==='function'){const update=esUpdateComputed;esUpdateComputed=function(...args){const out=update.apply(this,args);window.es41PaintRows();return out;};}
 })();
 
-/* ES1.8.63: directory modal independent of retired team-page styling. */
+/* ES1.8.64: directory modal independent of retired team-page styling. */
 window.es59ManageEmployee=function(){
  if(!esAllowed())return;tt15Init();const panel=$('tt15DirectoryPanel');if(!panel){esStatus('Manage Employee could not open. Reopen Employee Sheet.');return;}
  document.body.appendChild(panel);panel.hidden=false;panel.classList.remove('hidden');panel.style.zIndex='2147483002';
@@ -14821,17 +14830,18 @@ window.es59ManageEmployee=function(){
  busy=true;try{const payload=JSON.parse(window.FZReceiptAndroid.contacts());await es43ImportContacts(payload,true);done=true;esStatus('Employee phone/email contacts synced to shared database.');}catch(e){console.warn('Private contact sync retry available',e.message);}finally{busy=false;}
 }const init=esInit;esInit=function(...a){const out=init(...a);void sync();return out;};})();
 
-/* ES1.8.63: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
+/* ES1.8.64: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
 (function(){if(typeof document==='undefined'||!document.addEventListener)return;let applying=false;
  document.addEventListener('click',async e=>{
-  const b=e.target.closest?.('[data-es-action],[data-hc15-action]'),team=window.es41Team?.get();
+  const b=e.target.closest?.('[data-es-action],[data-hc15-action],[data-es64-pending-action]'),team=window.es41Team?.get();
   if(!b||!team?.dirty)return;e.preventDefault();e.stopImmediatePropagation();if(applying)return;applying=true;
-  const host=!!b.dataset.hc15Action,action=b.dataset.hc15Action||b.dataset.esAction,old=host?b.dataset.hc15Name:esSession.rows[Number(b.dataset.esRow)]?.name;
+  const pending=b.dataset.es64PendingAction,control=b.closest('tr')?.querySelector('[data-es41-field="name"]'),assignmentIndex=pending?Number(b.dataset.es64Index):control?Number(control.dataset.es41Index):-1,assignment=team.rows[assignmentIndex];
+  const host=assignment?tt15Host(assignment.role):!!b.dataset.hc15Action,action=pending||b.dataset.hc15Action||b.dataset.esAction,old=assignment?(tt15Host(assignment.role)?assignment.name:tt15AssignmentWorkRows(team.rows)[assignmentIndex].workName):host?b.dataset.hc15Name:esSession.rows[Number(b.dataset.esRow)]?.name;
   const scroll=es14CaptureScroll();try{
    await window.es41Team.apply();const t=window.es41Team.get();if(t?.dirty||t?.busy)throw new Error('Assignment changes could not save. Review the message above.');
    // employeeSheetOpen returns before the host listener is verified: wait for this date only.
-   const date=team.date,uid=team.uid;for(let i=0;i<80&&(!esSession?.cloudReady||!hc15Session?.verified);i++){if(currentUser?.uid!==uid||esSession?.date!==date)throw new Error('Login or date changed.');await new Promise(resolve=>setTimeout(resolve,100));}
-   if(!esSession?.cloudReady||!hc15Session?.verified)throw new Error('Connection is not ready. Tap Save or Print again.');
+   const date=team.date,uid=team.uid;for(let i=0;i<80&&(!esSession?.cloudReady||(host&&!hc15Session?.verified));i++){if(currentUser?.uid!==uid||esSession?.date!==date)throw new Error('Login or date changed.');await new Promise(resolve=>setTimeout(resolve,100));}
+   if(!esSession?.cloudReady||(host&&!hc15Session?.verified))throw new Error('Connection is not ready. Tap Save or Print again.');
    esRenderRows();hc15Render();window.es41PaintRows();
    const buttons=[...document.querySelectorAll('[data-es-action],[data-hc15-action]')];const next=buttons.find(x=>(x.dataset.hc15Action||x.dataset.esAction)===action&&tt15CanonicalName(x.dataset.hc15Name||esSession.rows[Number(x.dataset.esRow)]?.name)===tt15CanonicalName(old));
    if(!next||next.disabled)throw new Error('Employee row is not ready. Check the saved assignment.');next.click();
