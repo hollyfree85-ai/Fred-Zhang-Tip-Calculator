@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18620",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18630",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10323,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.62';
+const ES_BUILD='ES1.8.63';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10457,7 +10457,7 @@ function esValidateSales(row,route,complete=false){
 function esHours(row){return row.shift==='DOUBLE'?{hourInAM:row.clockIn,hourOutAM:row.clockOut,hourInPM:row.clockIn2,hourOutPM:row.clockOut2}:{hourIn:row.clockIn,hourOut:row.clockOut};}
 function esBuildBatch(source,rows,date,route){
   const s=esClone(source||{});
-  // ES1.8.62: preserve planned identity when an employee is removed/replaced.
+  // ES1.8.63: preserve planned identity when an employee is removed/replaced.
   s.performanceAssignments ||= {};
   for(const old of (source?.todayTeamAssignments||[])){const key=encodeURIComponent(old.name+'|'+old.role+'|'+old.shift);s.performanceAssignments[key] ||= {...old,date,plannedAt:Date.now()};}
   for(const name of source?.team||[]){const v=source.drafts?.[name]?.values||{};if(v.hShift){const role=v.hPosition||'Server',key=encodeURIComponent(name+'|'+role+'|'+v.hShift);s.performanceAssignments[key] ||= {name,role,shift:v.hShift,date,plannedAt:Date.now()};}}
@@ -10675,6 +10675,7 @@ function esRowStatus(row){
   return smallReportHasPickupSignature(old)?{text:'Saved · Signed',kind:'signed'}:{text:'Saved · Unsigned',kind:'saved'};
 }
 function esRenderRows(){
+  if(typeof es63DeferRender==='function'&&es63DeferRender(esRenderRows))return;
   const s=esSession;if(!s?.ready)return;
   const body=$('esRows');if(!body)return;
   const needle=String($('esSearch')?.value||'').trim().toLowerCase();
@@ -12568,6 +12569,7 @@ function hc15Init(){
   const credit=document.createElement('div');credit.id='hc15CreditModal';credit.className='es-modal hidden';credit.setAttribute('role','dialog');credit.setAttribute('aria-modal','true');credit.innerHTML='<div class="es-sign-card"><h3 id="hc15CreditTitle">Credit accounts</h3><div id="hc15CreditRows"></div><button id="hc15CreditAdd" type="button">＋ Add account</button><p id="hc15CreditTotal"></p><div class="es-sign-actions"><button id="hc15CreditCancel" type="button">Cancel</button><button id="hc15CreditUse" type="button">Use total</button></div><p id="hc15CreditStatus" role="status"></p></div>';$('employeeSheet').appendChild(credit);hc15BindCredit();
 }
 function hc15Render(){
+  if(typeof es63DeferRender==='function'&&es63DeferRender(hc15Render))return;
   const s=hc15Session;if(!s||!$('hc15Rows'))return;
   if(esPan||performance.now()<esTouchUntil){clearTimeout(s.renderTimer);s.renderTimer=setTimeout(hc15Render,180);return;}
   const data=hc15View(s),members=tt15TeamRows({},data),key=JSON.stringify(members);
@@ -14200,7 +14202,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.62 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.63 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14263,7 +14265,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.62: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.63: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14301,7 +14303,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.62: output destinations; report calculations are untouched. */
+/* ES1.8.63: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14388,7 +14390,7 @@ function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
 
-/* ES1.8.62 — all active team editing lives inside Employee Sheet. */
+/* ES1.8.63 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
   window.es41Team={get:()=>state,add:()=>{start();if(!state||state.busy||!current(state))return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();},apply:()=>apply(),reload:()=>{start();if(state&&!state.busy)void load(state);},edit:(i,k,v)=>{const r=state?.rows[i];if(!r||state.busy)return;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';state.dirty=true;persist(state);paint();},remove:i=>{if(!state||state.busy)return;state.rows.splice(i,1);state.dirty=true;persist(state);paint();}};
@@ -14487,7 +14489,7 @@ function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
 }
 
-/* ES1.8.62 — retired Employee Table routes redirect to Employee Sheet. */
+/* ES1.8.63 — retired Employee Table routes redirect to Employee Sheet. */
 (function retireEmployeeTable39(){
   window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
   window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
@@ -14499,7 +14501,7 @@ function es38MergeUnverified(remote,edited){
   for(const key of ['fzOpenRoleHome','fzOpenManagerTools']){const fn=window[key];if(typeof fn==='function')window[key]=function(...args){const out=fn.apply(this,args);remove();return out;};}
 })();
 
-/* ES1.8.62 — assignment controls are embedded in the employee rows. */
+/* ES1.8.63 — assignment controls are embedded in the employee rows. */
 window.es41Install=function(){
   const panel=$('es38Team');if(!panel)return;
   const details=panel.querySelector('details');details.hidden=true;
@@ -14524,6 +14526,15 @@ window.es41Install=function(){
 };
 window.es41PaintRows=function(){
   const s=window.es41Team?.get();if(!s||s.date!==esSession?.date||s.uid!==esSession?.uid||!$('esRows'))return;
+  const nodes=[...$('esRows').querySelectorAll('tr'),...($('hc15Rows')?.querySelectorAll('tr')||[])];
+  const paintKey=JSON.stringify([s.uid,s.date,s.rows,!!s.busy,tt15DirectoryEntries().map(x=>[x.name,x.displayName,x.active])]);
+  const previous=window.es63AssignmentPaint;
+  if(previous?.key===paintKey&&previous.nodes.length===nodes.length&&previous.nodes.every((n,i)=>n===nodes[i])&&previous.controls.every(n=>n.isConnected))return;
+  const active=document.activeElement;
+  if(active?.matches?.('select[data-es41-control]')&&active.isConnected){
+    if(!active.dataset.es63Blur){active.dataset.es63Blur='1';active.addEventListener('blur',()=>{delete active.dataset.es63Blur;setTimeout(()=>window.es41PaintRows(),0);},{once:true});}
+    return;
+  }
   // Keep pending row elements mounted: removing the focused row collapses the
   // table and makes browser scroll anchoring jump to an earlier employee.
   const pending=new Map([...$('esRows').querySelectorAll('[data-es41-pending]')].map(n=>[Number(n.dataset.es41PendingIndex),n]));
@@ -14548,6 +14559,7 @@ window.es41PaintRows=function(){
     }
   }
   pending.forEach(n=>n.remove());
+  window.es63AssignmentPaint={key:paintKey,nodes:[...$('esRows').querySelectorAll('tr'),...($('hc15Rows')?.querySelectorAll('tr')||[])],controls:[...document.querySelectorAll('[data-es41-control]')]};
   // Assignment drafts are applied by the action handler; do not lock every employee.
 
 };
@@ -14618,8 +14630,8 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.62 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
-(function teamPerformance62(){
+/* ES1.8.63 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
+(function teamPerformance63(){
  const MAX={attendance:70,sidework:25,guest:5},ROLES=['Server','Bartender','Cashier/Host'];
  const normalizeRole=r=>r==='Bartender'?'Bartender':['Host','Cashier','Host / Cashier','Cashier/Host'].includes(r)?'Cashier/Host':'Server';
  const day=d=>Math.floor(Date.parse(d+'T12:00:00Z')/86400000),date=n=>new Date(n*86400000).toISOString().slice(0,10);
@@ -14758,7 +14770,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.62: explicit attendance metadata, isolated from all tip arithmetic. */
+/* ES1.8.63: explicit attendance metadata, isolated from all tip arithmetic. */
 (function sheetAttendance54(){
  if(!window.es41PaintRows)return;
  const labels={normal:'Present / Hadir',callout:'Call Out',noshow:'No Show',ncns:'No Call No Show',swap:'Approved replacement / Pengganti disetujui',absence:'Approved / protected absence'};
@@ -14796,7 +14808,7 @@ function es43ValidateContacts(payload){
  if(typeof esUpdateComputed==='function'){const update=esUpdateComputed;esUpdateComputed=function(...args){const out=update.apply(this,args);window.es41PaintRows();return out;};}
 })();
 
-/* ES1.8.62: directory modal independent of retired team-page styling. */
+/* ES1.8.63: directory modal independent of retired team-page styling. */
 window.es59ManageEmployee=function(){
  if(!esAllowed())return;tt15Init();const panel=$('tt15DirectoryPanel');if(!panel){esStatus('Manage Employee could not open. Reopen Employee Sheet.');return;}
  document.body.appendChild(panel);panel.hidden=false;panel.classList.remove('hidden');panel.style.zIndex='2147483002';
@@ -14809,7 +14821,7 @@ window.es59ManageEmployee=function(){
  busy=true;try{const payload=JSON.parse(window.FZReceiptAndroid.contacts());await es43ImportContacts(payload,true);done=true;esStatus('Employee phone/email contacts synced to shared database.');}catch(e){console.warn('Private contact sync retry available',e.message);}finally{busy=false;}
 }const init=esInit;esInit=function(...a){const out=init(...a);void sync();return out;};})();
 
-/* ES1.8.62: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
+/* ES1.8.63: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
 (function(){if(typeof document==='undefined'||!document.addEventListener)return;let applying=false;
  document.addEventListener('click',async e=>{
   const b=e.target.closest?.('[data-es-action],[data-hc15-action]'),team=window.es41Team?.get();
@@ -14828,3 +14840,5 @@ window.es59ManageEmployee=function(){
 })();
 
 function es62SavedAttendance(row){for(const [key,data] of Object.entries(esSession?.rawBase?.employeeAttendance54||{})){try{const [name,role,shift]=decodeURIComponent(key).split('|');if(tt15CanonicalName(name)===tt15CanonicalName(row.name)&&role===row.role&&shift===row.shift)return data;}catch(e){}}return null;}
+
+function es63DeferRender(render){const active=document.activeElement;if(!active?.matches?.('select[data-es41-control]')||!active.isConnected)return false;active.es63Deferred ||= new Set();if(!active.es63Deferred.has(render)){active.es63Deferred.add(render);active.addEventListener('blur',()=>{active.es63Deferred.delete(render);setTimeout(render,0);},{once:true});}return true;}
