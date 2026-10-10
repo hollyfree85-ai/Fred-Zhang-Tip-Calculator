@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18670",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18680",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10323,7 +10323,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.67';
+const ES_BUILD='ES1.8.68';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10457,7 +10457,7 @@ function esValidateSales(row,route,complete=false){
 function esHours(row){return row.shift==='DOUBLE'?{hourInAM:row.clockIn,hourOutAM:row.clockOut,hourInPM:row.clockIn2,hourOutPM:row.clockOut2}:{hourIn:row.clockIn,hourOut:row.clockOut};}
 function esBuildBatch(source,rows,date,route){
   const s=esClone(source||{});
-  // ES1.8.67: preserve planned identity when an employee is removed/replaced.
+  // ES1.8.68: preserve planned identity when an employee is removed/replaced.
   s.performanceAssignments ||= {};
   for(const old of (source?.todayTeamAssignments||[])){const key=encodeURIComponent(old.name+'|'+old.role+'|'+old.shift);s.performanceAssignments[key] ||= {...old,date,plannedAt:Date.now()};}
   for(const name of source?.team||[]){const v=source.drafts?.[name]?.values||{};if(v.hShift){const role=v.hPosition||'Server',key=encodeURIComponent(name+'|'+role+'|'+v.hShift);s.performanceAssignments[key] ||= {name,role,shift:v.hShift,date,plannedAt:Date.now()};}}
@@ -12174,11 +12174,12 @@ function tt15TeamRows(batch={},host={}){
 }
 function tt15CanonicalName(name){return canonicalEmployeeName(employeeWorkProfile(name)?.personName||String(name||'').split(' \u00b7 ')[0]||name);}
 function tt15AssignmentWorkRows(rows){
-  const counts=new Map(),seen=new Map();
-  for(const r of rows)counts.set(tt15Key(r.name),(counts.get(tt15Key(r.name))||0)+1);
+  const counts=new Map(),seen=new Map(),hosts=new Set(rows.filter(r=>tt15Host(r.role)).map(r=>tt15Key(r.name)));
+  for(const r of rows)if(!tt15Host(r.role))counts.set(tt15Key(r.name),(counts.get(tt15Key(r.name))||0)+1);
   return rows.map(r=>{
-    const key=tt15Key(r.name),n=(seen.get(key)||0)+1;seen.set(key,n);
-    const workName=counts.get(key)>1 && n>1 ? `${r.name} \u00b7 ${r.shift} \u00b7 ${r.role}` : r.name;
+    const key=tt15Key(r.name);if(tt15Host(r.role))return {...r,personName:r.name,workName:r.name};
+    const n=(seen.get(key)||0)+1;seen.set(key,n);
+    const workName=hosts.has(key)||counts.get(key)>1&&n>1 ? `${r.name} · ${r.shift} · ${r.role}` : r.name;
     return {...r,personName:r.name,workName};
   });
 }
@@ -12247,6 +12248,13 @@ function tt15BuildTeam(raw,host,rows,date){
   const workRows=tt15AssignmentWorkRows(rows);
   batch.todayTeamAssignments=rows.map(r=>({name:r.name,role:r.role,shift:r.shift}));
   const servers=workRows.filter(r=>!tt15Host(r.role)).map(r=>({...r,name:r.workName})),removed=new Set(batch.todayTeamRemoved||[]);
+  // Preserve an existing tip draft when a Host assignment adds a work-account suffix.
+  for(const input of servers)if(!batch.drafts[input.name]){
+    const matches=(batch.team||[]).filter(name=>tt15CanonicalName(name)===tt15CanonicalName(input.personName)&&batch.drafts[name]?.values?.hShift===input.shift&&(batch.drafts[name]?.values?.hPosition||'Server')===input.role);
+    if(matches.length===1){const old=matches[0];batch.drafts[input.name]=tt15Copy(batch.drafts[old]);if(batch.drafts[input.name].employeeSheetRawRow)batch.drafts[input.name].employeeSheetRawRow.name=input.name;
+      for(const cp of ES_PERIODS){const state=batch.bar?.[cp];if(!state)continue;for(const field of ['entries','excluded'])if(state[field]&&Object.prototype.hasOwnProperty.call(state[field],old))state[field][input.name]=state[field][old];if(state.bartender===old)state.bartender=input.name;}
+    }
+  }
   for(const name of batch.team||[])if(!servers.some(r=>r.name===name))removed.add(name);
   const resultRows=esRowsFromBatch({...batch,team:servers.map(r=>r.name)},[],date);
   for(const input of servers){
@@ -14213,7 +14221,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.67 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.68 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14276,7 +14284,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.67: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.68: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14314,7 +14322,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.67: output destinations; report calculations are untouched. */
+/* ES1.8.68: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14401,7 +14409,7 @@ function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
 
-/* ES1.8.67 — all active team editing lives inside Employee Sheet. */
+/* ES1.8.68 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
   window.es41Team={get:()=>state,add:()=>{start();if(!state||state.busy||!current(state))return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();},apply:()=>apply(),reload:()=>{start();if(state&&!state.busy)void load(state);},edit:(i,k,v)=>{const r=state?.rows[i];if(!r||state.busy)return;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';state.dirty=true;persist(state);paint();},remove:i=>{if(!state||state.busy)return;state.rows.splice(i,1);state.dirty=true;persist(state);paint();}};
@@ -14500,7 +14508,7 @@ function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
 }
 
-/* ES1.8.67 — retired Employee Table routes redirect to Employee Sheet. */
+/* ES1.8.68 — retired Employee Table routes redirect to Employee Sheet. */
 (function retireEmployeeTable39(){
   window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
   window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
@@ -14512,7 +14520,7 @@ function es38MergeUnverified(remote,edited){
   for(const key of ['fzOpenRoleHome','fzOpenManagerTools']){const fn=window[key];if(typeof fn==='function')window[key]=function(...args){const out=fn.apply(this,args);remove();return out;};}
 })();
 
-/* ES1.8.67 — assignment controls are embedded in the employee rows. */
+/* ES1.8.68 — assignment controls are embedded in the employee rows. */
 window.es41Install=function(){
   const panel=$('es38Team');if(!panel)return;
   const details=panel.querySelector('details');details.hidden=true;
@@ -14641,7 +14649,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.67 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
+/* ES1.8.68 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
 (function teamPerformance64(){
  const MAX={attendance:70,sidework:25,guest:5},ROLES=['Server','Bartender','Cashier/Host'];
  const normalizeRole=r=>r==='Bartender'?'Bartender':['Host','Cashier','Host / Cashier','Cashier/Host'].includes(r)?'Cashier/Host':'Server';
@@ -14717,7 +14725,7 @@ function es43ValidateContacts(payload){
  function exportRecap(){const w=currentWeek(),filter=roleFilter();const lines=[[t('Employee','Karyawan'),'Role',t('Week start','Mulai minggu'),t('Week end','Akhir minggu'),'Attendance /70','Sidework /25','Guest /5','Total /100',t('Reviewed','Direview'),t('Expected','Terjadwal'),t('Recommendation','Rekomendasi'),t('Reason','Alasan')]];for(const n of allNames()){const s=summaryFor(n,filter),r=recommend(s,config);lines.push([tt15Label(n),filter||'ALL',w.start,w.end,s.attendance,s.sidework,s.guest,s.total,s.reviewed,s.expected,actionText(r.code),reasonText(r.reason,s)]);}const csv='\ufeff'+lines.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});es18DownloadRaw(blob,'Team_Weekly_Recap_'+w.start+'.csv');}
 
  let sheetRows=[],sheetSubscriptions=[],sheetToken=0,sheetReady=false,sheetTimer=null;
- function projectSheets(batches,hosts){const out=[];for(const dateKey of new Set([...Object.keys(batches),...Object.keys(hosts)])){const batch=batches[dateKey]||{},host=hosts[dateKey]||{};const current=tt15TeamRows(batch,host),assignments=[...current];for(const old of Object.values(batch.performanceAssignments||{})){if(!current.some(r=>tt15CanonicalName(r.name)===tt15CanonicalName(old.name)&&normalizeRole(r.role)===normalizeRole(old.role))&&!assignments.some(r=>tt15CanonicalName(r.name)===tt15CanonicalName(old.name)&&normalizeRole(r.role)===normalizeRole(old.role)&&r.shift===old.shift))assignments.push(old);}for(const assignment of assignments){const name=assignment.name,role=normalizeRole(assignment.role),d=batch.drafts?.[name]||{},v=d.values||{},raw=d.employeeSheetRawRow||{},hc=host.staffDetails?.[name]||{},shift=assignment.shift||v.hShift||raw.shift||'',isHost=role==='Cashier/Host',double=shift==='DOUBLE';const ci=String(isHost?hc.clockIn||hc.in||'':double?v.hAmIn||raw.clockIn||'':v.hIn||raw.clockIn||''),co=String(isHost?hc.clockOut||hc.out||'':double?v.hAmOut||raw.clockOut||'':v.hOut||raw.clockOut||''),ci2=double?String(isHost?hc.clockIn2||'':v.hPmIn||raw.clockIn2||''):'',co2=double?String(isHost?hc.clockOut2||'':v.hPmOut||raw.clockOut2||''):'';const hasWork=!!(ci||co||ci2||co2||d.finalized||d.hourlyReportId||Number(v.hGrandTotal||raw.grand||0)!==0||Number(v.hPaidTip||raw.paid||0)!==0||Number(hc.sales||0)!==0);const employee=typeof tt15CanonicalName==='function'?tt15CanonicalName(name):name;out.push({employee,workAccount:name,date:dateKey,role,shift,actual:ci,clockOut:co,clockIn2:ci2,clockOut2:co2,scheduled:batch.performanceSchedule?.[name]?.start||host.performanceSchedule?.[name]?.start||'',hasWork,blank:!hasWork,...((batch.employeeAttendance54||{})[encodeURIComponent(name+'|'+assignment.role+'|'+shift)]||{}),sourceCollection:isHost?'hostCashierTipReports':'hourlyV1Batches'});}}return out;}
+ function projectSheets(batches,hosts){const out=[];for(const dateKey of new Set([...Object.keys(batches),...Object.keys(hosts)])){const batch=batches[dateKey]||{},host=hosts[dateKey]||{};const current=tt15TeamRows(batch,host),assignments=[...current];for(const old of Object.values(batch.performanceAssignments||{})){if(!current.some(r=>tt15CanonicalName(r.name)===tt15CanonicalName(old.name)&&normalizeRole(r.role)===normalizeRole(old.role))&&!assignments.some(r=>tt15CanonicalName(r.name)===tt15CanonicalName(old.name)&&normalizeRole(r.role)===normalizeRole(old.role)&&r.shift===old.shift))assignments.push(old);}for(const assignment of tt15AssignmentWorkRows(assignments)){const name=assignment.name,workName=assignment.workName,role=normalizeRole(assignment.role),d=tt15Host(assignment.role)?{}:batch.drafts?.[workName]||batch.drafts?.[name]||{},v=d.values||{},raw=d.employeeSheetRawRow||{},hc=host.staffDetails?.[name]||{},shift=assignment.shift||v.hShift||raw.shift||'',isHost=role==='Cashier/Host',double=shift==='DOUBLE';const ci=String(isHost?hc.clockIn||hc.in||'':double?v.hAmIn||raw.clockIn||'':v.hIn||raw.clockIn||''),co=String(isHost?hc.clockOut||hc.out||'':double?v.hAmOut||raw.clockOut||'':v.hOut||raw.clockOut||''),ci2=double?String(isHost?hc.clockIn2||'':v.hPmIn||raw.clockIn2||''):'',co2=double?String(isHost?hc.clockOut2||'':v.hPmOut||raw.clockOut2||''):'';const hasWork=!!(ci||co||ci2||co2||d.finalized||d.hourlyReportId||Number(v.hGrandTotal||raw.grand||0)!==0||Number(v.hPaidTip||raw.paid||0)!==0||Number(hc.sales||0)!==0);const employee=typeof tt15CanonicalName==='function'?tt15CanonicalName(name):name;out.push({employee,workAccount:workName,date:dateKey,role,shift,actual:ci,clockOut:co,clockIn2:ci2,clockOut2:co2,scheduled:batch.performanceSchedule?.[name]?.start||host.performanceSchedule?.[name]?.start||'',hasWork,blank:!hasWork,...((batch.employeeAttendance54||{})[encodeURIComponent(name+'|'+assignment.role+'|'+shift)]||{}),sourceCollection:isHost?'hostCashierTipReports':'hourlyV1Batches'});}}return out;}
  window.fz48ProjectSheets=projectSheets;
  function sheetForCurrent(){const matches=r=>r.employee===person()&&r.date===$a('Date').value&&r.role===$a('Role').value&&r.shift===$a('Shift').value;return sheetRows.find(matches)||reviews.find(matches)?.sheetSource||null;}
  let recovery52Running=false;
@@ -14792,7 +14800,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.67: explicit attendance metadata, isolated from all tip arithmetic. */
+/* ES1.8.68: explicit attendance metadata, isolated from all tip arithmetic. */
 (function sheetAttendance54(){
  if(!window.es41PaintRows)return;
  const labels={normal:'Present / Hadir',callout:'Call Out',noshow:'No Show',ncns:'No Call No Show',swap:'Approved replacement / Pengganti disetujui',absence:'Approved / protected absence'};
@@ -14830,7 +14838,7 @@ function es43ValidateContacts(payload){
  if(typeof esUpdateComputed==='function'){const update=esUpdateComputed;esUpdateComputed=function(...args){const out=update.apply(this,args);window.es41PaintRows();return out;};}
 })();
 
-/* ES1.8.67: directory modal independent of retired team-page styling. */
+/* ES1.8.68: directory modal independent of retired team-page styling. */
 window.es59ManageEmployee=function(){
  if(!esAllowed())return;tt15Init();const panel=$('tt15DirectoryPanel');if(!panel){esStatus('Manage Employee could not open. Reopen Employee Sheet.');return;}
  document.body.appendChild(panel);panel.hidden=false;panel.classList.remove('hidden');panel.style.zIndex='2147483002';
@@ -14843,7 +14851,7 @@ window.es59ManageEmployee=function(){
  busy=true;try{const payload=JSON.parse(window.FZReceiptAndroid.contacts());await es43ImportContacts(payload,true);done=true;esStatus('Employee phone/email contacts synced to shared database.');}catch(e){console.warn('Private contact sync retry available',e.message);}finally{busy=false;}
 }const init=esInit;esInit=function(...a){const out=init(...a);void sync();return out;};})();
 
-/* ES1.8.67: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
+/* ES1.8.68: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
 (function(){if(typeof document==='undefined'||!document.addEventListener)return;let applying=false;
  document.addEventListener('click',async e=>{
   const b=e.target.closest?.('[data-es-action],[data-hc15-action],[data-es64-pending-action]'),team=window.es41Team?.get();
