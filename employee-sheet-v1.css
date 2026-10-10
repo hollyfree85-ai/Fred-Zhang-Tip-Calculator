@@ -625,3 +625,6 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 #employeeSheet.es-compact:not(.es-desktop-page)>.es-grid{touch-action:pan-x pan-y pinch-zoom!important}
 #employeeSheet .es64-pending-actions{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
 #employeeSheet .es64-pending-actions button{min-height:44px;flex:1;padding:8px;font-size:16px}
+
+/* Hidden workspaces must stay hidden even when compact/desktop layout is enabled. */
+#employeeSheet.hidden,#employeeSheet.es-compact.hidden,#employeeSheet.es-desktop-page.hidden{display:none!important}
