@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18710",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18720",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -5805,13 +5805,30 @@ function pdfSignatureCommands(signature,x,y,w,h){
   return c;
 }
 
+// ES1.8.72: report display only. Never modifies saved hours, wages or tip math.
+function fz72ReportWork(r={}){
+  const h=r.hours||{},pick=(...v)=>v.find(x=>x!==null&&x!==undefined&&String(x).trim()!=='')??'';
+  const split=String(r.shift||'').toUpperCase()==='DOUBLE'||!!pick(r.hourInAM,h.hourInAM,r.hourInPM,h.hourInPM,r.hourOutAM,h.hourOutAM,r.hourOutPM,h.hourOutPM,r.clockIn2,r.clockOut2,r.sheetSource?.clockIn2,r.sheetSource?.clockOut2);
+  const sessions=split?[
+    {label:'AM',start:pick(r.hourInAM,h.hourInAM,r.clockIn,r.actual,r.sheetSource?.actual),end:pick(r.hourOutAM,h.hourOutAM,r.clockOut,r.sheetSource?.clockOut)},
+    {label:'PM',start:pick(r.hourInPM,h.hourInPM,r.clockIn2,r.sheetSource?.clockIn2),end:pick(r.hourOutPM,h.hourOutPM,r.clockOut2,r.sheetSource?.clockOut2)}
+  ]:[{label:String(r.shift||''),start:pick(r.hourIn,h.hourIn,r.clockIn,r.actual,r.sheetSource?.actual),end:pick(r.hourOut,h.hourOut,r.clockOut,r.sheetSource?.clockOut)}];
+  const minute=v=>{const m=String(v).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);if(!m)return null;let a=+m[1],b=+m[2];if(b>59||a>23||m[3]&&(a<1||a>12))return null;if(m[3])a=a%12+(/^pm$/i.test(m[3])?12:0);return a*60+b;};
+  let total=0,complete=true;for(const q of sessions){const a=minute(q.start),b=minute(q.end);if(a===null||b===null){complete=false;continue;}total+=(b-a+1440)%1440;}
+  // Preserve authoritative saved totals, including an explicitly saved zero.
+  const recorded=pick(r.totalMinutesWork)!==''?Number(r.totalMinutesWork)/60:pick(r.totalHoursWork,r.totalHours)!==''?Number(pick(r.totalHoursWork,r.totalHours)):null;
+  const hours=recorded!==null&&Number.isFinite(recorded)&&recorded>=0?recorded:complete?total/60:null;
+  return {sessions,hours,hoursText:hours===null?'Not recorded':hours.toFixed(2),text:sessions.map(q=>(q.label?q.label+' | ':'')+'Clock In: '+(q.start||'Not recorded')+' | Clock Out: '+(q.end||'Not recorded')).join(' ; ')};
+}
+
 function pdfReportContent(r,index,total){
   if(es16ExportIsHost(r))return hc184PdfReportContent(r,index,total);
+  const work=fz72ReportWork(r);
   const hours={...r,...(r.hours||{})};
   r={...r,
-    hourIn:r.hourIn??hours.hourIn??"",hourOut:r.hourOut??hours.hourOut??"",
-    hourInAM:r.hourInAM??hours.hourInAM??"",hourOutAM:r.hourOutAM??hours.hourOutAM??"",
-    hourInPM:r.hourInPM??hours.hourInPM??"",hourOutPM:r.hourOutPM??hours.hourOutPM??"",
+    hourIn:work.sessions[0]?.start||"",hourOut:work.sessions[0]?.end||"",
+    hourInAM:work.sessions.length>1?work.sessions[0].start:"",hourOutAM:work.sessions.length>1?work.sessions[0].end:"",
+    hourInPM:work.sessions.length>1?work.sessions[1].start:"",hourOutPM:work.sessions.length>1?work.sessions[1].end:"",
     payCardTipFee:r.payCardTipFee??r.cardFee??0,
     amBarTip:r.amBarTip??r.amBarTipOut??r.barTipAM??0,
     pmBarTip:r.pmBarTip??r.pmBarTipOut??r.barTipPM??0,
@@ -5870,9 +5887,9 @@ function pdfReportContent(r,index,total){
   const leftX=28, colW=129, gap=12;
   let y=602;
   const workMetrics=[
-    ["Hour In AM",amIn||"-"],["Hour Out AM",amOut||"-"],
-    ["Hour In PM",pmIn||"-"],["Hour Out PM",pmOut||"-"],
-    ["Total Hours",Number(r.totalHoursWork||0).toFixed(2)],["Busser AM",r.busserAM||"N/A"],
+    [work.sessions.length>1?"Clock In AM":"Clock In",work.sessions[0].start||"Not recorded"],[work.sessions.length>1?"Clock Out AM":"Clock Out",work.sessions[0].end||"Not recorded"],
+    ["Clock In PM",work.sessions.length>1?(work.sessions[1].start||"Not recorded"):"-"],["Clock Out PM",work.sessions.length>1?(work.sessions[1].end||"Not recorded"):"-"],
+    ["Total Hours",work.hoursText],["Busser AM",r.busserAM||"N/A"],
     ["Grand Total",pdfMoney(r.grandTotal)],["Total AM",pdfMoney(r.totalAM)],
     ["Total PM",pdfMoney(r.totalPM)],["Total Tips",pdfMoney(r.totalTips)]
   ];
@@ -10126,10 +10143,7 @@ initMonthlyReportUi();
     return c;
   }
   function monthlyReportPdfBlob(rows){
-    // Monthly PDF is intentionally a one-page professional summary.
-    // - One selected employee: one-page summary for that employee.
-    // - All Employees: one-page grand-total summary for the selected period.
-    // XLS remains the detailed per-employee export.
+    // Keep the period summary; append recorded clocks for every role and work date.
     const totals=monthlyReportTotals(rows);
     const selectedEmployee=String($("monthlyReportEmployee")?.value||"").trim();
     const isAll=!selectedEmployee;
@@ -10209,19 +10223,16 @@ initMonthlyReportUi();
     c+=monthlyPdfText("F1",8,48,123,isAll?"All figures above are grand totals for all employees in this period.":"All figures above are totals for the selected employee in this period.");
     c+=monthlyPdfText("F1",7.2,34,88,"Generated from finalized Tip Calculation reports.");
 
-    const objects=[];
-    objects[1]="<< /Type /Catalog /Pages 2 0 R >>";
-    objects[2]="<< /Type /Pages /Kids [3 0 R] /Count 1 >>";
-    objects[3]="<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>";
-    objects[4]=`<< /Length ${c.length} >>\nstream\n${c}\nendstream`;
-    objects[5]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>";
-    objects[6]="<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>";
-    let pdf="%PDF-1.4\n";const offsets=[0];
-    for(let i=1;i<=6;i++){offsets[i]=pdf.length;pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;}
-    const xref=pdf.length;pdf+=`xref\n0 7\n0000000000 65535 f \n`;
-    for(let i=1;i<=6;i++)pdf+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
-    pdf+=`trailer\n<< /Size 7 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-    return new Blob([pdf],{type:"application/pdf"});
+    const streams=[c],records=monthlyReportFilteredReports();
+    let detail='',y=0;
+    for(const r of records){const work=fz72ReportWork(r);for(let i=0;i<work.sessions.length;i++){
+      if(y<70){if(detail)streams.push(detail);detail='0.055 0.14 0.25 rg 28 704 556 60 re f\n1 1 1 rg\n'+monthlyPdfText('F2',16,42,738,'WORK HOURS - PERIOD DETAIL')+monthlyPdfText('F1',9,42,718,monthlyReportPeriodLabel())+'0 0 0 rg\n';y=682;}
+      const q=work.sessions[i];
+      detail+=monthlyPdfCellText('F2',10,34,y,544,String(r.employeeDisplayName||r.employee||'Employee')+' | '+String(r.date||'-'),'left');
+      detail+=monthlyPdfCellText('F1',9,34,y-15,544,String(r.position||'-')+' | '+(q.label||r.shift||'-')+' | Clock In: '+(q.start||'Not recorded')+' | Clock Out: '+(q.end||'Not recorded'),'left');
+      detail+=monthlyPdfText('F1',9,34,y-30,i===work.sessions.length-1?'Total Hours: '+work.hoursText:'Total Hours shown after PM session');y-=55;
+    }}if(detail)streams.push(detail);
+    return fz72PdfStreams(streams);
   }
 
   window.downloadMonthlyReportPdf=function(){
@@ -10323,7 +10334,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.71';
+const ES_BUILD='ES1.8.72';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10457,7 +10468,7 @@ function esValidateSales(row,route,complete=false){
 function esHours(row){return row.shift==='DOUBLE'?{hourInAM:row.clockIn,hourOutAM:row.clockOut,hourInPM:row.clockIn2,hourOutPM:row.clockOut2}:{hourIn:row.clockIn,hourOut:row.clockOut};}
 function esBuildBatch(source,rows,date,route){
   const s=esClone(source||{});
-  // ES1.8.71: preserve planned identity when an employee is removed/replaced.
+  // ES1.8.72: preserve planned identity when an employee is removed/replaced.
   s.performanceAssignments ||= {};
   for(const old of (source?.todayTeamAssignments||[])){const key=encodeURIComponent(old.name+'|'+old.role+'|'+old.shift);s.performanceAssignments[key] ||= {...old,date,plannedAt:Date.now()};}
   for(const name of source?.team||[]){const v=source.drafts?.[name]?.values||{};if(v.hShift){const role=v.hPosition||'Server',key=encodeURIComponent(name+'|'+role+'|'+v.hShift);s.performanceAssignments[key] ||= {name,role,shift:v.hShift,date,plannedAt:Date.now()};}}
@@ -13693,10 +13704,13 @@ function hc184PdfReportContent(r,index,total){
   c+=text('F2',18,46,289,'TOTAL PAID OUT',285);
   c+=text('F2',23,565,287,pdfMoney(smallReportPaidOut(r)),215,true);
   c+=text('F1',9.5,32,253,'Tip AM + Tip PM = Total Paid Out. Cash + credit are included in each share.');
-  c+=text('F2',12,32,220,'EMPLOYEE SIGNATURE');
-  c+='0.80 0.86 0.85 RG 0.65 w 32 91 548 115 re S\n0 0 0 RG\n';
-  c+=pdfSignatureCommands(r.pickupSignature,43,101,526,95);
-  if(!smallReportHasPickupSignature(r))c+=text('F1',12,242,143,'PENDING SIGNATURE',190);
+  const work=fz72ReportWork(r);
+  work.sessions.forEach((q,i)=>{c+=text('F1',10,32,234-i*15,(q.label?q.label+' | ':'')+'Clock In: '+(q.start||'Not recorded')+' | Clock Out: '+(q.end||'Not recorded'));});
+  c+=text('F2',11,32,201,'TOTAL HOURS: '+work.hoursText);
+  c+=text('F2',12,32,181,'EMPLOYEE SIGNATURE');
+  c+='0.80 0.86 0.85 RG 0.65 w 32 91 548 77 re S\n0 0 0 RG\n';
+  c+=pdfSignatureCommands(r.pickupSignature,43,101,526,57);
+  if(!smallReportHasPickupSignature(r))c+=text('F1',12,242,127,'PENDING SIGNATURE',190);
   c+=text('F2',10,32,74,smallReportHasPickupSignature(r)?'SIGNED':'NOT SIGNED');
   c+=text('F1',8,32,38,'Generated '+new Date().toLocaleString()+' | '+ES_BUILD+' | Page '+(index+1));
   return c;
@@ -13966,9 +13980,9 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   let detailToken=0,detailRows=[];
   function validDate(s){return /^\d{4}-\d{2}-\d{2}$/.test(String(s||''));}
   function dateList(from,to){if(!validDate(from)||!validDate(to)||from>to)return [];const out=[],d=new Date(from+'T12:00:00'),end=new Date(to+'T12:00:00');while(d<=end&&out.length<=366){out.push(d.toISOString().slice(0,10));d.setDate(d.getDate()+1);}return out;}
-  function norm(raw){const r=typeof reportForWorkPosition==='function'?reportForWorkPosition(raw):raw,b=monthlyReportBusserSplit(r),bar=String(r?.position||'').toLowerCase()==='bartender';return {date:String(r?.date||''),shift:String(r?.shift||'-'),position:String(r?.position||'-'),reports:1,sales:num(r?.grandTotal),paidTip:num(r?.paidTip),cardFee:num(r?.payCardTipFee??r?.cardFee),busserAM:b.am,busserPM:b.pm,barOut:bar?0:num(r?.barTipOut),barReceived:bar?num(r?.bartenderBarTipReceived):0,cashTip:num(r?.cashTip),meal:num(r?.meal),adjustment:num(r?.adjustmentSalaryHourly),beforeMeal:num(r?.totalBeforeMeal),paidOut:monthlyReportPaidOut(r),grandTip:monthlyReportGrandTip(r)};}
+  function norm(raw){const r=typeof reportForWorkPosition==='function'?reportForWorkPosition(raw):raw,b=monthlyReportBusserSplit(r),bar=String(r?.position||'').toLowerCase()==='bartender';return {work:[{...fz72ReportWork(r),position:String(r?.position||'-')}],date:String(r?.date||''),shift:String(r?.shift||'-'),position:String(r?.position||'-'),reports:1,sales:num(r?.grandTotal),paidTip:num(r?.paidTip),cardFee:num(r?.payCardTipFee??r?.cardFee),busserAM:b.am,busserPM:b.pm,barOut:bar?0:num(r?.barTipOut),barReceived:bar?num(r?.bartenderBarTipReceived):0,cashTip:num(r?.cashTip),meal:num(r?.meal),adjustment:num(r?.adjustmentSalaryHourly),beforeMeal:num(r?.totalBeforeMeal),paidOut:monthlyReportPaidOut(r),grandTip:monthlyReportGrandTip(r)};}
   const keys=['sales','paidTip','cardFee','busserAM','busserPM','barOut','barReceived','cashTip','meal','adjustment','beforeMeal','paidOut','grandTip'];
-  function aggregate(rows){const map=new Map();for(const raw of rows){const r=norm(raw);if(!r.date)continue;if(!map.has(r.date)){map.set(r.date,{...r,shifts:new Set([r.shift]),positions:new Set([r.position])});continue;}const x=map.get(r.date);x.reports++;x.shifts.add(r.shift);x.positions.add(r.position);for(const k of keys)x[k]+=r[k];}return [...map.values()].map(x=>{const o={...x,shift:[...x.shifts].filter(Boolean).join(' + ')||'-',position:[...x.positions].filter(Boolean).join(' + ')||'-'};delete o.shifts;delete o.positions;for(const k of keys)o[k]=monthlyReportRound(o[k]);return o;}).sort((a,b)=>a.date.localeCompare(b.date));}
+  function aggregate(rows){const map=new Map();for(const raw of rows){const r=norm(raw);if(!r.date)continue;if(!map.has(r.date)){map.set(r.date,{...r,shifts:new Set([r.shift]),positions:new Set([r.position])});continue;}const x=map.get(r.date);x.work.push(...r.work);x.reports++;x.shifts.add(r.shift);x.positions.add(r.position);for(const k of keys)x[k]+=r[k];}return [...map.values()].map(x=>{const o={...x,shift:[...x.shifts].filter(Boolean).join(' + ')||'-',position:[...x.positions].filter(Boolean).join(' + ')||'-'};delete o.shifts;delete o.positions;for(const k of keys)o[k]=monthlyReportRound(o[k]);return o;}).sort((a,b)=>a.date.localeCompare(b.date));}
   function totals(rows){const t={date:'TOTAL',shift:'',position:'',reports:0};for(const k of keys)t[k]=0;for(const r of rows){t.reports+=r.reports||1;for(const k of keys)t[k]+=num(r[k]);}for(const k of keys)t[k]=monthlyReportRound(t[k]);return t;}
   const rangeCache=new Map();
   function rangeKey(from,to){return from+'|'+to;}
@@ -14029,7 +14043,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   function pdfBlob(rows,employee,from,to){
     const cols=[['Date',52,'date','left'],['Shift',43,'shift','left'],['Position',52,'position','left'],['Sales',48,'sales','right'],['Paid Tip',48,'paidTip','right'],['Card Fee',43,'cardFee','right'],['Bus AM',43,'busserAM','right'],['Bus PM',43,'busserPM','right'],['Bar Out',43,'barOut','right'],['Bar Recv',46,'barReceived','right'],['Cash Tip',45,'cashTip','right'],['Meal',42,'meal','right'],['Adj',42,'adjustment','right'],['Before Meal',52,'beforeMeal','right'],['Paid Out',50,'paidOut','right'],['Grand Tip',50,'grandTip','right']];
     const scale=744/cols.reduce((a,c)=>a+c[1],0);cols.forEach(c=>c[1]*=scale);
-    const per=15,pages=[];for(let i=0;i<rows.length;i+=per)pages.push(rows.slice(i,i+per));if(!pages.length)pages.push([]);
+    const pages=[];let page=[],used=0;for(const r of rows){const height=25+16*(r.work||[]).reduce((n,w)=>n+w.sessions.length,0);if(page.length&&used+height>405){pages.push(page);page=[];used=0;}page.push(r);used+=height;}if(page.length||!pages.length)pages.push(page);
     const t=totals(rows),obj=[],pageIds=[],contentIds=[];let next=3;for(let p=0;p<pages.length;p++){pageIds.push(next++);contentIds.push(next++);}const f1=next++,f2=next++;
     const headerLabels={date:'DATE',shift:'SHIFT',position:'POSITION',sales:'SALES',paidTip:'PAID TIP',cardFee:'CARD FEE',busserAM:'BUS AM',busserPM:'BUS PM',barOut:'BAR OUT',barReceived:'BAR RECV',cashTip:'CASH TIP',meal:'MEAL',adjustment:'ADJ',beforeMeal:'BEFORE MEAL',paidOut:'PAID OUT',grandTip:'GRAND TIP'};
     for(let p=0;p<pages.length;p++){
@@ -14060,6 +14074,13 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
         c+='0.05 0.10 0.16 rg\n';x=24;
         for(const col of cols){let v=r[col[2]];if(typeof v==='number')v=money(v);const txt=fit(v,col[1],5.85),approx=txt.length*5.85*.5,tx=col[3]==='right'?Math.max(x+2,x+col[1]-3-approx):x+2;c+=pText('F1',5.85,tx,y-11,txt);x+=col[1];}
         y-=h;
+        for(const work of r.work||[]){
+          for(let si=0;si<work.sessions.length;si++){
+            const q=work.sessions[si],label=work.position+' | '+(q.label||r.shift)+' | Clock In: '+(q.start||'Not recorded')+' | Clock Out: '+(q.end||'Not recorded')+(si===work.sessions.length-1?' | Total Hours: '+work.hoursText:'');
+            c+='0.95 0.98 1 rg 24 '+(y-12)+' 744 16 re f\n0.10 0.22 0.34 rg\n';
+            c+=pText('F1',8,30,y-7,fit(label,732,8));y-=16;
+          }
+        }
       });
       if(p===pages.length-1){
         x=24;c+='0.82 0.90 0.97 rg 24 '+(y-h+4)+' 744 '+h+' re f\n0.04 0.12 0.22 rg\n';
@@ -14222,7 +14243,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.71 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.72 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14273,7 +14294,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
   // Daily PDF: add compact wage lines without changing existing payout math/layout.
   const pdfContent=pdfReportContent;
-  pdfReportContent=function(r,index,total){let c=pdfContent(r,index,total);if(!['manager','owner'].includes(currentProfile?.role||''))return c;const hours=reportHours(r),rate=hourlyRate(r),pay=hourlyPay(r);if(rate!==null&&pay!==null){c+=`BT /F2 8.5 Tf 28 120 Td (${pdfEscape('Total Hours: '+hours.toFixed(2)+' | Hourly Rate: '+fmtMoney(rate)+'/hr')}) Tj ET\n`;c+=`BT /F2 8.5 Tf 28 107 Td (${pdfEscape('Hourly Pay: '+fmtMoney(pay)+' (report only)')}) Tj ET\n`;}return c;};
+  pdfReportContent=function(r,index,total){let c=pdfContent(r,index,total);if(!['manager','owner'].includes(currentProfile?.role||''))return c;const hours=reportHours(r),rate=hourlyRate(r),pay=hourlyPay(r);if(rate!==null&&pay!==null){const host=es16ExportIsHost(r),bar=String(r.position||'').toLowerCase()==='bartender';c+=`BT /F2 8.5 Tf 28 ${host?60:bar?68:120} Td (${pdfEscape('Total Hours: '+fz72ReportWork(r).hoursText+' | Hourly Rate: '+fmtMoney(rate)+'/hr')}) Tj ET\n`;c+=`BT /F2 8.5 Tf 28 ${host?47:bar?55:107} Td (${pdfEscape('Hourly Pay: '+fmtMoney(pay)+' (report only)')}) Tj ET\n`;}return c;};
 
 
   // Daily printable HTML gets wage columns.
@@ -14285,7 +14306,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.71: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.72: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14323,7 +14344,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.71: output destinations; report calculations are untouched. */
+/* ES1.8.72: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14410,7 +14431,7 @@ function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
 
-/* ES1.8.71 — all active team editing lives inside Employee Sheet. */
+/* ES1.8.72 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
   window.es41Team={get:()=>state,add:()=>{start();if(!state||state.busy||!current(state))return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();},apply:()=>apply(),reload:()=>{start();if(state&&!state.busy)void load(state);},edit:(i,k,v)=>{const r=state?.rows[i];if(!r||state.busy)return;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';state.dirty=true;persist(state);paint();},remove:i=>{if(!state||state.busy)return;state.rows.splice(i,1);state.dirty=true;persist(state);paint();}};
@@ -14509,7 +14530,7 @@ function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
 }
 
-/* ES1.8.71 — retired Employee Table routes redirect to Employee Sheet. */
+/* ES1.8.72 — retired Employee Table routes redirect to Employee Sheet. */
 (function retireEmployeeTable39(){
   window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
   window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
@@ -14521,7 +14542,7 @@ function es38MergeUnverified(remote,edited){
   for(const key of ['fzOpenRoleHome','fzOpenManagerTools']){const fn=window[key];if(typeof fn==='function')window[key]=function(...args){const out=fn.apply(this,args);remove();return out;};}
 })();
 
-/* ES1.8.71 — assignment controls are embedded in the employee rows. */
+/* ES1.8.72 — assignment controls are embedded in the employee rows. */
 window.es41Install=function(){
   const panel=$('es38Team');if(!panel)return;
   const details=panel.querySelector('details');details.hidden=true;
@@ -14654,7 +14675,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.71 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
+/* ES1.8.72 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
 (function teamPerformance64(){
  const MAX={attendance:70,sidework:25,guest:5},ROLES=['Server','Bartender','Cashier/Host'];
  const normalizeRole=r=>r==='Bartender'?'Bartender':['Host','Cashier','Host / Cashier','Cashier/Host'].includes(r)?'Cashier/Host':'Server';
@@ -14759,7 +14780,7 @@ function es43ValidateContacts(payload){
  async function undoAudit(id){if(!owner())throw new Error('Owner only');const a=audits.find(x=>x.id===id);if(!a)return;const reason=prompt(t('Reason for undo:','Alasan undo:'));if(!reason?.trim())return;const split=a.target.indexOf('/'),col=a.target.slice(0,split),key=a.target.slice(split+1);if(!collectionNames.includes(col)||col==='serverAccountabilityAudit')throw new Error('Unsupported target');await mutate(col,key,'UNDO '+a.action,reason,before=>{const clean=x=>JSON.stringify(x,(k,v)=>['revision','updatedMs','auditId'].includes(k)?undefined:v);if(clean(before)!==clean(a.after))throw new Error(t('Newer changes exist. Undo the latest change first.','Ada perubahan lebih baru. Undo perubahan terakhir dahulu.'));if(a.before){const restored={...a.before};if(col==='serverAccountability')restored.revision=Number(before.revision||0)+1;else restored.updatedMs=Date.now();return restored;}if(a.action==='DELETE PERFORMANCE ENTRY')return {...before,voided:false,deletedAssignment:false,voidReason:'',updatedMs:Date.now()};if(col==='serverAccountability')return {...defaults(),active:false,revision:Number(before?.revision||0)+1};return {...before,voided:true,undoCreation:true,updatedMs:Date.now(),voidReason:reason};});}
  function paintWeeklyCards(){if(!$a('WeeklyCards'))return;const filter=roleFilter(),threshold=config.bands.find(b=>b.code==='good')?.min??90;const cards=allNames().map(n=>summaryFor(n,filter)).filter(s=>!filter||s.rows.length||targets.some(r=>r.employee===s.employee&&r.role===filter));$a('WeeklyGrid').hidden=weeklyDetail;$a('WeeklyDetail').hidden=!weeklyDetail;$a('WeeklyThreshold').textContent=t(`Red: score below ${threshold}. Unreviewed data is not scored as zero.`,`Merah: skor di bawah ${threshold}. Data belum dinilai tidak dianggap nol.`);$a('WeeklyCards').innerHTML=cards.map(s=>{const action=recommend(s,config),red=s.total!==null&&(s.total<threshold||s.critical),roles=filter||[...new Set(s.rows.map(r=>r.role))].join(' / ')||normalizeRole(tt15DirectoryEntries().find(r=>r.name===s.employee)?.defaultRole);return `<button type="button" class="a50-weekly-card ${red?'a50-red':s.total===null?'a50-empty':'a50-good'}" data-weekly-person="${escape(s.employee)}"><b>${escape(tt15Label(s.employee))}</b><span>${escape(roles)}</span><strong>${fmt(s.total)} / 100</strong><span>${t('Reviewed','Direview')} ${s.reviewed}/${s.expected??'?'}</span><small>${escape(actionText(action.code))}</small><small>${t('Open recap & PDF','Buka recap & PDF')}</small></button>`;}).join('')||`<p>${t('No employees in this filter.','Tidak ada karyawan di filter ini.')}</p>`;}
  function milestones(n){const history=reviews.filter(r=>r.employee===n&&r.reviewed&&!r.voided&&r.date<=todayLocal());if(!history.length)return t('30/60/90-day rewards: insufficient history.','Reward 30/60/90 hari: riwayat belum cukup.');const result=[];for(const days of [30,60,90]){const start=date(day(todayLocal())-days+1),windowRows=history.filter(r=>r.date>=start),all=reviews.filter(r=>r.employee===n&&!r.voided&&r.date>=start&&r.date<=todayLocal()),covered=history.some(r=>r.date<=start)&&all.length>0&&all.every(r=>r.reviewed)&&windowRows.every(r=>!r.items.some(i=>i.status==='PENDING'));const reliable=windowRows.every(r=>!r.items.some(i=>i.category==='attendance'&&i.status==='APPLIED'&&i.points<0));const eligible=windowRows.filter(r=>!r.scoreExcluded),strong=eligible.length>0&&eligible.reduce((s,r)=>s+r.score.total,0)/eligible.length>=95&&eligible.reduce((s,r)=>s+r.score.attendance,0)/eligible.length>=68;result.push(days+' '+t('days','hari')+': '+(covered&&reliable&&(days!==90||strong)?t('reward candidate - verify full schedule history','kandidat reward - cek kelengkapan riwayat jadwal'):t('not yet verified / not eligible','belum terverifikasi / belum memenuhi')));}return result.join(' | ');}
- function performancePdf(all){const ns=all?allNames():[person()].filter(Boolean);if(!ns.length)throw new Error(t('Choose employee.','Pilih karyawan.'));const w=currentWeek(),lines=[];for(const n of ns){const scopeRole=all?'':roleFilter(),s=summaryFor(n,scopeRole),r=recommend(s,config);if(lines.length)lines.push('__PAGE__');lines.push('Fred Zhang Tip Calculator',t('TEAM PERFORMANCE','PENILAIAN KARYAWAN'),tt15Label(n)+' | '+(scopeRole||'All roles'),w.start+' - '+w.end,`${cat('attendance')}: ${fmt(s.attendance)}/70 | Sidework: ${fmt(s.sidework)}/25 | ${cat('guest')}: ${fmt(s.guest)}/5`,`${t('Weekly average','Rata-rata mingguan')}: ${fmt(s.total)}/100 | ${t('Reviewed / scheduled','Dinilai / terjadwal')}: ${s.reviewed}/${s.expected??'?'}`,actionText(r.code),reasonText(r.reason,s),milestones(n));for(const row of s.rows.sort((a,b)=>a.date.localeCompare(b.date))){lines.push(`${row.date} | ${row.role} | ${row.shift} | ${row.voided?'VOID':row.reviewed?fmt(row.score.total)+'/100':t('NOT REVIEWED','BELUM DINILAI')}`,`${t('Attendance','Kehadiran')}: ${row.attendance||row.sheetSource?.attendance||'-'} | ${row.protectedStatus||row.sheetSource?.protectedStatus||'-'}`,`${t('Clocks','Jam')}: ${row.actual||row.sheetSource?.actual||'-'} - ${row.clockOut||row.sheetSource?.clockOut||'-'}${row.clockIn2?' | '+row.clockIn2+' - '+row.clockOut2:''}`);for(const i of row.items||[])lines.push(`${nameOf(i)}: ${i.points>0?'+':''}${i.points} (${i.status})`);if(row.notes)lines.push(row.notes);}lines.push(' ');}const blob=textPdf(lines);const filename='Team_Performance_'+(all?'All_Staff':person().replace(/[^a-z0-9]/gi,'_'))+'_'+w.start+'.pdf';if(window.FZReceiptAndroid?.savePdf){const reader=new FileReader();reader.onload=()=>window.FZReceiptAndroid.savePdf(filename,String(reader.result).split(',')[1]);reader.readAsDataURL(blob);}else downloadBlob(blob,filename);}
+ function performancePdf(all){const ns=all?allNames():[person()].filter(Boolean);if(!ns.length)throw new Error(t('Choose employee.','Pilih karyawan.'));const w=currentWeek(),lines=[];for(const n of ns){const scopeRole=all?'':roleFilter(),s=summaryFor(n,scopeRole),r=recommend(s,config);if(lines.length)lines.push('__PAGE__');lines.push('Fred Zhang Tip Calculator',t('TEAM PERFORMANCE','PENILAIAN KARYAWAN'),tt15Label(n)+' | '+(scopeRole||'All roles'),w.start+' - '+w.end,`${cat('attendance')}: ${fmt(s.attendance)}/70 | Sidework: ${fmt(s.sidework)}/25 | ${cat('guest')}: ${fmt(s.guest)}/5`,`${t('Weekly average','Rata-rata mingguan')}: ${fmt(s.total)}/100 | ${t('Reviewed / scheduled','Dinilai / terjadwal')}: ${s.reviewed}/${s.expected??'?'}`,actionText(r.code),reasonText(r.reason,s),milestones(n));for(const row of s.rows.sort((a,b)=>a.date.localeCompare(b.date))){lines.push(`${row.date} | ${row.role} | ${row.shift} | ${row.voided?'VOID':row.reviewed?fmt(row.score.total)+'/100':t('NOT REVIEWED','BELUM DINILAI')}`,`${t('Attendance','Kehadiran')}: ${row.attendance||row.sheetSource?.attendance||'-'} | ${row.protectedStatus||row.sheetSource?.protectedStatus||'-'}`,`${fz72ReportWork(row).text} | Total Hours: ${fz72ReportWork(row).hoursText}`);for(const i of row.items||[])lines.push(`${nameOf(i)}: ${i.points>0?'+':''}${i.points} (${i.status})`);if(row.notes)lines.push(row.notes);}lines.push(' ');}const blob=textPdf(lines);const filename='Team_Performance_'+(all?'All_Staff':person().replace(/[^a-z0-9]/gi,'_'))+'_'+w.start+'.pdf';if(window.FZReceiptAndroid?.savePdf){const reader=new FileReader();reader.onload=()=>window.FZReceiptAndroid.savePdf(filename,String(reader.result).split(',')[1]);reader.readAsDataURL(blob);}else downloadBlob(blob,filename);}
  function textPdf(lines){const wrap=[];for(const line of lines){if(line==='__PAGE__'){wrap.push('__PAGE__');continue;}const ascii=String(line??'').replace(/[–—→]/g,'-').replace(/[^\x20-\x7e]/g,'');let rest=ascii;while(rest.length>88){let end=rest.lastIndexOf(' ',88);if(end<20)end=88;wrap.push(rest.slice(0,end));rest=rest.slice(end).trimStart();}wrap.push(rest);}const pages=[];let current=[];for(const line of wrap){if(line==='__PAGE__'){if(current.length)pages.push(current);current=[];continue;}if(current.length===43){pages.push(current);current=[];}current.push(line);}if(current.length)pages.push(current);const objects=['','<< /Type /Catalog /Pages 2 0 R >>',''],kids=[];for(const [i,lines]of pages.entries()){const page=objects.length;const stream='0.06 0.14 0.25 rg 0 722 612 70 re f\n'+lines.map((l,j)=>`${j===0?'1 1 1':'0.08 0.18 0.25'} rg BT /F1 ${j===0?16:10} Tf 36 ${j===0?750:710-(j-1)*15} Td (${l.replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)')}) Tj ET`).join('\n')+`\n0.08 0.18 0.25 rg BT /F1 9 Tf 36 28 Td (Fred Zhang | ${i+1}/${pages.length}) Tj ET`;kids.push(page+' 0 R');objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 FONT 0 R >> >> /Contents ${page+1} 0 R >>`,`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);}const font=objects.length;objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');objects[2]=`<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${pages.length} >>`;let pdf='%PDF-1.4\n',offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=pdf.length;pdf+=`${i} 0 obj\n${objects[i].replace('FONT',font)}\nendobj\n`;}const xref=pdf.length;pdf+=`xref\n0 ${objects.length}\n0000000000 65535 f \n`+offsets.slice(1).map(n=>String(n).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;return new Blob([pdf],{type:'application/pdf'});}
  window.fz48TextPdf=textPdf;
 
@@ -14805,7 +14826,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.71: explicit attendance metadata, isolated from all tip arithmetic. */
+/* ES1.8.72: explicit attendance metadata, isolated from all tip arithmetic. */
 (function sheetAttendance54(){
  if(!window.es41PaintRows)return;
  const labels={normal:'Present / Hadir',callout:'Call Out',noshow:'No Show',ncns:'No Call No Show',swap:'Approved replacement / Pengganti disetujui',absence:'Approved / protected absence'};
@@ -14843,7 +14864,7 @@ function es43ValidateContacts(payload){
  if(typeof esUpdateComputed==='function'){const update=esUpdateComputed;esUpdateComputed=function(...args){const out=update.apply(this,args);window.es41PaintRows();return out;};}
 })();
 
-/* ES1.8.71: directory modal independent of retired team-page styling. */
+/* ES1.8.72: directory modal independent of retired team-page styling. */
 window.es59ManageEmployee=function(){
  if(!esAllowed())return;tt15Init();const panel=$('tt15DirectoryPanel');if(!panel){esStatus('Manage Employee could not open. Reopen Employee Sheet.');return;}
  document.body.appendChild(panel);panel.hidden=false;panel.classList.remove('hidden');panel.style.zIndex='2147483002';
@@ -14856,7 +14877,7 @@ window.es59ManageEmployee=function(){
  busy=true;try{const payload=JSON.parse(window.FZReceiptAndroid.contacts());await es43ImportContacts(payload,true);done=true;esStatus('Employee phone/email contacts synced to shared database.');}catch(e){console.warn('Private contact sync retry available',e.message);}finally{busy=false;}
 }const init=esInit;esInit=function(...a){const out=init(...a);void sync();return out;};})();
 
-/* ES1.8.71: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
+/* ES1.8.72: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
 (function(){if(typeof document==='undefined'||!document.addEventListener)return;let applying=false;
  document.addEventListener('click',async e=>{
   const b=e.target.closest?.('[data-es-action],[data-hc15-action],[data-es64-pending-action]'),team=window.es41Team?.get();
@@ -14878,3 +14899,11 @@ window.es59ManageEmployee=function(){
 function es62SavedAttendance(row){for(const [key,data] of Object.entries(esSession?.rawBase?.employeeAttendance54||{})){try{const [name,role,shift]=decodeURIComponent(key).split('|');if(tt15CanonicalName(name)===tt15CanonicalName(row.name)&&role===row.role&&shift===row.shift)return data;}catch(e){}}return null;}
 
 function es63DeferRender(render){const active=document.activeElement;if(!active?.matches?.('select[data-es41-control]')||!active.isConnected)return false;active.es63Deferred ||= new Set();if(!active.es63Deferred.has(render)){active.es63Deferred.add(render);active.addEventListener('blur',()=>{active.es63Deferred.delete(render);setTimeout(render,0);},{once:true});}return true;}
+
+function fz72PdfStreams(streams){
+  const objects=[],f1=3+streams.length*2,f2=f1+1;
+  objects[1]='<< /Type /Catalog /Pages 2 0 R >>';objects[2]=`<< /Type /Pages /Kids [${streams.map((_,i)=>(3+i*2)+' 0 R').join(' ')}] /Count ${streams.length} >>`;
+  streams.forEach((c,i)=>{objects[3+i*2]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${4+i*2} 0 R >>`;objects[4+i*2]=`<< /Length ${c.length} >>\nstream\n${c}\nendstream`;});
+  objects[f1]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';objects[f2]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>';
+  let pdf='%PDF-1.4\n',off=[0];for(let i=1;i<=f2;i++){off[i]=pdf.length;pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;}const xr=pdf.length;pdf+=`xref\n0 ${f2+1}\n0000000000 65535 f \n`;for(let i=1;i<=f2;i++)pdf+=String(off[i]).padStart(10,'0')+' 00000 n \n';pdf+=`trailer\n<< /Size ${f2+1} /Root 1 0 R >>\nstartxref\n${xr}\n%%EOF`;return new Blob([pdf],{type:'application/pdf'});
+}
