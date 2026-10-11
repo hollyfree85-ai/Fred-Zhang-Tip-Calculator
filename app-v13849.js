@@ -3901,7 +3901,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18730",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18740",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -5805,7 +5805,7 @@ function pdfSignatureCommands(signature,x,y,w,h){
   return c;
 }
 
-// ES1.8.73: report display only. Never modifies saved hours, wages or tip math.
+// ES1.8.74: report display only. Never modifies saved hours, wages or tip math.
 function fz72ReportWork(r={}){
   const h=r.hours||{},pick=(...v)=>v.find(x=>x!==null&&x!==undefined&&String(x).trim()!=='')??'';
   const split=String(r.shift||'').toUpperCase()==='DOUBLE'||!!pick(r.hourInAM,h.hourInAM,r.hourInPM,h.hourInPM,r.hourOutAM,h.hourOutAM,r.hourOutPM,h.hourOutPM,r.clockIn2,r.clockOut2,r.sheetSource?.clockIn2,r.sheetSource?.clockOut2);
@@ -10334,7 +10334,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.73';
+const ES_BUILD='ES1.8.74';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10468,7 +10468,7 @@ function esValidateSales(row,route,complete=false){
 function esHours(row){return row.shift==='DOUBLE'?{hourInAM:row.clockIn,hourOutAM:row.clockOut,hourInPM:row.clockIn2,hourOutPM:row.clockOut2}:{hourIn:row.clockIn,hourOut:row.clockOut};}
 function esBuildBatch(source,rows,date,route){
   const s=esClone(source||{});
-  // ES1.8.73: preserve planned identity when an employee is removed/replaced.
+  // ES1.8.74: preserve planned identity when an employee is removed/replaced.
   s.performanceAssignments ||= {};
   for(const old of (source?.todayTeamAssignments||[])){const key=encodeURIComponent(old.name+'|'+old.role+'|'+old.shift);s.performanceAssignments[key] ||= {...old,date,plannedAt:Date.now()};}
   for(const name of source?.team||[]){const v=source.drafts?.[name]?.values||{};if(v.hShift){const role=v.hPosition||'Server',key=encodeURIComponent(name+'|'+role+'|'+v.hShift);s.performanceAssignments[key] ||= {name,role,shift:v.hShift,date,plannedAt:Date.now()};}}
@@ -12158,8 +12158,21 @@ function tt15DirectoryStart(){
     tt15DirectoryPaint();tt15PaintNames();hc15UpdateValues();if(tt15State?.open&&!tt15State.editing)tt15Render();
   },e=>{tt15Directory.ready=false;tt15Message('Employee list could not sync: '+(e.message||e),true);tt15DirectoryPaint();});
 }
-// ES1.8.73: Host pool eligibility belongs to the Host role assignment only.
+// ES1.8.74: Host pool eligibility belongs to the Host role assignment only.
 // A Server/Bartender shift for the same person never grants a Host pool share.
+// ES1.8.74: one assignment source for Host display, membership and payout.
+function hc74AssignmentData(data={},preview=false){
+  if(data.__hc74Preview||data.__hc74Committed)return data;
+  let source=data;
+  const batch=typeof esSession!=='undefined'?esSession:null;
+  const sameDate=batch?.date===data.date;
+  const live=sameDate&&batch?.cloudReady&&Array.isArray(batch.rawBase?.todayTeamAssignments);
+  // The hourly batch owns the complete role list. Ignore an older Host mirror.
+  if(live&&Number(batch.rawBase.todayTeamRevision||0)>=Number(data.todayTeamRevision||0))source={...data,todayTeamAssignments:batch.rawBase.todayTeamAssignments};
+  const team=preview?window.es41Team?.get():null;
+  if(team?.dirty&&sameDate&&team.date===data.date&&team.uid===batch.uid&&!team.busy){source={...source,todayTeamAssignments:team.rows.filter(r=>String(r.name||'').trim())};Object.defineProperty(source,'__hc74Preview',{value:true});}
+  return source;
+}
 function hc73PoolMembership(data={}){
   const explicit=Array.isArray(data.todayTeamAssignments)?data.todayTeamAssignments:null;
   if(explicit){const m=tt15HostMembership(explicit.map(r=>({...r,name:tt15CanonicalName(r.name)})));return {am:[...new Set(m.am)],pm:[...new Set(m.pm)]};}
@@ -12195,7 +12208,7 @@ function tt15TeamRows(batch={},host={}){
     const originalPM=['PM','DOUBLE','LONG'].includes(original);
     const preserveOriginal=['AM','PM','DOUBLE','LONG',SHIFT_EARLY,SHIFT_MIDDLE].includes(original)&&am.has(name)===originalAM&&pm.has(name)===originalPM;
     const shift=preserveOriginal?original:(am.has(name)&&pm.has(name)?'DOUBLE':am.has(name)?'AM':'PM');
-    const role=host.staffDetails?.[name]?.role||host.team?.[name]?.position||'Host / Cashier';
+    const role=host.todayTeamAssignments?.find(r=>tt15Host(r.role)&&tt15CanonicalName(r.name)===name)?.role||host.staffDetails?.[name]?.role||host.team?.[name]?.position||'Host / Cashier';
     rows.push({name,role:tt15Host(role)?role:'Host / Cashier',shift});
   }
   return rows;
@@ -12472,15 +12485,15 @@ function tt15PaintNames(){
 /* Host/Cashier: independent draft/pool document, separate from BAR/Busser. */
 function hc15Math(data){
   const math=window.FZHostCashierMath;if(!math)throw new Error('Host / Cashier calculator is still loading. Please retry shortly.');
-  return math.calculate(hc73PoolData(data));
+  return math.calculate(hc73PoolData(hc74AssignmentData(data)));
 }
-function hc15Member(data,name){return tt15TeamRows({},data).find(r=>r.name===name)||null;}
+function hc15Member(data,name){return tt15TeamRows({},hc74AssignmentData(data)).find(r=>r.name===name)||null;}
 function hc15Field(name,field){return JSON.stringify([name||'',field]);}
 function hc15Get(data,key){const [name,field]=JSON.parse(key);return name?String(data.staffDetails?.[name]?.[field]??''):field.startsWith('creditAccounts')?(data[field]||[]):String(data[field]??0);}
 function hc15Put(data,key,value){const [name,field]=JSON.parse(key);if(name){data.staffDetails ||= {};data.staffDetails[name] ||= {};data.staffDetails[name][field]=value;}else{data[field]=field.startsWith('creditAccounts')?tt15Copy(value):(es14MoneyValid(value)?Number(value)||0:String(value));if(field==='creditAM'||field==='creditPM')data['creditAccounts'+field.slice(-2)]=[{label:'Sheet total',amount:Number(value)||0}];}}
 function hc15Equal(key,a,b){const [name,field]=JSON.parse(key);return name?String(a??'')===String(b??''):field.startsWith('creditAccounts')?tt15Same(a,b):es14MoneyText(a)===es14MoneyText(b);}
 function hc15Valid(key,value){const [name,field]=JSON.parse(key);if(name)return value===''||/^([01]\d|2[0-3]):[0-5]\d$/.test(value);if(field.startsWith('creditAccounts'))return Array.isArray(value)&&value.length<=50&&value.every(r=>es14MoneyValid(r.amount)&&String(r.label||'').length<=80);return es14MoneyValid(value);}
-function hc15View(s=hc15Session){const data=tt15Copy(s?.data||{});for(const [key,e]of Object.entries(s?.edits||{}))hc15Put(data,key,e.local);return data;}
+function hc15View(s=hc15Session){const data=tt15Copy(s?.data||{});for(const [key,e]of Object.entries(s?.edits||{}))hc15Put(data,key,e.local);return hc74AssignmentData(data,true);}
 function hc15LocalKey(s){return 'fz_hc15_draft_'+s.uid+'_'+s.date;}
 function hc15KeepLocal(s=hc15Session){if(!s)return false;try{if(Object.keys(s.edits).length||Object.keys(s.draftSaves||{}).length)localStorage.setItem(hc15LocalKey(s),JSON.stringify({data:s.data,edits:s.edits,draftSaves:s.draftSaves||{},savedAt:Date.now()}));else localStorage.removeItem(hc15LocalKey(s));return true;}catch(e){return false;}}
 function hc15Accept(s,data,verified=true){
@@ -12671,15 +12684,18 @@ async function hc15Commit(name,signature=null,expected=''){
   // Legacy clock drafts remain stored, but no longer block a tip report.
   const reportRef=doc(db,'hourlyReports','hc15-'+s.date+'-'+tt15Key(name)),ref=doc(db,'hostCashierTipReports',s.date);
   const out=await runTransaction(db,async tx=>{
-    const hs=await tx.get(ref),rs=await tx.get(reportRef);tt15Require(s.uid);
+    const hs=await tx.get(ref),rs=await tx.get(reportRef),bs=await tx.get(doc(db,'hourlyV1Batches',s.date));tt15Require(s.uid);
     if(!hs.exists())throw new Error('Set this date’s Host / Cashier team first.');
-    const data=hs.data(),before=rs.exists()?rs.data():null,r=hc15Report(data,name);
+    let data=hs.data();const batch=bs.exists()?bs.data():{};
+    if(Array.isArray(batch.todayTeamAssignments)&&Number(batch.todayTeamRevision||0)>=Number(data.todayTeamRevision||0))data={...data,todayTeamAssignments:batch.todayTeamAssignments,todayTeamRevision:Number(batch.todayTeamRevision||0)};
+    Object.defineProperty(data,'__hc74Committed',{value:true});
+    const before=rs.exists()?rs.data():null,r=hc15Report(data,name);
     if(before&&(!tt15IsHostReport(before)||!hourlyReportBelongsTo(before,name,s.date)))throw new Error('Report identity mismatch. No data was replaced.');
     const fp=hc15Fingerprint(r);
     if(signature&&fp!==expected)throw new Error('Amounts or team changed while signing. Cancel, review the updated row, then sign again. Your signature remains visible.');
     const same=hc184SameFingerprint(before?.hostCashierFingerprint,fp),sig=signature||(same?before?.pickupSignature:null);
     const report={...r,hostCashierFingerprint:fp,pickupSignature:sig||null,signatureStatus:sig?'SIGNED':'PENDING',status:'money_ready',employeeSheetBuild:ES_BUILD,employeeKey:fzEmployeeIdentityKey(employeeWorkProfile(name)?.personName||name),reportIdentityVersion:'13.8.28',updatedAt:serverTimestamp(),updatedBy:currentProfile?.displayName||currentProfile?.username||''};
-    const next=tt15Copy(hc73PoolData(data));next.sheetFinalized ||= {};next.sheetFinalized[tt15Key(name)]={id:reportRef.id,fingerprint:fp,signed:!!sig};next.signatures ||= {AM:{},PM:{}};
+    const next=tt15Copy(hc73PoolData(hc74AssignmentData(data)));next.sheetFinalized ||= {};next.sheetFinalized[tt15Key(name)]={id:reportRef.id,fingerprint:fp,signed:!!sig};next.signatures ||= {AM:{},PM:{}};
     for(const cp of ['AM','PM']){
       next.signatures[cp] ||= {};const amount=r['hostCashierTip'+cp],active=(next['employees'+cp]||[]).includes(name);
       if(signature&&active)next.signatures[cp][name]={...signature,amount,date:s.date,signedAt:signature.signedAtLocal};
@@ -14260,7 +14276,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.73 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
+/* ES1.8.74 — Manager/Owner Daily-only hourly pay + Sign-only incomplete Process workflow.
  * Hourly wage is DISPLAYED ONLY in Manager/Owner Daily Report. It is hidden from Monthly and employee-facing views.
  * REPORT ONLY hourly wage rates. These DO NOT alter tip formulas, Hourly Adjustment,
  * Total Paid Out, BAR, Busser, Host/Cashier pool math, or payroll transactions.
@@ -14323,7 +14339,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     return html;
   };
 
-  // ES1.8.73: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
+  // ES1.8.74: Hourly Pay is intentionally NOT exposed in Monthly / Period Report.
 
   // Incomplete-row review/process helpers.
   function problems(name){const s=esSession,row=s?.rows?.find(r=>r.name===name);return row?esValidateSales(row,s.routing,true):['Employee row not found.'];}
@@ -14361,7 +14377,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 })();
 
 
-/* ES1.8.73: output destinations; report calculations are untouched. */
+/* ES1.8.74: output destinations; report calculations are untouched. */
 function es35PhoneNumber(raw){
   const value=String(raw||'').trim();
   if(!/^\+?[\d\s().-]+$/.test(value))throw new Error('Enter country code and phone number, e.g. +12565551234.');
@@ -14448,7 +14464,7 @@ function es36StoredPhone(raw){
   try{return '+'+es35PhoneNumber(raw);}catch(e){return '';}
 }
 
-/* ES1.8.73 — all active team editing lives inside Employee Sheet. */
+/* ES1.8.74 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
   window.es41Team={get:()=>state,add:()=>{start();if(!state||state.busy||!current(state))return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();},apply:()=>apply(),reload:()=>{start();if(state&&!state.busy)void load(state);},edit:(i,k,v)=>{const r=state?.rows[i];if(!r||state.busy)return;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';state.dirty=true;persist(state);paint();},remove:i=>{if(!state||state.busy)return;state.rows.splice(i,1);state.dirty=true;persist(state);paint();}};
@@ -14466,6 +14482,7 @@ function es36StoredPhone(raw){
       return `<div class="es38-row"><label>Employee<select data-i="${i}" data-k="name"${s.busy?' disabled':''}>${esOption('','Select employee',r.name)}${options.map(e=>esOption(e.name,e.displayName,r.name)).join('')}</select></label><label>Position<select data-i="${i}" data-k="role"${s.busy?' disabled':''}>${TT15_ROLES.map(x=>esOption(x,x,r.role)).join('')}</select></label><label>Shift<select data-i="${i}" data-k="shift"${s.busy?' disabled':''}>${esOption('','Select shift',r.shift)}${(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>esOption(x,x==='DOUBLE'?'Double':x==='LONG'?'Long':x,r.shift)).join('')}</select></label><button type="button" data-remove="${i}"${s.busy?' disabled':''}>Remove</button></div>`;
     }).join('')||'<p>Add an employee here. Existing sales and reports are kept.</p>';
     window.es41PaintRows?.();
+    if(typeof hc15UpdateValues==='function')hc15UpdateValues();
   }
   async function readDoc(col,date,s){
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),9000);
@@ -14547,7 +14564,7 @@ function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
 }
 
-/* ES1.8.73 — retired Employee Table routes redirect to Employee Sheet. */
+/* ES1.8.74 — retired Employee Table routes redirect to Employee Sheet. */
 (function retireEmployeeTable39(){
   window.ownerTableOpen=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
   window.ownerTableDateChanged=function(){return window.employeeSheetOpen(esSession?.date||todayLocal());};
@@ -14559,7 +14576,7 @@ function es38MergeUnverified(remote,edited){
   for(const key of ['fzOpenRoleHome','fzOpenManagerTools']){const fn=window[key];if(typeof fn==='function')window[key]=function(...args){const out=fn.apply(this,args);remove();return out;};}
 })();
 
-/* ES1.8.73 — assignment controls are embedded in the employee rows. */
+/* ES1.8.74 — assignment controls are embedded in the employee rows. */
 window.es41Install=function(){
   const panel=$('es38Team');if(!panel)return;
   const details=panel.querySelector('details');details.hidden=true;
@@ -14692,7 +14709,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.73 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
+/* ES1.8.74 Team Performance: daily evidence + Friday–Thursday recap. Tip math untouched. */
 (function teamPerformance64(){
  const MAX={attendance:70,sidework:25,guest:5},ROLES=['Server','Bartender','Cashier/Host'];
  const normalizeRole=r=>r==='Bartender'?'Bartender':['Host','Cashier','Host / Cashier','Cashier/Host'].includes(r)?'Cashier/Host':'Server';
@@ -14843,7 +14860,7 @@ function es43ValidateContacts(payload){
 })();
 
 
-/* ES1.8.73: explicit attendance metadata, isolated from all tip arithmetic. */
+/* ES1.8.74: explicit attendance metadata, isolated from all tip arithmetic. */
 (function sheetAttendance54(){
  if(!window.es41PaintRows)return;
  const labels={normal:'Present / Hadir',callout:'Call Out',noshow:'No Show',ncns:'No Call No Show',swap:'Approved replacement / Pengganti disetujui',absence:'Approved / protected absence'};
@@ -14881,7 +14898,7 @@ function es43ValidateContacts(payload){
  if(typeof esUpdateComputed==='function'){const update=esUpdateComputed;esUpdateComputed=function(...args){const out=update.apply(this,args);window.es41PaintRows();return out;};}
 })();
 
-/* ES1.8.73: directory modal independent of retired team-page styling. */
+/* ES1.8.74: directory modal independent of retired team-page styling. */
 window.es59ManageEmployee=function(){
  if(!esAllowed())return;tt15Init();const panel=$('tt15DirectoryPanel');if(!panel){esStatus('Manage Employee could not open. Reopen Employee Sheet.');return;}
  document.body.appendChild(panel);panel.hidden=false;panel.classList.remove('hidden');panel.style.zIndex='2147483002';
@@ -14894,7 +14911,7 @@ window.es59ManageEmployee=function(){
  busy=true;try{const payload=JSON.parse(window.FZReceiptAndroid.contacts());await es43ImportContacts(payload,true);done=true;esStatus('Employee phone/email contacts synced to shared database.');}catch(e){console.warn('Private contact sync retry available',e.message);}finally{busy=false;}
 }const init=esInit;esInit=function(...a){const out=init(...a);void sync();return out;};})();
 
-/* ES1.8.73: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
+/* ES1.8.74: Save/Sign/Print apply assignment drafts first, preserving the viewport. */
 (function(){if(typeof document==='undefined'||!document.addEventListener)return;let applying=false;
  document.addEventListener('click',async e=>{
   const b=e.target.closest?.('[data-es-action],[data-hc15-action],[data-es64-pending-action]'),team=window.es41Team?.get();
