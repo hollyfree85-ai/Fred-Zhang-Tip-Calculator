@@ -3357,6 +3357,15 @@ window.submitEmployee=async function(){
 
 function employeeFinalReportHTML(r){
   const f=r.finalReport||{};
+  const payout={...f};
+  // Older linked submissions retain Grand Total Tip, but not its before-meal
+  // base. Recover that same base only when both stored amounts are present.
+  if(payout.adjustmentDecision==="ACCEPTED" && payout.totalBeforeMeal==null
+    && payout.grandTotalTip!=null && payout.cashTip!=null
+    && payout.grandTotalTip!=="" && payout.cashTip!==""
+    && Number.isFinite(Number(payout.grandTotalTip)) && Number.isFinite(Number(payout.cashTip))){
+    payout.totalBeforeMeal=howRoundCent(Number(payout.grandTotalTip)-Number(payout.cashTip));
+  }
   const money=v=>"$"+Number(v||0).toFixed(2);
   const pct=v=>(Number(v||0)*100).toFixed(2)+"%";
   return `
@@ -3381,7 +3390,7 @@ function employeeFinalReportHTML(r){
       <div class="kpi"><span>Busser Total</span><b>${money(f.busserTipOut)}</b></div>
       <div class="kpi"><span>Bar Tip Out</span><b>${money(f.barTipOut)}</b></div>
       <div class="kpi"><span>Hourly Adjustment</span><b>${money(f.adjustmentSalaryHourly)}</b></div>
-      <div class="kpi"><span>TOTAL PAID OUT</span><b>${money(f.totalPaidOut)}</b></div>
+      <div class="kpi"><span>TOTAL PAID OUT</span><b>${money(smallReportPaidOut(payout))}</b></div>
     </div>
     <div class="actions" style="margin-top:14px">
       <button class="btn light" type="button" onclick="startNewEmployeeReport('${r.id}')">New Tip Report</button>
@@ -3901,7 +3910,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18750",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18760",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -5604,7 +5613,7 @@ function reportRowsForExport(){
     adjustmentDecision:String(r.adjustmentDecision||"NO ADJUSTMENT").toUpperCase(),
     grandTotalAfterAdjustment:Number(r.grandTotalAfterAdjustment||0),
     meal:Number(r.meal||0),
-    totalPaidOut:Number(r.totalPaidOut||0),
+    totalPaidOut:smallReportPaidOut(r),
     status:"MONEY READY",
     signatureStatus:r.signatureStatus||r.employeeSignatureStatus||"",
     signedAt:r.signedAt||r.employeeSignedAt||"",
@@ -5706,7 +5715,7 @@ function xlsBlob(rows){
         xlsCellString(r.adjustmentDecision==="NONE"?"NO ADJUSTMENT":r.adjustmentDecision,"Body"),
         xlsCellNumber(r.grandTotalAfterAdjustment,"Money14"),
         xlsCellNumber(r.meal,"Money14"),
-        xlsCellNumber(r.totalPaidOut,"MoneyBold14"),
+        xlsCellNumber(smallReportPaidOut(r),"MoneyBold14"),
         xlsCellString(sigStatus,"Body"),
         xlsCellString(signedAt,"Body"),
         xlsCellString(r.status,"Body"),
@@ -6139,7 +6148,20 @@ function calculatedHourlyAdjustment(r){
   const base=adjustmentBaseWithCash(r);
   return howRoundCent(Math.max(0,target-base));
 }
+// ES1.8.76: use only the saved, accepted adjustment; never the available
+// candidate or the Manager/Owner report-only hourly wage.
+function acceptedHourlyAdjustment(r){
+  if(r?.adjustmentDecision!=="ACCEPTED")return 0;
+  const amount=Number(r.adjustmentSalaryHourly);
+  return Number.isFinite(amount)&&amount>0?howRoundCent(amount):0;
+}
 function smallReportPaidOut(r){
+  // Rebuild from the unchanged before-meal base so an old saved payout that
+  // omitted the accepted adjustment is corrected without adding it twice.
+  if(r?.adjustmentDecision==="ACCEPTED" && r.totalBeforeMeal!=null
+    && r.totalBeforeMeal!=="" && Number.isFinite(Number(r.totalBeforeMeal))){
+    return howRoundCent(Number(r.totalBeforeMeal)-Number(r.meal||0)+acceptedHourlyAdjustment(r));
+  }
   return Number.isFinite(Number(r.totalPaidOut)) && r.totalPaidOut!=null
     ? Number(r.totalPaidOut) : howRoundCent(Number(r.totalBeforeMeal||0)-Number(r.meal||0));
 }
@@ -6185,12 +6207,12 @@ function thermalReportPaidOut(r){
   const bartender=String(r?.position||"").toLowerCase()==="bartender";
   const barTipOut=Number(r?.barTipOut||0);
   const barTipReceived=Number(r?.bartenderBarTipReceived||0);
-  // Requested thermal receipt formula only:
-  // Server = Paid Tip - Bar Tip Out - Meal
-  // Bartender = Paid Tip + Bar Tip Out Received - Meal
-  return howRoundCent(bartender
+  // Preserve the existing receipt tip base and meal deduction. An accepted
+  // adjustment is an additional payout; Cash Tip is already received.
+  const beforeAdjustment=howRoundCent(bartender
     ? paidTip + barTipReceived - meal
     : paidTip - barTipOut - meal);
+  return howRoundCent(beforeAdjustment+acceptedHourlyAdjustment(r));
 }
 // ES1.8.2 receipt-only informational totals. Cash is never paid twice.
 function thermalReportTipBeforeMeal(r){
@@ -6227,6 +6249,7 @@ function buildSmallReportThermalHtml(r){
   if(bartender)rows.push(["Bar Tip Out Received",thermalReceiptMoney(r.bartenderBarTipReceived)]);
   rows.push(["Total Tip Before Meal",thermalReceiptMoney(thermalReportTipBeforeMeal(r))]);
   rows.push(["Meal",thermalReceiptMoney(r.meal)]);
+  if(r.adjustmentDecision==="ACCEPTED")rows.push(["Accepted Hourly Adjustment",thermalReceiptMoney(acceptedHourlyAdjustment(r))]);
   const rowHtml=rows.map(([label,value])=>`<div class="row"><span>${thermalReceiptSafe(label)}</span><b>${thermalReceiptSafe(value)}</b></div>`).join("");
   return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=576,initial-scale=1,maximum-scale=1,user-scalable=no"><meta name="format-detection" content="telephone=no"><title>Daily Tip Report</title><style>
     @page{size:80mm auto;margin:0}
@@ -6528,7 +6551,7 @@ function buildSmallReportPrintableHtml(rows){
         <th>Date</th><th>Employee</th><th>Shift</th>
         <th>In 1</th><th>Out 1</th><th>In 2</th><th>Out 2</th><th>Total Hrs</th>
         <th>Paid Tips</th><th>Card Fee</th><th>Busser</th><th>Bar Out / Received</th>
-        <th>Before Meal</th><th>Cash Tip</th><th>Meal</th><th>Total Paid Out</th><th>Grand Total</th><th style="width:230px">Signature</th>
+        <th>Before Meal</th><th>Cash Tip</th><th>Meal</th><th style="white-space:normal">Accepted Hourly Adjustment</th><th>Total Paid Out</th><th>Grand Total</th><th style="width:230px">Signature</th>
       </tr></thead>
       <tbody>
       ${rows.map(r=>{
@@ -6544,6 +6567,7 @@ function buildSmallReportPrintableHtml(rows){
           <td>${money(r.busserTipOut)}</td><td>${money(smallReportBarAmount(r))}</td>
           <td>${money(r.totalBeforeMeal)}</td><td>${money(r.cashTip)}</td>
           <td>${money(r.meal)}</td>
+          <td>${money(acceptedHourlyAdjustment(r))}</td>
           <td><b>${money(smallReportPaidOut(r))}</b></td>
           <td><b>${money(smallReportGrandTotal(r))}</b></td>
           <td class="sig">${sig(r)}</td>
@@ -6759,6 +6783,7 @@ window.openSmallReportDetail=function(reportId){
       <div><span>Total Before Meal</span><b>${fmtMoney(r.totalBeforeMeal)}</b></div>
       <div><span>Cash Tip</span><b>${fmtMoney(r.cashTip)}</b></div>
       <div><span>Meal</span><b>${fmtMoney(r.meal)}</b></div>
+      ${r.adjustmentDecision==="ACCEPTED"?`<div><span>Accepted Hourly Adjustment</span><b>${fmtMoney(acceptedHourlyAdjustment(r))}</b></div>`:""}
       <div class="accent"><span>Total Paid Out</span><b>${fmtMoney(smallReportPaidOut(r))}</b></div>
       <div class="accent grand"><span>Grand Total</span><b>${fmtMoney(smallReportGrandTotal(r))}</b><small>Total Before Meal + Cash Tip</small></div>
     </div>`;
@@ -7177,6 +7202,7 @@ function smallReportHtmlXlsBlob(rows){
       <td>${money(r.totalBeforeMeal)}</td>
       <td>${money(r.cashTip)}</td>
       <td>${money(r.meal)}</td>
+      <td>${money(acceptedHourlyAdjustment(r))}</td>
       <td><b>${money(smallReportPaidOut(r))}</b></td>
       <td><b>${money(smallReportGrandTotal(r))}</b></td>
       <td style="width:260px;height:96px">${sigCell}</td>
@@ -7210,7 +7236,7 @@ function smallReportHtmlXlsBlob(rows){
         <th>Clock In 1</th><th>Clock Out 1</th><th>Clock In 2</th><th>Clock Out 2</th>
         <th>Total Hours</th><th>Paid Tips</th><th>Tip Card Fee</th>
         <th>Busser AM</th><th>Busser PM</th><th>Busser Total</th><th>Bar Tip Out / Received</th>
-        <th>Total Tip Before Meal</th><th>Cash Tip</th><th>Meal</th><th>Total Paid Out</th><th>Grand Total (Total Before Meal + Cash Tip)</th><th>Signature</th>
+        <th>Total Tip Before Meal</th><th>Cash Tip</th><th>Meal</th><th>Accepted Hourly Adjustment</th><th>Total Paid Out</th><th>Grand Total (Total Before Meal + Cash Tip)</th><th>Signature</th>
       </tr></thead>
       <tbody>${body}</tbody>
     </table>
@@ -7538,7 +7564,7 @@ function renderFinalDailyByName(){
               <div class="kpi"><span>Bar Tip Out Received</span><b>${fmtMoney(r.bartenderBarTipReceived)}</b></div>`:""}
               <div class="kpi"><span>Meal</span><b>${fmtMoney(r.meal)}</b></div>
               <div class="kpi"><span>Hourly Adjustment</span><b>${fmtMoney(r.adjustmentSalaryHourly)}</b></div>
-              <div class="kpi"><span>TOTAL PAID OUT</span><b>${fmtMoney(r.totalPaidOut)}</b></div>
+              <div class="kpi"><span>TOTAL PAID OUT</span><b>${fmtMoney(smallReportPaidOut(r))}</b></div>
             </div>
           </article>`).join("")}
       </div>
@@ -7564,7 +7590,7 @@ let analyticsPeriod="daily";
 const ANALYTICS_METRICS={
   sales:{label:"Sales",money:true,value:r=>Number(r.grandTotal||0)},
   tip:{label:"Tip",money:true,value:r=>Number(r.totalBeforeMeal||0)+Number(r.cashTip||0)},
-  paidout:{label:"Paid Out",money:true,value:r=>Number(r.totalBeforeMeal||0)-Number(r.meal||0)},
+  paidout:{label:"Paid Out",money:true,value:r=>smallReportPaidOut(r)},
   cash:{label:"Cash Tip",money:true,value:r=>Number(r.cashTip||0)},
   busser:{label:"Busser",money:true,value:r=>Number(r.busserTipOut||0)},
   bar:{label:"Bar",money:true,value:r=>Math.max(0,Number(smallReportBarAmount(r)||0))},
@@ -9816,9 +9842,11 @@ function monthlyReportBusserSplit(r){
   return {am:monthlyReportRound(total),pm:0,total:monthlyReportRound(total)};
 }
 function monthlyReportPaidOut(r){
+  if(r?.adjustmentDecision==="ACCEPTED" && r.totalBeforeMeal!=null
+    && r.totalBeforeMeal!=="" && Number.isFinite(Number(r.totalBeforeMeal)))return smallReportPaidOut(r);
   const saved=Number(r?.totalPaidOut);
   if(r?.totalPaidOut!==null && r?.totalPaidOut!==undefined && r?.totalPaidOut!=="" && Number.isFinite(saved))return saved;
-  const adjustment=monthlyReportNum(r?.adjustmentSalaryHourly);
+  const adjustment=acceptedHourlyAdjustment(r);
   return monthlyReportNum(r?.totalBeforeMeal)-monthlyReportNum(r?.meal)+adjustment;
 }
 function monthlyReportGrandTip(r){
@@ -10334,7 +10362,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.75';
+const ES_BUILD='ES1.8.76';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12952,6 +12980,7 @@ function es16DailyXlsBlob(rows,group,date){
     ['Busser PM','money',r=>r.busserTipOutPM,150],['Busser Total','money',r=>r.busserTipOut,155],
     ['Bar Tip Out / Received','money',r=>smallReportBarAmount(r),195],
     ['Total Tip Before Meal','money',r=>r.totalBeforeMeal,205],['Cash Tip','money',r=>r.cashTip,150],['Meal','money',r=>r.meal,150],
+    ['Accepted Hourly Adjustment','money',r=>acceptedHourlyAdjustment(r),205],
     ['Total Paid Out','money',r=>smallReportPaidOut(r),185],['Grand Total (Total Before Meal + Cash Tip)','money',r=>smallReportGrandTotal(r),280],
     ['Signature','signature',r=>r.pickupSignature,280]
   ];
