@@ -3910,7 +3910,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18760",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18770",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10362,7 +10362,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.76';
+const ES_BUILD='ES1.8.77';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -11459,6 +11459,13 @@ function esCompactInit(){
   esStatus=function(text,error=false){
     status(text,error);esCompactReadBadge();
     const toast=$('esQuickNotice');if(!toast)return;
+    // ES1.8.77: keep live validation readable in More and row status, without
+    // putting a floating message over the field while the phone is typing.
+    const area=$('employeeSheet'),grid=$('esGrid'),input=document.activeElement;
+    if(area?.classList.contains('es-mobile-viewport') && !area.classList.contains('es-desktop-page')
+      && grid?.contains(input) && input?.matches?.('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]),textarea,[contenteditable="true"]')){
+      clearTimeout(esNoticeTimer);toast.textContent=text;toast.dataset.error=error?'1':'0';toast.classList.add('hidden');return;
+    }
     // Routine instructions remain in More, not five paragraphs over the table.
     const routine=/^(Loading|Checking|Device copy|Available rows|Shared sheet loaded|Your device edits|Live preview|Ready)/i.test(text||'');
     if(routine&&!error)return;
@@ -13798,14 +13805,25 @@ function es17MobileViewportGeometry(viewport,layoutHeight,baseline,editing){
 }
 function es17MobileRevealInput(grid,input){
   if(!grid||!input||!grid.contains(input))return;
-  const table=input.closest?.('.es-table');if(!table)return;
-  const header=table.querySelector('thead'),box=grid.getBoundingClientRect(),field=input.getBoundingClientRect();
-  const headHeight=header?.getBoundingClientRect().height||header?.offsetHeight||50;
-  const top=box.top+headHeight+8,bottom=box.bottom-8;
+  const table=input.closest?.('.es-table'),pool=input.closest?.('.hc15-pools');
+  const box=grid.getBoundingClientRect(),field=input.getBoundingClientRect();
+  const header=table?.querySelector('thead');
+  const headHeight=header?.getBoundingClientRect().height||header?.offsetHeight||0;
+  const viewport=window.visualViewport,viewTop=viewport?.offsetTop||0;
+  const viewBottom=viewTop+(viewport?.height||window.innerHeight||document.documentElement.clientHeight);
+  const top=Math.max(box.top,viewTop)+headHeight+8,bottom=Math.min(box.bottom,viewBottom)-8;
   if(bottom<=top)return;
   // Only move the existing vertical scrollport, never the page/caret or X axis.
   if(field.top<top)grid.scrollTop-=top-field.top;
   else if(field.bottom>bottom)grid.scrollTop+=field.bottom-bottom;
+  // Host Cash/Credit pools have their own horizontal scrollport, rather than
+  // the frozen name column used by employee table rows.
+  if(pool){
+    const bounds=pool.getBoundingClientRect(),edge=grid.getBoundingClientRect();
+    const left=Math.max(bounds.left,edge.left)+8,right=Math.min(bounds.right,edge.right)-8;
+    if(field.left<left)pool.scrollLeft-=left-field.left;
+    else if(field.right>right)pool.scrollLeft+=field.right-right;
+  }
 }
 function es17InstallMobileViewport(){
   const area=$('employeeSheet'),grid=$('esGrid');if(!area||!grid||area.dataset.es17Viewport)return;
@@ -13819,7 +13837,7 @@ function es17InstallMobileViewport(){
     const active=!area.classList.contains('hidden')&&!area.classList.contains('es-desktop-page');
     if(!active){setClass('es-mobile-viewport',false);setClass('es-mobile-keyboard',false);return;}
     const input=document.activeElement;
-    const editing=!!(grid.contains(input)&&input?.closest?.('.es-table')&&input.matches?.('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]),textarea,[contenteditable="true"]'));
+    const editing=!!(grid.contains(input)&&input?.matches?.('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]),textarea,[contenteditable="true"]'));
     const width=document.documentElement.clientWidth||window.innerWidth||0;
     if(lastWidth&&Math.abs(lastWidth-width)>80)baseline=0; // orientation/window change
     lastWidth=width;
@@ -13829,6 +13847,12 @@ function es17InstallMobileViewport(){
     baseline=geometry.baseline;
     setSize('--es-visible-top',geometry.top+'px');setSize('--es-visible-height',geometry.height+'px');
     setClass('es-mobile-viewport',true);setClass('es-mobile-keyboard',geometry.keyboard);
+    if(geometry.keyboard){
+      // Team controls above the grid disappear while typing. Return their
+      // outer scrollport to the top so the fitted grid starts under the title.
+      if(area.scrollTop)area.scrollTop=0;
+      const notice=$('esQuickNotice');if(notice)notice.classList.add('hidden');
+    }
     if(editing)es17MobileRevealInput(grid,input);
   }
   function schedule(){if(!frame)frame=window.requestAnimationFrame(refresh);}

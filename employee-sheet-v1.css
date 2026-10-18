@@ -628,3 +628,39 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 
 /* Hidden workspaces must stay hidden even when compact/desktop layout is enabled. */
 #employeeSheet.hidden,#employeeSheet.es-compact.hidden,#employeeSheet.es-desktop-page.hidden{display:none!important}
+
+/* ES1.8.77: compact phone titles and real table headers. Input type, values,
+   employee assignments, calculations and desktop page layout are unchanged. */
+@media(max-width:700px){
+ #employeeSheet.es-compact:not(.es-desktop-page){--es-name-w:136px}
+ #employeeSheet.es-compact:not(.es-desktop-page)>.es-header{min-height:44px;padding:2px 6px;gap:6px;margin-bottom:6px}
+ #employeeSheet.es-compact:not(.es-desktop-page)>.es-header h2{font-size:18px!important;line-height:1.1!important;overflow:hidden;text-overflow:ellipsis}
+ #employeeSheet.es-compact:not(.es-desktop-page)>.es-header .es-home{min-height:40px;padding:6px 8px;font-size:15px!important}
+ #employeeSheet.es-compact:not(.es-desktop-page) .es-table{height:auto!important;min-height:0}
+ #employeeSheet.es-compact:not(.es-desktop-page) .es-table>thead,
+ #employeeSheet.es-compact:not(.es-desktop-page) .es-table>thead>tr{height:48px!important;min-height:0}
+ #employeeSheet.es-compact:not(.es-desktop-page) .es-table>thead>tr>th{height:48px!important;min-height:0;max-height:48px;padding:5px 7px!important;font-size:15px!important;line-height:1.15!important;vertical-align:middle;overflow:hidden;overflow-wrap:normal}
+ #employeeSheet.es-compact:not(.es-desktop-page) .es-table>thead small,
+ #employeeSheet.es-compact:not(.es-desktop-page) .es-table>thead .es-name>span{display:none!important}
+ #employeeSheet.es-compact:not(.es-desktop-page) #es41Actions{gap:6px;padding:3px 0;margin-bottom:6px}
+ #employeeSheet.es-compact:not(.es-desktop-page) #es41Actions>button{min-height:42px;padding:7px 8px;font-size:15px!important}
+ #employeeSheet.es-compact:not(.es-desktop-page) .es-name>b{font-size:17px}
+}
+/* Later assignment styles switched the sheet to a scrolling block. Override
+   that only while the soft keyboard is open, so the grid fits above it. */
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page):not(.hidden){display:flex!important;flex-direction:column;overflow:hidden!important;gap:4px;min-height:0;scroll-padding-top:0}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-header{position:relative;top:auto;flex:none;min-height:44px;padding:2px 6px;gap:6px;margin:0}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-header h2{font-size:18px!important;line-height:1.1!important}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-header .es-home{min-height:40px;padding:6px 8px;font-size:15px!important}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>#es38Team,
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>#es41Actions,
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>#es38Status,
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-toolbar,
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-footer,
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-quick-notice{display:none!important}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page)>.es-grid{flex:1 1 0;min-height:0!important;height:auto!important;max-height:none;margin:0;overflow:auto!important;scroll-padding-top:56px;scroll-padding-bottom:8px}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table>thead,
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table>thead>tr{height:44px!important;min-height:0}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table>thead>tr>th{height:44px!important;min-height:0;max-height:44px;padding:4px 7px!important;font-size:15px!important;line-height:1.15!important;overflow:hidden;overflow-wrap:normal}
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table>thead small,
+#employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table>thead .es-name>span{display:none!important}
