@@ -4017,7 +4017,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18800",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18810",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10600,7 +10600,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.80';
+const ES_BUILD='ES1.8.81';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12469,7 +12469,7 @@ function tt15TeamRows(batch={},host={}){
   // membership arrays below; host.todayTeamAssignments intentionally contains
   // the whole Today's Team snapshot for cross-document reconstruction and must
   // never be rendered as Host/Cashier membership.
-  const explicit=Array.isArray(batch.todayTeamAssignments)&&batch.todayTeamAssignments.length?batch.todayTeamAssignments:null;
+  const explicit=Array.isArray(batch.todayTeamAssignments)&&(batch.todayTeamAssignments.length||batch.todayTeamManaged===true)?batch.todayTeamAssignments:null;
   if(explicit)return explicit.map(r=>({name:tt15CanonicalName(r.name),role:r.role,shift:r.shift}));
   const rows=[];
   for(const name of batch.team||[]){const v=batch.drafts?.[name]?.values||{};rows.push({name,role:esFixedRole(name)||(['Server','Bartender'].includes(v.hPosition)?v.hPosition:'Server'),shift:v.hShift||''});}
@@ -12544,19 +12544,96 @@ async function tt15ConfirmDuplicateBartenders(rows){
   for(const group of tt15BartenderDuplicateGroups(rows))if(!await tt15DuplicateBartenderDialog(group))return false;
   return true;
 }
-function tt15MergeTeam(base,edited,remote){
-  // Merge independent employee edits. Never overwrite conflicting edits to one person.
-  const key=r=>tt15Key(r.name),group=(rows,k)=>rows.filter(r=>key(r)===k);
-  const keys=[...new Set([...remote,...edited,...base].map(key))],out=[];
-  for(const k of keys){
-    const before=group(base,k),local=group(edited,k),server=group(remote,k);
-    const changed=!tt15Same(before,local),remoteChanged=!tt15Same(before,server);
-    if(changed&&remoteChanged&&!tt15Same(local,server)){
-      const e=new Error(tt15Label((local[0]||server[0]||before[0]).name)+' was edited on another device. Reload assignments and review this employee.');e.teamConflict=true;throw e;
+function tt15TeamMergePlan81(base,edited,remote,resolutions={}){
+  // Only assignment identity/position/shift participate. Object property order,
+  // display metadata and row order are not evidence of concurrent edits.
+  const clean=value=>String(value??'').trim().replace(/\s+/g,' ');
+  const normalize=rows=>(Array.isArray(rows)?rows:[]).map(row=>({name:clean(tt15CanonicalName(row?.name||'')),role:clean(row?.role),shift:clean(row?.shift)}));
+  const beforeAll=normalize(base),localAll=normalize(edited),remoteAll=normalize(remote);
+  const person=row=>tt15Key(row.name),signature=row=>JSON.stringify([row.role,row.shift]);
+  const sorted=rows=>rows.map(signature).sort(),same=(a,b)=>JSON.stringify(sorted(a))===JSON.stringify(sorted(b));
+  const copy=value=>value==null?null:tt15Copy(value),conflicts=[],rows=[];
+  const keys=[...new Set([...remoteAll,...localAll,...beforeAll].map(person))];
+  for(const employeeKey of keys){
+    const group=all=>all.filter(row=>person(row)===employeeKey);
+    const before=group(beforeAll),local=group(localAll),server=group(remoteAll);
+    const name=(before[0]||server[0]||local[0]).name,employee=tt15Label(name),start=conflicts.length;
+    const named=values=>values.map(value=>({...value,name}));
+    function choose(kind,field,baseValue,localValue,remoteValue,assignment=null){
+      const context=assignment||null;
+      const stable=value=>Array.isArray(value)?value.map(stable).sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])):value;
+      // Bind a decision to exact source values, not an array index or a device.
+      // A later conflicting transaction read therefore needs a new decision.
+      const id='assignment81:'+encodeURIComponent(JSON.stringify(stable({employeeKey,kind,field,context,baseValue,localValue,remoteValue})));
+      const conflict={id,key:id,employeeKey,employee,kind,field,base:copy(baseValue),local:copy(localValue),remote:copy(remoteValue)};
+      if(context)Object.assign(conflict,{baseAssignment:copy(context.base),localAssignment:copy(context.local),remoteAssignment:copy(context.remote)});
+      const value=resolutions&&Object.prototype.hasOwnProperty.call(resolutions,id)?resolutions[id]:null;
+      if(value!=='local'&&value!=='remote')conflicts.push(conflict);
+      return copy(value==='remote'?remoteValue:localValue);
     }
-    out.push(...tt15Copy(changed?local:server));
+    // First match unchanged exact triples. Without stable row IDs, at most one
+    // unmatched source/destination can be paired as an edit; larger residuals
+    // need an explicit person-level choice instead of positional guessing.
+    function align(side){
+      const assigned=Array(before.length).fill(null),used=new Set();
+      before.forEach((row,index)=>{const found=side.findIndex((other,i)=>!used.has(i)&&signature(other)===signature(row));if(found>=0){used.add(found);assigned[index]=side[found];}});
+      const remainingBase=before.map((_,index)=>index).filter(index=>assigned[index]===null),remainingSide=side.map((_,index)=>index).filter(index=>!used.has(index));
+      if(remainingBase.length&&remainingSide.length){
+        if(remainingBase.length!==1||remainingSide.length!==1)return null;
+        assigned[remainingBase[0]]=side[remainingSide[0]];used.add(remainingSide[0]);
+      }
+      return {assigned,added:side.filter((_,index)=>!used.has(index))};
+    }
+    let merged;
+    if(same(before,local))merged=copy(server);
+    else if(same(before,server)||same(local,server))merged=copy(local);
+    else if(!before.length){
+      const added=new Map();for(const row of [...server,...local])if(!added.has(signature(row)))added.set(signature(row),row);
+      merged=[...added.values()];
+    }else{
+      const localMap=align(local),serverMap=align(server);
+      if(!localMap||!serverMap)merged=choose('ambiguous','assignments',named(before),named(local),named(server));
+      else{
+        merged=[];
+        before.forEach((original,index)=>{
+          const mine=localMap.assigned[index],saved=serverMap.assigned[index],equal=(a,b)=>a===null?b===null:b!==null&&signature(a)===signature(b);
+          if(equal(mine,original)){if(saved)merged.push(copy(saved));return;}
+          if(equal(saved,original)||equal(mine,saved)){if(mine)merged.push(copy(mine));return;}
+          const context={base:{...original,name},local:mine?{...mine,name}:null,remote:saved?{...saved,name}:null};
+          if(mine===null||saved===null){const selected=choose('delete_edit','assignments',context.base,context.local,context.remote,context);if(selected)merged.push(selected);return;}
+          const next={name};
+          for(const field of ['role','shift']){
+            const a=original[field],b=mine[field],c=saved[field];
+            next[field]=b===a?c:c===a||b===c?b:choose('field',field,a,b,c,context);
+          }
+          merged.push(next);
+        });
+        // Concurrent identical additions converge. Distinct additions are kept.
+        const added=new Map();for(const row of [...serverMap.added,...localMap.added])if(!added.has(signature(row)))added.set(signature(row),row);
+        merged.push(...[...added.values()].map(copy));
+      }
+    }
+    merged=named(merged);
+    // Branches can each be valid while their combination exceeds a person's
+    // three assignments or collides at one role/shift. Never deduplicate away
+    // an edited assignment or silently discard the other device's addition.
+    if(conflicts.length===start){
+      const duplicate=new Set(merged.map(signature)).size!==merged.length;
+      if(merged.length>3||duplicate)merged=named(choose(merged.length>3?'capacity':'duplicate','assignments',named(before),named(local),named(server)));
+    }
+    rows.push(...merged);
   }
-  return out;
+  return {rows,conflicts};
+}
+function tt15MergeTeamDetailed(base,edited,remote,resolutions={}){return tt15TeamMergePlan81(base,edited,remote,resolutions);}
+function tt15MergeTeam(base,edited,remote,resolutions={}){
+  const plan=tt15TeamMergePlan81(base,edited,remote,resolutions);
+  if(plan.conflicts.length){
+    const names=[...new Set(plan.conflicts.map(conflict=>conflict.employee))];
+    const error=new Error(names.join(', ')+': choose which assignment changes to keep. Your device draft is preserved.');
+    error.teamConflict=true;error.teamConflicts=plan.conflicts;error.teamMerge=plan;throw error;
+  }
+  return plan.rows;
 }
 function es64NamedAssignments(rows){return (rows||[]).filter(r=>String(r.name||'').trim());}
 function tt15BuildTeam(raw,host,rows,date){
@@ -14760,98 +14837,109 @@ function es36StoredPhone(raw){
 /* ES1.8.75 — all active team editing lives inside Employee Sheet. */
 (function installSheetTeam38(){
   let state=null,serial=0;
-  window.es41Team={get:()=>state,add:()=>{start();if(!state||state.busy||!current(state))return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();},apply:()=>apply(),reload:()=>{start();if(state&&!state.busy)void load(state);},edit:(i,k,v)=>{const r=state?.rows[i];if(!r||state.busy)return;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';state.dirty=true;persist(state);paint();},remove:i=>{if(!state||state.busy)return;state.rows.splice(i,1);state.dirty=true;persist(state);paint();}};
-  const key=s=>'fz_sheet_team38_'+s.uid+'_'+s.date;
-  const copy=tt15Copy;
-  function current(s){return state===s&&esSession?.uid===s.uid&&esSession?.date===s.date&&esAllowed();}
+  const copy=tt15Copy,key=s=>'fz_sheet_team38_'+s.uid+'_'+s.date;
+  const person=name=>tt15Key(tt15CanonicalName(name||''));
+  function current(s){return !!s&&state===s&&esSession===s.session&&currentUser?.uid===s.uid&&esSession?.uid===s.uid&&esSession?.date===s.date&&esAllowed();}
   function defaults(date,raw){const x=raw?.todayTeamBusser||{};return {AM:typeof x.AM==='boolean'?x.AM:isWeekendDate(date),PM:typeof x.PM==='boolean'?x.PM:true};}
-  function persist(s){try{localStorage.setItem(key(s),JSON.stringify({rows:s.rows,base:s.base,busser:s.busser,baseBusser:s.baseBusser,dirty:s.dirty,busserDirty:s.busserDirty}));}catch(e){}}
+  function teamRows(raw={},host={}){return raw.todayTeamManaged===true&&Array.isArray(raw.todayTeamAssignments)&&!raw.todayTeamAssignments.length?[]:tt15TeamRows(raw,host);}
+  function duplicateKey(rows){return JSON.stringify(tt15BartenderDuplicateGroups(rows).map(g=>[g.shift,[...g.names].sort()]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));}
+  function sameRows(a,b){const rows=x=>(x||[]).map(r=>[person(r.name),r.role,r.shift].join('|')).sort();return JSON.stringify(rows(a))===JSON.stringify(rows(b));}
+  function persist(s){try{localStorage.setItem(key(s),JSON.stringify({rows:s.rows,base:s.base,busser:s.busser,baseBusser:s.baseBusser,dirty:s.dirty,busserDirty:s.busserDirty,busserTouched:s.busserTouched,mergeContext:s.mergeContext,conflicts:s.conflicts,previewRows:s.previewRows}));}catch(e){}}
   function message(text,error=false){const n=$('es38Status');if(n){n.textContent=text;n.style.color=error?'#9c362b':'#36576c';}}
-  function paint(){const s=state;if(!s||!current(s))return;const directory=tt15DirectoryEntries();
-    $('es38AM').checked=s.busser.AM;$('es38PM').checked=s.busser.PM;
-    for(const id of ['es38AM','es38PM','es38Add','es38Save','es38Retry'])$(id).disabled=s.busy;
-    $('es38Rows').innerHTML=s.rows.map((r,i)=>{
-      const options=directory.filter(e=>e.active||e.name===r.name);if(r.name&&!options.some(e=>e.name===r.name))options.push({name:r.name,displayName:r.name});
-      return `<div class="es38-row"><label>Employee<select data-i="${i}" data-k="name"${s.busy?' disabled':''}>${esOption('','Select employee',r.name)}${options.map(e=>esOption(e.name,e.displayName,r.name)).join('')}</select></label><label>Position<select data-i="${i}" data-k="role"${s.busy?' disabled':''}>${TT15_ROLES.map(x=>esOption(x,x,r.role)).join('')}</select></label><label>Shift<select data-i="${i}" data-k="shift"${s.busy?' disabled':''}>${esOption('','Select shift',r.shift)}${(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>esOption(x,x==='DOUBLE'?'Double':x==='LONG'?'Long':x,r.shift)).join('')}</select></label><button type="button" data-remove="${i}"${s.busy?' disabled':''}>Remove</button></div>`;
+  function locked(s,name){const k=person(name);return !!k&&(s.conflicts||[]).some(c=>c.employeeKey===k);}
+  function replaceGroup(rows,k,next){return [...(rows||[]).filter(r=>person(r.name)!==k),...copy(next)];}
+  function rememberEdit(s,names){
+    if(s.mergeContext)for(const k of new Set(names.map(person).filter(Boolean))){s.mergeContext.base=replaceGroup(s.mergeContext.base,k,(s.base||[]).filter(r=>person(r.name)===k));s.mergeContext.edited=replaceGroup(s.mergeContext.edited,k,es64NamedAssignments(s.rows).filter(r=>person(r.name)===k));}
+    s.dirty=true;persist(s);paint();
+  }
+  function add(){start();const s=state;if(!current(s)||s.busy)return;s.rows.push({name:'',role:'Server',shift:'AM'});rememberEdit(s,[]);}
+  function edit(i,k,v){const s=state,r=s?.rows[i];if(!r||!current(s)||s.busy||!['name','role','shift'].includes(k)||r[k]===v)return;if(locked(s,r.name)||k==='name'&&locked(s,v)){message('Resolve this employee’s changed field below first. Other employee drafts are kept.',true);paint();return;}const before=r.name;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';rememberEdit(s,[before,r.name]);}
+  function remove(i){const s=state,r=s?.rows[i];if(!r||!current(s)||s.busy)return;if(locked(s,r.name)){message('Choose which changed assignment to keep for this employee first.',true);return;}s.rows.splice(i,1);rememberEdit(s,[r.name]);}
+  window.es41Team={get:()=>state,add,edit,remove,apply:()=>apply(),reload:()=>{start();return current(state)&&!state.busy?load(state,true):Promise.resolve(false);},resolve:(id,choice)=>resolve(id,choice)};
+  function conflictValue(value){if(value===null)return 'Removed';if(Array.isArray(value))return value.length?value.map(conflictValue).join(' / '):'No assignments';if(value&&typeof value==='object')return [value.role,value.shift].filter(Boolean).join(' · ');return String(value??'Not recorded');}
+  function conflictCard(s){
+    let box=$('es81TeamConflicts');if(!box){box=document.createElement('section');box.id='es81TeamConflicts';box.style.cssText='margin:10px 0;padding:12px;border:1px solid #e8b487;border-radius:12px;background:#fff8f0;max-width:100%;overflow-wrap:anywhere';box.setAttribute('aria-label','Review assignment changes');$('es38Status')?.insertAdjacentElement('afterend',box);}
+    $('es38Status')?.insertAdjacentElement('afterend',box);box.hidden=!(s.conflicts||[]).length;
+    box.innerHTML=box.hidden?'':'<b>Choose the changed assignment</b><p style="margin:5px 0;font-size:14px">Only the fields below need a choice. All other employee changes remain in your draft. Apply changes after resolving them.</p>'+s.conflicts.map(c=>'<div style="padding:9px 0;border-top:1px dotted #bd9d7f"><b>'+esc(c.employee)+' · '+esc(c.field==='assignments'?'Assignments':c.field==='role'?'Position':c.field==='shift'?'Shift':c.field)+'</b><div style="font-size:14px;line-height:1.5">This device: '+esc(conflictValue(c.local))+'<br>Latest saved: '+esc(conflictValue(c.remote))+'</div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:7px"><button type="button" data-es81-choice="local" data-es81-conflict="'+esc(c.id)+'"'+(s.busy?' disabled':'')+'>Keep my change</button><button type="button" data-es81-choice="remote" data-es81-conflict="'+esc(c.id)+'"'+(s.busy?' disabled':'')+'>Use saved value</button></div></div>').join('');
+    box.onclick=e=>{const b=e.target.closest?.('[data-es81-choice]');if(b)void resolve(b.dataset.es81Conflict,b.dataset.es81Choice);};
+  }
+  function paint(){const s=state;if(!current(s))return;const directory=tt15DirectoryEntries();
+    for(const cp of ['AM','PM'])if($('es38'+cp)){$('es38'+cp).checked=s.busser[cp];$('es38'+cp).disabled=s.busy;}
+    for(const id of ['es38Add','es38Save','es38Retry'])if($(id))$(id).disabled=s.busy;
+    if($('es38Rows'))$('es38Rows').innerHTML=s.rows.map((r,i)=>{const options=directory.filter(e=>e.active||e.name===r.name);if(r.name&&!options.some(e=>e.name===r.name))options.push({name:r.name,displayName:r.name});const disabled=s.busy||locked(s,r.name)?' disabled':'';
+      return '<div class="es38-row"><label>Employee<select data-i="'+i+'" data-k="name"'+disabled+'>'+esOption('','Select employee',r.name)+options.map(e=>esOption(e.name,e.displayName,r.name)).join('')+'</select></label><label>Position<select data-i="'+i+'" data-k="role"'+disabled+'>'+TT15_ROLES.map(x=>esOption(x,x,r.role)).join('')+'</select></label><label>Shift<select data-i="'+i+'" data-k="shift"'+disabled+'>'+esOption('','Select shift',r.shift)+(tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>esOption(x,x,r.shift)).join('')+'</select></label><button type="button" data-remove="'+i+'"'+disabled+'>Remove</button></div>';
     }).join('')||'<p>Add an employee here. Existing sales and reports are kept.</p>';
     window.es41PaintRows?.();
-    if(typeof hc15UpdateValues==='function')hc15UpdateValues();
+    for(const control of document.querySelectorAll('[data-es41-index]')){const row=s.rows[Number(control.dataset.es41Index)];if(row&&locked(s,row.name))control.disabled=true;}
+    const work=tt15AssignmentWorkRows(s.rows);for(const control of $('esRows')?.querySelectorAll('[data-es-field="role"],[data-es-field="shift"]')||[]){const row=s.session.rows[Number(control.dataset.esRow)],i=row?work.findIndex(r=>r.workName===row.name):-1;if(i>=0){control.value=s.rows[i][control.dataset.esField];control.disabled=s.busy||locked(s,s.rows[i].name);}}
+    conflictCard(s);if(typeof hc15UpdateValues==='function')hc15UpdateValues();
   }
+  function stop(s){if(!s)return;(s.unsubs||[]).forEach(u=>u());s.unsubs=[];(s.controllers||new Set()).forEach(c=>c.abort());clearTimeout(s.hydrateTimer);s.readSeq++;}
   async function readDoc(col,date,s){
-    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),9000);
-    try{
-      const token=await currentUser.getIdToken();if(!current(s))throw new Error('Date or login changed.');
-      const url='https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(FIREBASE_CONFIG.projectId)+'/databases/(default)/documents/'+col+'/'+encodeURIComponent(date);
-      const response=await fetch(url,{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:controller.signal});
-      if(response.status===404)return {};
-      if(!response.ok)throw new Error('Team read failed ('+response.status+').');
-      const body=await response.json();return esDecodeFirestore({mapValue:{fields:body.fields||{}}});
-    }finally{clearTimeout(timer);}
+    const controller=new AbortController();s.controllers.add(controller);const timer=setTimeout(()=>controller.abort(),9000);
+    try{const token=await currentUser.getIdToken();if(!current(s))throw new Error('Date or login changed.');
+      const url='https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(FIREBASE_CONFIG.projectId)+'/databases/(default)/documents/'+col+'/'+encodeURIComponent(date),response=await fetch(url,{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:controller.signal});if(!current(s))throw new Error('Date or login changed.');if(response.status===404)return {};if(!response.ok)throw new Error('Team read failed ('+response.status+').');const body=await response.json();if(!current(s))throw new Error('Date or login changed.');return esDecodeFirestore({mapValue:{fields:body.fields||{}}});
+    }finally{clearTimeout(timer);s.controllers.delete(controller);}
   }
-  async function load(s){
-    message('Checking saved team. You can edit a device draft now.');
-    try{
-      const results=await Promise.all([readDoc('hourlyV1Batches',s.date,s),readDoc('hostCashierTipReports',s.date,s)]);
-      if(!current(s))return;
-      const rows=tt15TeamRows(...results),busser=defaults(s.date,results[0]);
-      if(!s.dirty){s.rows=copy(rows);s.base=copy(rows);s.busser=busser;s.baseBusser=copy(busser);paint();}
-      s.verified=true;message(s.dirty?'Your team draft is kept. Apply Team checks the latest saved data.':'Team loaded. Edit here, then Apply Team.');
-    }catch(e){if(current(s))message('Team connection unavailable: '+(e.name==='AbortError'?'request timed out':e.message)+'. You can keep editing; Retry reloads saved team.',true);}
+  function newer(data,previous,fields){if(!previous||!Object.keys(data||{}).length)return data;for(const f of fields)if(Number.isFinite(Number(data?.[f]))&&Number.isFinite(Number(previous?.[f]))&&Number(data[f])<Number(previous[f]))return previous;return data;}
+  function busserPlan(base,edited,remote,touched,resolutions){const values={},conflicts=[];for(const cp of ['AM','PM']){const a=base?.[cp],b=edited[cp],c=remote[cp];if(typeof a==='boolean')values[cp]=b===a?c:b;else if(!touched?.[cp]||b===c)values[cp]=c;else{const id='busser81:'+encodeURIComponent(JSON.stringify([cp,a??null,b,c])),choice=resolutions?.[id];values[cp]=choice==='remote'?c:b;if(choice!=='local'&&choice!=='remote')conflicts.push({id,key:id,employeeKey:'__busser__',employee:'Busser '+cp,kind:'busser',field:cp,base:a??null,local:b,remote:c});}}return {values,conflicts};}
+  function rebase(s,raw,host){
+    if(!current(s))return;for(const data of [raw,host])if(data?.date&&data.date!==s.date)throw new Error('Saved team date does not match this sheet. Your draft is kept.');raw=newer(raw,s.latestRaw,['todayTeamRevision','employeeSheetRevision']);host=newer(host,s.latestHost,['todayTeamRevision','sheetRevision']);s.latestRaw=copy(raw);s.latestHost=copy(host);
+    const remote=teamRows(raw,host),remoteBusser=defaults(s.date,raw),blanks=copy(s.rows.filter(r=>!String(r.name||'').trim()));
+    const ctx=s.mergeContext||{base:copy(s.base===null?s.previewRows||[]:s.base||[]),edited:copy(s.dirty?es64NamedAssignments(s.rows):remote),busserBase:copy(s.baseBusser),busserEdited:copy(s.busser),touched:copy(s.busserTouched||{}),resolutions:{}};
+    const plan=tt15TeamMergePlan81(ctx.base,ctx.edited,remote,ctx.resolutions),bp=busserPlan(ctx.busserBase,ctx.busserEdited,remoteBusser,ctx.touched,ctx.resolutions);
+    s.rows=[...copy(plan.rows),...blanks];s.base=copy(remote);s.busser=copy(bp.values);s.baseBusser=copy(remoteBusser);s.conflicts=[...plan.conflicts,...bp.conflicts];ctx.remote=copy(remote);ctx.remoteBusser=copy(remoteBusser);s.mergeContext=s.conflicts.length?ctx:null;s.busserDirty=['AM','PM'].some(cp=>s.busser[cp]!==remoteBusser[cp]);s.dirty=!!s.conflicts.length||!!blanks.length||!sameRows(es64NamedAssignments(s.rows),remote)||s.busserDirty;s.verified=true;persist(s);
+    s.pendingHydrate={raw:s.latestRaw,host:s.latestHost,seq:s.readSeq,epoch:s.sourceEpoch};if(!s.busy)void hydrate(s);paint();
   }
-  function start(){const session=esSession;if(!session||!esAllowed()||!$('es38Team'))return;
-    if(state?.date===session.date&&state?.uid===session.uid){paint();return;}
-    const s={uid:session.uid,date:session.date,rows:[],base:null,busser:defaults(session.date,session.rawBase),baseBusser:null,dirty:false,busserDirty:false,busy:false,id:++serial};state=s;
-    // Cached assignments are only a preview, never evidence of an empty server team.
-    const preview=tt15TeamRows(session.rawBase||{},hc15Session?.date===session.date?hc15Session.data||{}:{});s.rows=copy(preview);
-    try{const saved=JSON.parse(localStorage.getItem(key(s))||'null');if(saved?.dirty){Object.assign(s,saved);message('Restored your team device draft.');}}catch(e){}
-    paint();void load(s);
+  async function hydrate(s){
+    if(!current(s)||!s.pendingHydrate||s.busy)return;if(s.pendingHydrate.epoch!==s.sourceEpoch||!s.verified){s.pendingHydrate=null;return;}const pending=s.pendingHydrate,session=s.session,hostSession=hc15Session;
+    if(session.busy||session.autoPromise||hostSession?.busy||hostSession?.writing){clearTimeout(s.hydrateTimer);s.hydrateTimer=setTimeout(()=>{if(current(s))void hydrate(s);},160);return;}
+    if(!current(s)||pending!==s.pendingHydrate||pending.epoch!==s.sourceEpoch||!s.verified)return;
+    // Existing field-level helper retains unsent money and records real conflicts.
+    if(typeof es14Rebase==='function')es14Rebase(session,pending.raw,session.reports||[]);
+    if(!current(s)||pending!==s.pendingHydrate||pending.epoch!==s.sourceEpoch||!s.verified)return;
+    if(hostSession&&hc15Session===hostSession&&hostSession.uid===s.uid&&hostSession.date===s.date){hostSession.loaded=true;hostSession.hadCloud ||= Object.keys(pending.host).length>0;hostSession.deviceRestored=false;hostSession.error='';hc15Accept(hostSession,pending.host,true);}
+    if(!current(s))return;s.pendingHydrate=null;window.es41PaintRows?.();paint();
   }
-  async function apply(){const s=state;if(!s||!current(s)||s.busy)return;
-    try{const named=es64NamedAssignments(s.rows);tt15Require(s.uid);tt15TeamValidate(named);if(s.base&&named.length===0&&s.base.length&&!confirm('Remove everyone from the active team? Saved reports are kept.'))return;if(!await tt15ConfirmDuplicateBartenders(named))return;
-      // Share current money inputs before assignment changes when the sheet is synced.
-      esPersistLocal();if(esSession.cloudReady&&esHasEdits(esSession)){const ok=await es14AutoFlush(esSession);if(esHasEdits(esSession))throw new Error('Save or sync current sheet inputs before changing the team. Your team draft is kept.');}
-      if(!current(s))return;s.busy=true;paint();message('Applying team…');
-      const edited=copy(named),base=s.base===null?null:copy(es64NamedAssignments(s.base)),chosen=copy(s.busser);
-      const result=await runTransaction(db,async tx=>{
-        const ref=doc(db,'hourlyV1Batches',s.date),href=doc(db,'hostCashierTipReports',s.date),dref=doc(db,'hostCashierTipReports','employee-roster');
-        const bs=await tx.get(ref),hs=await tx.get(href),ds=await tx.get(dref);tt15Require(s.uid);if(!current(s))throw new Error('Date changed. Your draft is kept.');
-        const raw=bs.exists()?bs.data():{},host=hs.exists()?hs.data():{},remote=tt15TeamRows(raw,host);
-        // With no verified baseline only additions are merged; unseen people are never removed.
-        const rows=base===null?es38MergeUnverified(remote,edited):tt15MergeTeam(base,edited,remote);
-        const dir=tt15DirectoryEntries(ds.exists()?ds.data():{});
-        for(const r of rows)if(!remote.some(x=>x.name===r.name)&&!dir.some(e=>e.name===r.name&&e.active))throw new Error(r.name+' is not active. Add or restore them in Manage Employee.');
-        tt15TeamValidate(rows);
-        const remoteBusser=defaults(s.date,raw);
-        if(s.busserDirty&&s.baseBusser&&!tt15Same(s.baseBusser,remoteBusser)&&!tt15Same(chosen,remoteBusser))throw new Error('Busser settings changed on another device. Retry and review.');
-        const out=tt15BuildTeam(raw,host,rows,s.date);out.batch.todayTeamBusser=s.busserDirty?chosen:remoteBusser;
-        tx.set(ref,{...out.batch,...tt15Stamp()});tx.set(href,{...out.host,...tt15Stamp()});return {rows,busser:out.batch.todayTeamBusser};
-      });
-      if(!current(s))return;s.rows=copy(result.rows);s.base=copy(result.rows);s.busser=copy(result.busser);s.baseBusser=copy(result.busser);s.dirty=false;s.busserDirty=false;localStorage.removeItem(key(s));s.busy=false;
-      message('Team applied. Loading employee rows…');state=null;await window.employeeSheetOpen(s.date);
-    }catch(e){if(current(s)){message('Team was not applied: '+(e.message||e)+'. Your draft is kept.',true);persist(s);}}
-    finally{if(current(s)){s.busy=false;paint();}}
+  async function readBoth(s){const seq=++s.readSeq,results=await Promise.all([readDoc('hourlyV1Batches',s.date,s),readDoc('hostCashierTipReports',s.date,s)]);if(!current(s)||seq!==s.readSeq)return false;rebase(s,...results);return true;}
+  function lock(s){if(!current(s)||s.busy||s.session.busy||hc15Session?.uid===s.uid&&hc15Session?.date===s.date&&hc15Session.busy)return false;s.busy=true;s.lockHost=hc15Session?.uid===s.uid&&hc15Session?.date===s.date?hc15Session:null;s.lockHostBusy=s.lockHost?.busy||false;if(s.lockHost)s.lockHost.busy=true;esSetBusy(true);paint();return true;}
+  async function unlock(s){s.busy=false;if(s.lockHost)s.lockHost.busy=s.lockHostBusy;s.lockHost=null;if(!current(s))return;esSetBusy(false);if(s.pendingRemote){const pair=s.pendingRemote;s.pendingRemote=null;if(pair.epoch===s.sourceEpoch){++s.readSeq;rebase(s,pair.raw,pair.host);}}await hydrate(s);if(current(s))paint();}
+  function watch(s){s.live={};for(const [part,col]of [['raw','hourlyV1Batches'],['host','hostCashierTipReports']])s.unsubs.push(onSnapshot(doc(db,col,s.date),{includeMetadataChanges:true},snap=>{if(!current(s))return;if(snap.metadata?.fromCache!==false||snap.metadata?.hasPendingWrites!==false){delete s.live[part];++s.sourceEpoch;s.pendingRemote=null;s.pendingHydrate=null;clearTimeout(s.hydrateTimer);return;}s.live[part]=snap.exists()?snap.data():{};if(!Object.hasOwn(s.live,'raw')||!Object.hasOwn(s.live,'host'))return;const pair={raw:s.live.raw,host:s.live.host,epoch:s.sourceEpoch};if(s.busy){s.pendingRemote=pair;return;}++s.readSeq;try{rebase(s,pair.raw,pair.host);}catch(e){s.verified=false;message(e.message,true);return;}message(s.conflicts.length?'Review only the changed assignment fields below. Other employee drafts are kept.':s.dirty?'Latest saved assignments received. Your device draft is kept.':'Team live · latest saved assignments loaded.');},e=>{if(!current(s))return;delete s.live[part];++s.readSeq;++s.sourceEpoch;s.pendingRemote=null;s.pendingHydrate=null;clearTimeout(s.hydrateTimer);s.verified=false;message('Assignment connection unavailable: '+(e.message||e)+'. Your device draft is kept. Tap Reload assignments.',true);}));}
+  async function load(s,lockedRead=false){if(!current(s)||s.busy)return false;if(lockedRead&&!lock(s))return false;message('Checking the latest saved assignments. Your device draft is kept.');try{const okay=await readBoth(s);if(current(s)&&okay)message(s.conflicts.length?'Choose only the changed fields below, then Apply changes.':s.dirty?'Latest saved team merged. Your device changes are kept.':'Team loaded. Edit here, then Apply changes.');return okay;}catch(e){if(current(s)){s.verified=false;message('Team connection unavailable: '+(e.name==='AbortError'?'request timed out':e.message)+'. Your draft is kept; Reload assignments retries without discarding it.',true);}return false;}finally{if(lockedRead)await unlock(s);}}
+  function start(){const session=esSession;if(!session||!esAllowed()||!$('es38Team'))return;if(state?.session===session&&current(state)){paint();return;}stop(state);
+    const s={uid:session.uid,date:session.date,session,rows:[],base:null,busser:defaults(session.date,session.rawBase),baseBusser:null,busserTouched:{},dirty:false,busserDirty:false,busy:false,verified:false,id:++serial,readSeq:0,sourceEpoch:0,controllers:new Set(),unsubs:[],conflicts:[],mergeContext:null};state=s;s.rows=copy(teamRows(session.rawBase||{},hc15Session?.date===session.date?hc15Session.data||{}:{}));s.previewRows=copy(s.rows);
+    try{const saved=JSON.parse(localStorage.getItem(key(s))||'null');if(saved?.dirty){for(const f of ['rows','base','busser','baseBusser','dirty','busserDirty','busserTouched','mergeContext','conflicts','previewRows'])if(Object.hasOwn(saved,f))s[f]=saved[f];if(s.busserDirty&&!Object.keys(s.busserTouched||{}).length)s.busserTouched={AM:true,PM:true};message('Restored your team device draft.');}}catch(e){}
+    paint();void load(s);watch(s);
   }
-  function install(){if(!$('employeeSheet'))return;if($('es38Team')){window.es41Install?.();return;}tt15Init();
-    const panel=document.createElement('section');panel.id='es38Team';panel.style.cssText='margin:12px 0;padding:16px;border:1px solid #bfd1de;border-radius:18px;background:#f5faff';
-    panel.innerHTML='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><b>Busser working</b><label><input id="es38AM" type="checkbox"> Busser AM</label><label><input id="es38PM" type="checkbox"> Busser PM</label></div><p>Mon–Fri: AM off / PM on. Sat–Sun: AM + PM on.</p><details><summary><b>Employees · Position · Shift</b></summary><div id="es38Rows"></div><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="es38Add">＋ Add employee / shift</button><button type="button" id="es38Manage">Manage Employee</button><button type="button" id="es38Save">Apply Team</button><button type="button" id="es38Retry">Retry / reload team</button></div></details><p id="es38Status" role="status" aria-live="polite"></p>';
-    $('employeeSheet').querySelector('.es-toolbar').after(panel);
-    const style=document.createElement('style');style.textContent='.es38-row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;padding:12px 0;border-bottom:1px solid #cbd9e8;margin-bottom:10px}.es38-row label{display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px}.es38-row select{width:100%;min-height:44px}#es38Team button{min-height:44px}#es38Team input[type=checkbox]{width:22px;height:22px;vertical-align:middle}';document.head.appendChild(style);
-    $('es38Add').onclick=()=>{if(!state||state.busy)return;state.rows.push({name:'',role:'Server',shift:'AM'});state.dirty=true;persist(state);paint();};
-    $('es38Rows').onchange=e=>{const s=state,k=e.target.dataset.k,i=Number(e.target.dataset.i);if(!s||s.busy||!k||!s.rows[i])return;const r=s.rows[i];r[k]=e.target.value;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===r.name)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';s.dirty=true;persist(s);paint();};
-    $('es38Rows').onclick=e=>{const b=e.target.closest('[data-remove]');if(!b||!state||state.busy)return;state.rows.splice(Number(b.dataset.remove),1);state.dirty=true;persist(state);paint();};
-    for(const cp of ['AM','PM'])$('es38'+cp).onchange=()=>{if(!state||state.busy)return;state.busser[cp]=$('es38'+cp).checked;state.busserDirty=true;state.dirty=true;persist(state);message('Busser change is a team draft. Apply Team to use it in calculations.');};
-    $('es38Save').onclick=apply;$('es38Retry').onclick=()=>{if(!state||state.busy)return;if(state.dirty&&!confirm('Reload saved team and discard this team draft? Employee sales inputs are kept.'))return;state.dirty=false;state.busserDirty=false;persist(state);void load(state);};
-    $('es38Manage').onclick=()=>{window.es59ManageEmployee();};
-    for(const id of ['tt15DirectoryPanel','tt15BartenderDuplicateModal']){const modal=$(id);if(modal)$('employeeSheet').appendChild(modal);}
-    $('tt15SheetTeam')?.remove();$('hc15EditTeam')?.remove();
-    window.es41Install?.();const empty=$('esRows')?.querySelector('.es-empty');if(empty)empty.textContent='Tap Add row below, choose employee, position and shift, then Apply changes.';
+  async function resolve(id,choice){const s=state;if(!current(s)||s.busy||!['local','remote'].includes(choice)||!(s.conflicts||[]).some(c=>c.id===id)||!lock(s))return false;
+    try{if(!await readBoth(s)||!current(s))return false;if(!s.conflicts.some(c=>c.id===id)){message('The saved assignment changed again. Review the latest values below before choosing.',true);return false;}s.mergeContext.resolutions[id]=choice;rebase(s,s.latestRaw,s.latestHost);message(s.conflicts.length?'Choice kept. Resolve the remaining changed fields, then Apply changes.':'Choice kept. Tap Apply changes to save the merged team.');return true;}catch(e){if(current(s))message('Could not verify this choice: '+e.message+'. Your draft is kept.',true);return false;}finally{await unlock(s);}
   }
-  const init=esInit;esInit=function(...args){const out=init(...args);install();$('tt15SheetTeam')?.remove();return out;};
-  const open=window.employeeSheetOpen;window.employeeSheetOpen=async function(...args){const out=await open(...args);install();start();window.es41Install?.();return out;};
-  const names=tt15PaintNames;tt15PaintNames=function(...args){const out=names(...args);if(state&&!state.busy)paint();return out;};
-  window.fzOpenTodayTeam=async function(date){return window.employeeSheetOpen(date);};
-  // Rename old home entry points so they open the unified sheet.
-  const home=window.fzOpenRoleHome;window.fzOpenRoleHome=function(...args){const out=home?.apply(this,args);document.querySelectorAll('button').forEach(b=>{if(b.textContent.trim()==="Today's Team")b.textContent='Employee Sheet';});return out;};
+  function nonAssignmentEdits(session){return Object.values(session.dirty||{}).some(fields=>Object.keys(fields).some(f=>!['role','shift'].includes(f)))||ES_PERIODS.some(cp=>(session.routing?.[cp]||'')!==(session.baseRouting?.[cp]||''));}
+  async function shareInputs(s){
+    const session=s.session;esPersistLocal();const assignment=[];for(const row of session.rows||[]){const flags=session.dirty?.[row.name];for(const field of ['role','shift'])if(flags?.[field]){assignment.push({name:row.name,field,value:row[field]});delete flags[field];}if(flags&&!Object.keys(flags).length)delete session.dirty[row.name];}
+    try{if(session.autoPromise){await session.autoPromise;if(!current(s))throw new Error('Date or login changed.');}if(esHasEdits(session)){if(!session.cloudReady)throw new Error('Wait for current sheet inputs to connect before changing assignments.');await es14AutoFlush(session);if(!current(s))throw new Error('Date or login changed.');if(nonAssignmentEdits(session))throw new Error('Save or sync the remaining sheet input conflicts before changing assignments. Your team draft is kept.');}
+      const hs=s.lockHost;if(hs?.writing){await hs.writing;if(!current(s)||hc15Session!==hs)throw new Error('Date or login changed.');}if(hs&&Object.keys(hs.edits||{}).length){if(!hs.verified)throw new Error('Wait for Host / Cashier input to connect before changing assignments.');await hc15Flush(hs);if(!current(s)||hc15Session!==hs)throw new Error('Date or login changed.');if(Object.keys(hs.edits||{}).length)throw new Error('Save or resolve the remaining Host / Cashier input before changing assignments. Your draft is kept.');}
+    }finally{if(current(s))for(const item of assignment){const row=session.rows.find(r=>r.name===item.name);if(row){row[item.field]=item.value;(session.dirty[item.name] ||= {})[item.field]=true;}}}
+  }
+  async function apply(){const s=state;if(!current(s)||s.busy||!lock(s))return false;let committed=false;
+    try{tt15Require(s.uid);tt15TeamValidate(es64NamedAssignments(s.rows));await shareInputs(s);if(!current(s))return false;if(!await readBoth(s)||!current(s))return false;if(s.conflicts.length){message('Only the changed fields below need a choice. All other changes are preserved in this team draft.',true);return false;}
+      const named=es64NamedAssignments(s.rows);tt15TeamValidate(named);if(s.base&&named.length===0&&s.base.length&&!confirm('Remove everyone from the active team? Saved reports are kept.'))return false;
+      const duplicate=tt15ConfirmDuplicateBartenders(named);for(const id of ['tt15BartenderDuplicateCancel','tt15BartenderDuplicateContinue'])if($(id))$(id).disabled=false;if(!await duplicate||!current(s))return false;const confirmedBartenders=duplicateKey(named);
+      const edited=copy(named),base=copy(s.base||[]),chosen=copy(s.busser),baseBusser=copy(s.baseBusser),touched=copy(s.busserTouched||{});
+      const result=await runTransaction(db,async tx=>{const ref=doc(db,'hourlyV1Batches',s.date),href=doc(db,'hostCashierTipReports',s.date),dref=doc(db,'hostCashierTipReports','employee-roster');const bs=await tx.get(ref);if(!current(s))throw new Error('Date or login changed. Your draft is kept.');const hs=await tx.get(href);if(!current(s))throw new Error('Date or login changed. Your draft is kept.');const ds=await tx.get(dref);tt15Require(s.uid);if(!current(s))throw new Error('Date or login changed. Your draft is kept.');const raw=bs.exists()?bs.data():{},host=hs.exists()?hs.data():{};for(const data of [raw,host])if(data?.date&&data.date!==s.date)throw new Error('Saved team date does not match this sheet. Your draft is kept.');const remote=teamRows(raw,host),plan=tt15TeamMergePlan81(base,edited,remote),bp=busserPlan(baseBusser,chosen,defaults(s.date,raw),touched,{});if(plan.conflicts.length||bp.conflicts.length){const e=new Error('Another device changed the same assignment field. Choose only that field below.');e.teamConflict=true;e.teamRaw=raw;e.teamHost=host;e.teamBase=base;e.teamEdited=edited;e.busserBase=baseBusser;e.busserEdited=chosen;throw e;}const rows=plan.rows;if(duplicateKey(rows)!==confirmedBartenders){const e=new Error('Bartender assignments changed on another device. Review the latest team and Apply again to confirm the updated bartender group.');e.teamRefreshRaw=raw;e.teamRefreshHost=host;throw e;}const dir=tt15DirectoryEntries(ds.exists()?ds.data():{});for(const r of rows)if(!remote.some(x=>person(x.name)===person(r.name))&&!dir.some(e=>person(e.name)===person(r.name)&&e.active))throw new Error(r.name+' is not active. Add or restore them in Manage Employee.');tt15TeamValidate(rows);const out=tt15BuildTeam(raw,host,rows,s.date);out.batch.todayTeamBusser=bp.values;tx.set(ref,{...out.batch,...tt15Stamp()});tx.set(href,{...out.host,...tt15Stamp()});return {rows,busser:bp.values,raw:out.batch,host:out.host};});
+      if(!current(s))return false;s.rows=copy(result.rows);s.base=copy(result.rows);s.busser=copy(result.busser);s.baseBusser=copy(result.busser);s.busserTouched={};s.dirty=false;s.busserDirty=false;s.conflicts=[];s.mergeContext=null;s.latestRaw=copy(result.raw);s.latestHost=copy(result.host);s.pendingHydrate={raw:result.raw,host:result.host,seq:++s.readSeq,epoch:s.sourceEpoch};s.pendingRemote=null;localStorage.removeItem(key(s));message('Team applied · shared with your other devices.');committed=true;return true;
+    }catch(e){if(current(s)){if(e.teamRefreshRaw)rebase(s,e.teamRefreshRaw,e.teamRefreshHost);if(e.teamConflict&&e.teamRaw){s.mergeContext={base:copy(e.teamBase),edited:copy(e.teamEdited),busserBase:copy(e.busserBase),busserEdited:copy(e.busserEdited),touched:copy(s.busserTouched),resolutions:{}};rebase(s,e.teamRaw,e.teamHost);}message('Team was not applied: '+(e.message||e)+'. Your draft is kept.',true);persist(s);}return false;}
+    finally{await unlock(s);if(current(s)&&committed)message('Team applied · shared with your other devices.');}
+  }
+  function setBusser(cp,value){const s=state;if(!current(s)||s.busy)return;s.busser[cp]=!!value;s.busserTouched[cp]=true;s.busserDirty=true;s.dirty=true;if(s.mergeContext){s.mergeContext.busserBase=copy(s.baseBusser);s.mergeContext.busserEdited=copy(s.busser);s.mergeContext.touched=copy(s.busserTouched);}persist(s);paint();message('Busser assignment kept in this draft. Apply changes to save.');}
+  function install(){if(!$('employeeSheet'))return;if($('es38Team')){window.es41Install?.();return;}tt15Init();const panel=document.createElement('section');panel.id='es38Team';panel.style.cssText='margin:12px 0;padding:16px;border:1px solid #bfd1de;border-radius:18px;background:#f5faff';panel.innerHTML='<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center"><b>Busser working</b><label><input id="es38AM" type="checkbox"> Busser AM</label><label><input id="es38PM" type="checkbox"> Busser PM</label></div><p>Mon–Fri: AM off / PM on. Sat–Sun: AM + PM on.</p><details><summary><b>Employees · Position · Shift</b></summary><div id="es38Rows"></div><div style="display:flex;gap:10px;flex-wrap:wrap"><button type="button" id="es38Add">＋ Add employee / shift</button><button type="button" id="es38Manage">Manage Employee</button><button type="button" id="es38Save">Apply changes</button><button type="button" id="es38Retry">Reload assignments</button></div></details><p id="es38Status" role="status" aria-live="polite"></p>';$('employeeSheet').querySelector('.es-toolbar').after(panel);const style=document.createElement('style');style.textContent='.es38-row{display:flex;gap:10px;flex-wrap:wrap;align-items:end;padding:12px 0;border-bottom:1px solid #cbd9e8;margin-bottom:10px}.es38-row label{display:flex;flex-direction:column;gap:6px;flex:1;min-width:140px}.es38-row select{width:100%;min-height:44px}#es38Team button,#es81TeamConflicts button{min-height:44px}#es38Team input[type=checkbox]{width:22px;height:22px;vertical-align:middle}';document.head.appendChild(style);
+    $('es38Add').onclick=add;$('es38Rows').onchange=e=>{if(e.target.dataset.k)edit(Number(e.target.dataset.i),e.target.dataset.k,e.target.value);};$('es38Rows').onclick=e=>{const b=e.target.closest?.('[data-remove]');if(b)remove(Number(b.dataset.remove));};for(const cp of ['AM','PM'])$('es38'+cp).onchange=()=>setBusser(cp,$('es38'+cp).checked);$('es38Save').onclick=apply;$('es38Retry').onclick=()=>window.es41Team.reload();$('es38Manage').onclick=()=>window.es59ManageEmployee();for(const id of ['tt15DirectoryPanel','tt15BartenderDuplicateModal']){const modal=$(id);if(modal)$('employeeSheet').appendChild(modal);}$('tt15SheetTeam')?.remove();$('hc15EditTeam')?.remove();window.es41Install?.();}
+  const init=esInit;esInit=function(...args){const out=init(...args);install();$('tt15SheetTeam')?.remove();return out;};const open=window.employeeSheetOpen;window.employeeSheetOpen=async function(...args){const out=await open(...args);install();start();window.es41Install?.();return out;};const names=tt15PaintNames;tt15PaintNames=function(...args){const out=names(...args);if(state&&!state.busy)paint();return out;};window.fzOpenTodayTeam=async date=>window.employeeSheetOpen(date);const leave=()=>{if(state){persist(state);stop(state);state=null;}$('es81TeamConflicts')?.remove();};const home=window.fzOpenRoleHome;window.fzOpenRoleHome=function(...args){leave();const out=home?.apply(this,args);document.querySelectorAll('button').forEach(b=>{if(b.textContent.trim()==="Today's Team")b.textContent='Employee Sheet';});return out;};
+  for(const route of ['employeeSheetClose','fzOpenFinalReport']){const fn=window[route];if(typeof fn==='function')window[route]=function(...args){leave();return fn.apply(this,args);};}
+  // Position/shift controls belong to the assignment draft until Apply. The
+  // original handler remains unchanged for every money/clock/BAR field.
+  const change=esChange;esChange=function(input,final){const s=state,field=input?.dataset?.esField;if(current(s)&&['role','shift'].includes(field)){if(s.busy)return;const row=s.session.rows[Number(input.dataset.esRow)],work=tt15AssignmentWorkRows(s.rows),i=row?work.findIndex(r=>r.workName===row.name):-1;if(i>=0){edit(i,field,input.value);return;}}return change.apply(this,arguments);};
+  try{onAuthStateChanged(auth,user=>{if(state&&(!user||user.uid!==state.uid||user.isAnonymous)){stop(state);state=null;$('es81TeamConflicts')?.remove();}});}catch(e){}
 })();
 function es38MergeUnverified(remote,edited){
   const out=tt15Copy(remote);for(const r of edited)if(!out.some(x=>x.name===r.name&&x.role===r.role&&x.shift===r.shift))out.push(tt15Copy(r));return out;
@@ -15815,3 +15903,20 @@ function fz72PdfStreams(streams){
   }
 })();
 /* END ES1.8.80 employee saved Board snapshot */
+
+
+/* ES1.8.81: only the current device's unsaved assignment draft is a preview.
+ * A clean cached team must not hide newer server-confirmed Host membership.
+ * The existing membership, split, rounding and report formulas are reused.
+ */
+(function es81HostPreviewAuthority(){
+  const original=hc74AssignmentData;
+  hc74AssignmentData=function(data={},preview=false){
+    const batch=esSession,team=window.es41Team?.get();
+    const currentDraft=!!preview&&esAllowed()&&!!batch&&batch.uid===currentUser?.uid
+      &&team?.session===batch&&team.uid===batch.uid&&team.date===batch.date
+      &&!team.busy&&(team.dirty===true||!!team.conflicts?.length);
+    return original(data,currentDraft);
+  };
+})();
+/* END ES1.8.81 Host preview authority */
