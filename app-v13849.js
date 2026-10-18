@@ -2779,6 +2779,7 @@ function clearListeners(){
   unsubs.forEach(fn=>{ try{fn()}catch(e){} });
   unsubs=[];
   fzClearEmployeeReports();
+  fz79CancelHistoricalSync();
   if(tipCheckPollTimer){ clearInterval(tipCheckPollTimer); tipCheckPollTimer=null; }
 }
 function hideApp(){
@@ -3364,6 +3365,7 @@ function fzClearEmployeeReports(){
   if(fzEmployeeReportsState)fzEmployeeReportsState.active=false;
   fzEmployeeReportsState=null;
   window.__employeeHistoricalHourlyReports=[];
+  fz79EmployeeAccessNotice(null);
   const list=$('employeeHistoricalReports');if(list)list.innerHTML='<div class="small">Loading finalized reports...</div>';
   const ready=$('employeeReadyReport');if(ready){ready.innerHTML='';ready.classList.add('hidden');}
 }
@@ -3401,7 +3403,7 @@ function fzEmployeePublishReports(s){
     if(!old||fzEmployeeReportCompare(r,old)>0)merged.set(r.id,r);
   }
   s.reports=[...merged.values()];window.__employeeHistoricalHourlyReports=s.reports;
-  renderEmployeeHistoricalReports(s.reports);fzRenderEmployeeReadyReport(s);
+  renderEmployeeHistoricalReports(s.reports);fzRenderEmployeeReadyReport(s);fz79EmployeeAccessNotice(s);
 }
 function fzEmployeeFinalReportForSubmission(submission){
   const s=fzEmployeeReportsState;if(!fzEmployeeReportsCurrent(s))return null;
@@ -3420,6 +3422,26 @@ function fzRenderEmployeeReadyReport(s=fzEmployeeReportsState){
     entry?.classList.add('hidden');bottom?.classList.add('hidden');
   }else{box?.classList.add('hidden');entry?.classList.remove('hidden');bottom?.classList.remove('hidden');}
 }
+function fz79EmployeeAccessNotice(s=fzEmployeeReportsState){
+  const notice=$('employeeHistoryAccess79');if(!notice)return;
+  if(!fzEmployeeReportsCurrent(s)){notice.innerHTML='';notice.classList.add('hidden');return;}
+  const failed=[...s.sources.entries()].filter(([,source])=>source.error);
+  if(!failed.length){notice.innerHTML='';notice.classList.add('hidden');return;}
+  const denied=failed.some(([,source])=>String(source.errorCode||'').endsWith('permission-denied'));
+  notice.innerHTML='<b>Some finalized reports could not load.</b><br>'+(denied?'Report access was denied (permission-denied). Your Manager / Owner must check report-access permissions.':'The connection could not refresh every report. Reports already loaded remain available.')+'<div class="actions" style="margin-top:10px"><button type="button" class="btn light" onclick="retryEmployeeHistoricalReports79()">Retry My Reports</button></div>';
+  notice.classList.remove('hidden');
+}
+window.retryEmployeeHistoricalReports79=function(){
+  const s=fzEmployeeReportsState;if(!fzEmployeeReportsCurrent(s))return;
+  for(const [kind,source]of [...s.sources]){
+    if(!source.error)continue;
+    s.stops.get(kind)?.();s.stops.delete(kind);s.sources.delete(kind);
+    const field={uid:'employeeUid',name:'employee',key:'employeeKey'}[kind];
+    if(field&&source.value)fzEmployeeStartReportQuery(s,kind,field,source.value);
+  }
+  fz79EmployeeAccessNotice(s);
+};
+
 function fzEmployeeStartReportQuery(s,kind,field,value){
   if(!fzEmployeeReportsCurrent(s)||!value)return;
   const previous=s.sources.get(kind);if(previous?.value===value)return;
@@ -3428,14 +3450,15 @@ function fzEmployeeStartReportQuery(s,kind,field,value){
   const stop=onSnapshot(q,snap=>{
     if(!fzEmployeeReportsCurrent(s)||s.sources.get(kind)!==source)return;
     // Replace each query bucket; removed / reassigned records do not linger.
-    source.rows=new Map(snap.docs.map(d=>{const r={...d.data(),id:d.id};return [d.id,r];}));source.loaded=true;
+    source.rows=new Map(snap.docs.map(d=>{const r={...d.data(),id:d.id};return [d.id,r];}));source.loaded=true;source.error=false;source.errorCode='';
     fzEmployeePublishReports(s);
   },e=>{
     if(!fzEmployeeReportsCurrent(s)||s.sources.get(kind)!==source)return;
-    console.warn('Employee finalized report query:',e.code||e.message);source.loaded=true;source.error=true;
+    console.warn('Employee finalized report query:',e.code||e.message);source.loaded=true;source.error=true;source.errorCode=String(e.code||'unknown');
     if(String(e.code||'').endsWith('permission-denied')){
       source.rows=new Map();fzEmployeePublishReports(s);
     }
+    fz79EmployeeAccessNotice(s);
     if(!s.reports.length&&[...s.sources.values()].every(x=>x.loaded)){
       const host=$('employeeHistoricalReports');if(host)host.innerHTML='<div class="notice danger">Could not refresh finalized reports. Please retry or contact the Manager on Duty.</div>';
     }
@@ -3499,11 +3522,10 @@ async function fzEnsureEmployeePortal(name,allRows=latestHourlyReports){
     },{merge:true});
   }
   const rows=(allRows||[]).filter(r=>String(r.employee||"").trim()===name && !shouldExcludeHistoricalReport(r));
-  const safeRows=rows.filter(r=>!shouldExcludeHistoricalReport(r)).map(r=>({
-    ...r,
-    createdAt:r.createdAt?.seconds?{seconds:r.createdAt.seconds}:null,
-    updatedAt:r.updatedAt?.seconds?{seconds:r.updatedAt.seconds}:null
-  }));
+  const safeRows=rows.filter(r=>!shouldExcludeHistoricalReport(r)).map(r=>{
+    const {boardActivity80,...publicRow}=r;
+    return {...publicRow,createdAt:r.createdAt?.seconds?{seconds:r.createdAt.seconds}:null,updatedAt:r.updatedAt?.seconds?{seconds:r.updatedAt.seconds}:null};
+  });
   await setDoc(doc(db,FZ_PUBLIC_PORTAL_COLLECTION,token),{
     employee:name,
     reports:safeRows,
@@ -3522,7 +3544,7 @@ async function fzSyncPublicReportPortals(rows=latestHourlyReports){
     const names=[...new Set(next.map(r=>String(r.employee||'').trim()).filter(Boolean))].sort();
     // Same-count edits, signatures, and accepted adjustments must republish.
     const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(k=>[k,stable(value[k])])):value;
-    const hash=JSON.stringify([...next].sort((a,b)=>String(a.id||'').localeCompare(String(b.id||''))).map(stable));
+    const hash=JSON.stringify([...next].sort((a,b)=>String(a.id||'').localeCompare(String(b.id||''))).map(r=>{const {boardActivity80,...publicRow}=r;return stable(publicRow);}));
     if(hash===fzPortalSyncHash)continue;
     let complete=true;
     for(const name of new Set([...fzPortalSyncedNames,...names])){
@@ -3729,7 +3751,7 @@ function renderEmployeeHistoricalReports(rows=[]){
     : '<div class="notice">No finalized tip reports yet.</div>';
 }
 
-window.downloadMyHistoricalReport=function(reportId){
+window.downloadMyHistoricalReport=async function(reportId){
   const s=fzEmployeeReportsState;if(!fzEmployeeReportsCurrent(s))return;
   let id=String(reportId||'');
   let r=s.reports.find(x=>x.id===id&&fzEmployeeOwnReport(x,s));
@@ -3738,7 +3760,7 @@ window.downloadMyHistoricalReport=function(reportId){
   const values=fzEmployeeReceiptValues(r);
   const printable={...r,totalBeforeMeal:values.tipBeforeMeal,totalPaidOut:values.paidOut,grandTotalTip:values.grandTotalTip};
   const safeName=String(r.employee||'Employee').replace(/[^a-z0-9_-]+/gi,'_');
-  downloadBlob(simplePdfBlob([printable]),`Fred_Zhang_Tip_Report_${safeName}_${r.date||todayLocal()}.pdf`);
+  try{const complete=await window.fz80EmployeeSnapshotPdf(simplePdfBlob([printable]),r);if(!fzEmployeeReportsCurrent(s)||!fzEmployeeOwnReport(r,s))return;downloadBlob(complete,`Fred_Zhang_Tip_Report_${safeName}_${r.date||todayLocal()}.pdf`);}catch(e){alert('Report PDF could not be created. '+(e.message||e));}
 };
 
 function listenEmployeeHistoricalReports(){
@@ -3995,7 +4017,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18780",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18800",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -4831,14 +4853,15 @@ function employeeReportPersonIdentity78(value){
 // Pure and separately testable; never trusts an existing employeeKey by itself.
 function employeeReportPersonKey78(value){return employeeReportPersonIdentity78(value)?.key||'';}
 
-async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=false}={}){
+async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=false,sessionGuard=null}={}){
   const result={matched:0,updated:0,skipped:0,profileUpdated:false};
   if(!['manager','owner'].includes(currentProfile?.role||''))return result;
   const actorUid=String(currentUser?.uid||''),targetUid=String(uid||'').trim();
   const identity=employeeReportPersonIdentity78(String(displayName||''));
   if(!actorUid||!targetUid||targetUid.length>128||targetUid.includes('/')||!identity)return result;
   const stillStaff=()=>String(currentUser?.uid||'')===actorUid
-    &&['manager','owner'].includes(currentProfile?.role||'');
+    &&['manager','owner'].includes(currentProfile?.role||'')
+    &&(typeof sessionGuard!=='function'||sessionGuard());
   const key=identity.key,targetRef=doc(db,'users',targetUid);
   const validTarget=profile=>!!profile&&profile.role==='employee'&&profile.active===true
     &&profile.approvalStatus==='approved'&&employeeReportPersonKey78(profile)===key
@@ -4846,11 +4869,14 @@ async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=fa
   // Verify the document at the actual supplied UID, rather than trusting a
   // cached user row or a UID/name supplied by a caller. A conflicting key is
   // retained for review; it must not silently grant access to another person.
+  let stage='read-profile';
+  try{
   const target=await runTransaction(db,async tx=>{
+    stage='read-profile';
     const snap=await tx.get(targetRef),profile=snap.exists()?snap.data():null;
     if(!stillStaff()||!validTarget(profile))return null;
     const needsKey=!String(profile.employeeKey||'').trim();
-    if(needsKey)tx.update(targetRef,{employeeKey:key});
+    if(needsKey){stage='save-profile-key';tx.update(targetRef,{employeeKey:key});}
     return {profile,profileUpdated:needsKey};
   });
   if(!target)return result;
@@ -4869,6 +4895,7 @@ async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=fa
     query(collection(db,'hourlyReports'),where('employeeKey','==',key)),
     query(collection(db,'hourlyReports'),where('personName','==',identity.personName))
   ];
+  stage='find-reports';
   const snapshots=await Promise.all(lookups.map(ref=>getDocs(ref)));
   if(!stillStaff())return result;
   const docs=new Map();
@@ -4886,7 +4913,8 @@ async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=fa
     // and forth. All reads precede the optional metadata-only write.
     const changed=await runTransaction(db,async tx=>{
       const reportRef=ds.ref||doc(db,'hourlyReports',ds.id);
-      const reportSnap=await tx.get(reportRef),profileSnap=await tx.get(targetRef);
+      stage='read-report';const reportSnap=await tx.get(reportRef);
+      stage='read-target-profile';const profileSnap=await tx.get(targetRef);
       const report=reportSnap.exists()?reportSnap.data():null;
       const profile=profileSnap.exists()?profileSnap.data():null;
       if(!stillStaff()||!validTarget(profile))return 'skip';
@@ -4896,7 +4924,7 @@ async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=fa
       const priorUid=String(report.employeeUid||'').trim();
       if(priorUid&&priorUid!==targetUid){
         if(priorUid.length>128||priorUid.includes('/'))return 'skip';
-        const ownerSnap=await tx.get(doc(db,'users',priorUid));
+        stage='read-owner-profile';const ownerSnap=await tx.get(doc(db,'users',priorUid));
         const owner=ownerSnap.exists()?ownerSnap.data():null;
         // Existing employee ownership is preserved, including an inactive
         // same-person account. Missing or unrelated owner metadata is a
@@ -4911,7 +4939,7 @@ async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=fa
       if(!Object.keys(patch).length)return 'matched';
       patch.accountLinkedAt=serverTimestamp();
       patch.accountLinkedBy=currentProfile.displayName||currentProfile.username||'Manager';
-      tx.update(reportRef,patch);
+      stage='save-report-link';tx.update(reportRef,patch);
       return 'updated';
     });
     if(changed==='updated'||changed==='matched'){
@@ -4925,6 +4953,12 @@ async function syncHistoricalReportsToEmployeeAccount(uid,displayName,{silent=fa
       +result.updated+' linked/updated.'+(result.skipped?' '+result.skipped+' identity conflict(s) left unchanged.':'');
   }
   return result;
+  }catch(error){
+    const failure=new Error(error.message||'Employee report identity could not sync.');
+    failure.code=String(error.code||'unknown');failure.fz79Stage=stage;
+    failure.fz79Employee=String(displayName||'');failure.fz79Partial={...result};
+    throw failure;
+  }
 }
 
 window.cleanHistoricalDuplicates=async function(){
@@ -4952,28 +4986,56 @@ window.cleanHistoricalDuplicates=async function(){
   await window.syncAllHistoricalReportsToAccounts?.();
 };
 
-window.syncAllHistoricalReportsToAccounts=async function(){
-  if(!["manager","owner"].includes(currentProfile?.role||""))return;
-  const el=$("historicalSyncStatus");
-  if(el)el.textContent="Syncing historical reports to employee accounts...";
-  try{
-    const us=await getDocs(collection(db,"users"));
-    const employees=us.docs.map(d=>({uid:d.id,...d.data()}))
-      .filter(u=>u.role==="employee" && u.active===true && u.approvalStatus==="approved");
-    let matched=0,updated=0,linkedUsers=0;
-    for(const u of employees){
-      const name=String(u.displayName||u.username||"").trim();
-      if(!name)continue;
-      const result=await syncHistoricalReportsToEmployeeAccount(u.uid,name,{silent:true});
-      matched+=result.matched; updated+=result.updated;
-      if(result.matched)linkedUsers++;
-    }
-    if(el)el.innerHTML=`<b>Historical sync complete.</b> ${linkedUsers} employee account(s) matched, ${matched} report(s) found, ${updated} report link(s) updated.`;
-  }catch(e){
-    console.error("Historical account sync:",e);
-    if(el)el.textContent=`Historical sync failed: ${e.code||e.message}`;
+let fz79HistoricalSyncRun=null;
+function fz79SyncActor(run){return !!run&&!run.cancelled&&fz79HistoricalSyncRun===run&&currentUser?.uid===run.uid&&['manager','owner'].includes(currentProfile?.role||'');}
+function fz79SyncButton(busy){const button=$('syncHistoricalReports79');if(button){button.disabled=busy;button.textContent=busy?'Syncing…':'Sync Historical Reports';}}
+function fz79CancelHistoricalSync(){if(fz79HistoricalSyncRun)fz79HistoricalSyncRun.cancelled=true;fz79HistoricalSyncRun=null;fz79SyncButton(false);}
+function fz79SyncDiagnostic(error,employee='',stage='unknown'){
+  return {stage:String(error.fz79Stage||stage),code:String(error.code||'unknown'),employee:String(error.fz79Employee||employee),message:String(error.message||'Report access could not be verified.')};
+}
+function fz79SyncPaint(run,finished=false){
+  if(!fz79SyncActor(run))return;
+  const el=$('historicalSyncStatus');if(!el)return;const r=run.result;
+  if(!finished){el.textContent='Syncing '+r.processed+'/'+r.total+' employee accounts'+(run.employee?' · '+run.employee:'')+' · '+r.updated+' report link(s) updated.';return;}
+  if(r.errors.length){
+    const first=r.errors[0];
+    el.textContent='Historical sync incomplete: '+first.code+' at '+first.stage+(first.employee?' · '+first.employee:'')+'. '+r.processed+'/'+r.total+' accounts checked; '+r.updated+' report link(s) updated; '+r.profileUpdated+' profile key(s) updated; '+r.errors.length+' error(s). Manager / Owner: check Firebase Firestore report-access rules, then retry Sync. Existing report money and signatures are unchanged.';
+  }else{
+    el.textContent='Historical sync complete. '+r.linkedUsers+' employee account(s) matched, '+r.matched+' report(s) found, '+r.updated+' report link(s) updated, '+r.profileUpdated+' profile key(s) updated.'+(r.skipped?' '+r.skipped+' identity conflict(s) left unchanged.':'')+(r.ineligible?' '+r.ineligible+' inactive or unapproved employee account(s) excluded.':'');
   }
+}
+window.syncAllHistoricalReportsToAccounts=function(){
+  if(!['manager','owner'].includes(currentProfile?.role||'')||!currentUser?.uid)return Promise.resolve({matched:0,updated:0,linkedUsers:0,profileUpdated:0,skipped:0,errors:[],total:0,processed:0});
+  if(fz79HistoricalSyncRun&&fz79HistoricalSyncRun.uid===currentUser.uid&&!fz79HistoricalSyncRun.cancelled)return fz79HistoricalSyncRun.promise;
+  fz79CancelHistoricalSync();
+  const run={uid:currentUser.uid,cancelled:false,employee:'',result:{matched:0,updated:0,linkedUsers:0,profileUpdated:0,skipped:0,errors:[],total:0,processed:0,ineligible:0}};
+  fz79HistoricalSyncRun=run;fz79SyncButton(true);fz79SyncPaint(run);
+  run.promise=Promise.resolve().then(async()=>{
+    const r=run.result;
+    const add=part=>{if(!part)return;r.matched+=Number(part.matched||0);r.updated+=Number(part.updated||0);r.skipped+=Number(part.skipped||0);if(part.profileUpdated)r.profileUpdated++;if(part.matched)r.linkedUsers++;};
+    try{
+      let us;try{us=await getDocs(collection(db,'users'));}
+      catch(error){if(fz79SyncActor(run))r.errors.push(fz79SyncDiagnostic(error,'','list-users'));return r;}
+      if(!fz79SyncActor(run)){r.cancelled=true;return r;}
+      const all=us.docs.map(d=>({...d.data(),uid:d.id})).filter(u=>u.role==='employee');
+      const employees=all.filter(u=>u.active===true&&u.approvalStatus==='approved');r.total=employees.length;r.ineligible=all.length-employees.length;
+      for(const employee of employees){
+        if(!fz79SyncActor(run)){r.cancelled=true;break;}
+        const name=String(employee.displayName||employee.username||'').trim();run.employee=name;fz79SyncPaint(run);
+        if(!name){r.skipped++;r.processed++;continue;}
+        try{add(await syncHistoricalReportsToEmployeeAccount(employee.uid,name,{silent:true,sessionGuard:()=>fz79SyncActor(run)}));}
+        catch(error){if(fz79SyncActor(run)){add(error.fz79Partial);r.errors.push(fz79SyncDiagnostic(error,name));}}
+        r.processed++;fz79SyncPaint(run);
+      }
+      return r;
+    }finally{
+      if(fz79SyncActor(run))fz79SyncPaint(run,true);
+      if(fz79HistoricalSyncRun===run){fz79HistoricalSyncRun=null;fz79SyncButton(false);}
+    }
+  });
+  return run.promise;
 };
+
 function listenApprovals(){
   const q=query(collection(db,"signupRequests"),where("status","==","pending"),limit(100));
   unsubs.push(onSnapshot(q,snap=>{
@@ -6266,9 +6328,9 @@ window.downloadAllReportsXls=function(){
   const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to download.");return;}
   downloadBlob(xlsBlob(rows),`Fred_Zhang_Final_Daily_Report_${todayLocal()}.xls`);
 };
-window.downloadAllReportsPdf=function(){
+window.downloadAllReportsPdf=async function(){
   const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to download.");return;}
-  downloadBlob(simplePdfBlob(rows),`Fred_Zhang_Final_Daily_Report_${todayLocal()}.pdf`);
+  await window.fz80DownloadManagerReport(simplePdfBlob(rows),`Fred_Zhang_Final_Daily_Report_${todayLocal()}.pdf`,{rows});
 };
 
 window.shareAllReportsXls=async function(target){
@@ -6277,7 +6339,7 @@ window.shareAllReportsXls=async function(target){
 };
 window.shareAllReportsPdf=async function(target){
   const rows=reportRowsForExport(); if(!rows.length){alert("No final reports to send.");return;}
-  await shareReportFile(simplePdfBlob(rows),`Fred_Zhang_Tip_Report_${todayLocal()}.pdf`,target);
+  await window.fz80ShareManagerReport(simplePdfBlob(rows),`Fred_Zhang_Tip_Report_${todayLocal()}.pdf`,target,{rows});
 };
 
 
@@ -6539,7 +6601,7 @@ window.printSmallReportThermal=async function(reportId){
     alert(`Please collect ${r.employee||"employee"}'s signature first. PRINT is available only after the employee has signed.`);
     return;
   }
-  es35ReceiptOutput(r,null,false);
+  await es35ReceiptOutput(r,null,false);
 };
 
 function restoreSmallReportAfterPassPrnt(state){
@@ -6765,14 +6827,14 @@ window.refreshEmployeePdfOptions=function(){
   sel.innerHTML='<option value="">Select employee</option>'+names.map(name=>`<option value="${esc(name)}">${esc(name)}</option>`).join('');
   sel.value=names.includes(previous)?previous:'';
 };
-window.downloadSelectedEmployeePdf=function(){
+window.downloadSelectedEmployeePdf=async function(){
   if(!['owner','manager'].includes(currentProfile?.role||''))return;
   const name=$('employeePdfName')?.value||'',date=$('smallReportDate')?.value||'';
   if(!name){alert('Select an employee for the PDF.');return;}
   const rows=employeePdfRows(name,date);
   if(!rows.length){alert('No finalized report for this employee and date.');return;}
   const normalized=rows.map(r=>({...r,totalPaidOut:smallReportPaidOut(r),employeeGrandTotal:smallReportGrandTotal(r)}));
-  downloadBlob(simplePdfBlob(normalized),`Fred_Zhang_${slugFor(name)}_${date||'all_dates'}.pdf`);
+  await window.fz80DownloadManagerReport(simplePdfBlob(normalized),`Fred_Zhang_${slugFor(name)}_${date||'all_dates'}.pdf`,{rows,employee:name});
 };
 
 window.downloadSmallReportPdf=async function(){
@@ -6785,7 +6847,7 @@ window.downloadSmallReportPdf=async function(){
     employeeGrandTotal:smallReportGrandTotal(r)
   }));
   const date=$("smallReportDate")?.value||todayLocal();
-  downloadBlob(simplePdfBlob(normalized),`Fred_Zhang_Small_Report_ALL_${date}.pdf`);
+  await window.fz80DownloadManagerReport(simplePdfBlob(normalized),`Fred_Zhang_Small_Report_ALL_${date}.pdf`,{rows,from:date,to:date});
 };
 
 
@@ -7084,7 +7146,7 @@ window.sendSmallReportSms=async function(reportId){
     totalPaidOut:smallReportPaidOut(r),
     employeeGrandTotal:smallReportGrandTotal(r)
   };
-  const blob=simplePdfBlob([rr]);
+  const blob=await window.fz80ReportSnapshotPdf(simplePdfBlob([rr]),r);
   const safeName=String(r.employee||"Employee").replace(/[^a-z0-9_-]+/gi,"_");
   const filename=`Fred_Zhang_Tip_Report_${safeName}_${r.date||todayLocal()}.pdf`;
   let portalLink="";
@@ -10203,11 +10265,11 @@ window.downloadMonthlyReportXls=function(){
   const safeFrom=range.from||"all";const safeTo=range.to||"all";
   downloadBlob(blob,`Fred_Zhang_Monthly_Report_${safeFrom}_to_${safeTo}.xls`);
 };
-window.printMonthlyReport=function(){
+window.printMonthlyReport=async function(){
   if(!["manager","owner"].includes(currentProfile?.role||""))return;
   const rows=monthlyReportSummaries();if(!rows.length){alert("No Monthly Report data for this period.");return;}
   const html=`<!doctype html><html><head><meta charset="utf-8"><title>Monthly Report</title><style>@page{size:landscape;margin:8mm}body{font-family:Arial,sans-serif;color:#111;margin:0}h1{font-size:18pt;margin:0 0 4px}p{font-size:9pt;margin:0 0 12px}table{width:100%;border-collapse:collapse;font-size:7.5pt}th,td{border:1px solid #777;padding:4px 5px;text-align:right;white-space:nowrap}th:first-child,td:first-child{text-align:left}th{background:#e9eef5}tfoot td{font-weight:bold;background:#f3f5f8}.fz-monthly-name small,.fz-monthly-total small{display:block;font-size:6.5pt;font-weight:normal}</style></head><body><h1>Fred Zhang Tip Calculator — Monthly / Period Report</h1><p>${esc(monthlyReportPeriodLabel())}</p>${monthlyReportExportTable(rows)}<script>window.onload=()=>{setTimeout(()=>window.print(),150)}<\/script></body></html>`;
-  es18OpenPrintPreview(html.replace(/<script[\s\S]*?<\/script>/gi,''),'Monthly / Period Report');
+  await window.fz80PrintManagerReport(html.replace(/<script[\s\S]*?<\/script>/gi,''),'Monthly / Period Report',{...monthlyReportRange(),rows:monthlyReportFilteredReports()});
 };
 function initMonthlyReportUi(){
   if(monthlyReportUiReady||$("monthlyReport"))return;
@@ -10439,12 +10501,12 @@ initMonthlyReportUi();
     return fz72PdfStreams(streams);
   }
 
-  window.downloadMonthlyReportPdf=function(){
+  window.downloadMonthlyReportPdf=async function(){
     if(!["manager","owner"].includes(currentProfile?.role||""))return;
     const rows=monthlyReportSummaries();
     if(!rows.length){alert("No Monthly Report data for this period.");return;}
     const range=monthlyReportRange(),safeFrom=range.from||"all",safeTo=range.to||"all";
-    downloadBlob(monthlyReportPdfBlob(rows),`Fred_Zhang_Monthly_Report_${safeFrom}_to_${safeTo}.pdf`);
+    await window.fz80DownloadManagerReport(monthlyReportPdfBlob(rows),`Fred_Zhang_Monthly_Report_${safeFrom}_to_${safeTo}.pdf`,{...range,rows:monthlyReportFilteredReports()});
   };
 
   // Replace old render listeners with the simplified renderer. Menu click uses window.renderMonthlyReport dynamically.
@@ -10538,7 +10600,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.78';
+const ES_BUILD='ES1.8.80';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -11202,7 +11264,7 @@ window.employeeSheetPrint=async function(name){
   esSetBusy(true);esStatus('Saving current row before printing…');
   try{
     const out=await esCommit(name),r=out.report,html=esThermalHtml(r);
-    es35ReceiptOutput(r,popup,true);esStatus('Receipt ready. Choose Send to phone or Print to printer.');
+    await es35ReceiptOutput(r,popup,true);esStatus('Receipt ready. Choose Send to phone or Print to printer.');
   }catch(e){if(popup)popup.close();es14HandleError(e);if(android)await cancelSmallReportPassPrntReturn();}
   finally{esSetBusy(false);esRenderRows();esRenderRouting();}
 };
@@ -12930,7 +12992,7 @@ async function hc15Action(name,action='save'){
   finally{s.busy=false;hc15Render();hc15Schedule(s);}
 }
 async function hc15PrintReport(report,popup){
-  es35ReceiptOutput(report,popup,true);
+  await es35ReceiptOutput(report,popup,true);
 }
 function hc15Sign(name){
   const s=hc15Session;if(!s?.verified||s.busy)return;
@@ -13246,7 +13308,7 @@ window.employeeSheetDownload=async function(group,format){
     if(!rows.length){es16ExportMessage(group==='host-cashier'?'No Host / Cashier team or server pool data is available for '+date+'.':'No saved '+es16ExportGroupTitle(group)+' Daily Reports for '+date+'. Finish and save a row to Final Report, then download. Draft-only rows are not included.');return false;}
     const blob=format==='xls'?es16DailyXlsBlob(rows,group,date):es16DailyPdfBlob(rows,group,date);
     const file='Fred_Zhang_Daily_Report_'+(group==='server'?'Server_Bartender':'Host_Cashier')+'_'+date+'.'+format;
-    downloadBlob(blob,file);es16ExportMessage('Downloaded '+rows.length+' '+(group==='host-cashier'?'Host / Cashier':'saved Server / Bartender')+' report'+(rows.length===1?'':'s')+' · '+date+'. Names: '+rows.map(r=>r.employeeDisplayName||r.employee).join(', ')+(group==='host-cashier'?' · Signature is optional for download.':''));return true;
+    if(format==='pdf'){if(!await window.fz80DownloadManagerReport(blob,file,{from:date,to:date,rows}))throw new Error('Complete Board report could not be created. Reload Board and retry.');}else downloadBlob(blob,file);es16ExportMessage('Downloaded '+rows.length+' '+(group==='host-cashier'?'Host / Cashier':'saved Server / Bartender')+' report'+(rows.length===1?'':'s')+' · '+date+'. Names: '+rows.map(r=>r.employeeDisplayName||r.employee).join(', ')+(group==='host-cashier'?' · Signature is optional for download.':''));return true;
   }catch(e){es16ExportMessage(e.message||'The saved report could not be downloaded. Please try again.',true);return false;}
   finally{es16ExportBusy=false;es16DailyExportControls();}
 };
@@ -14357,7 +14419,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     }
     obj[1]='<< /Type /Catalog /Pages 2 0 R >>';obj[2]=`<< /Type /Pages /Kids [${pageIds.map(id=>id+' 0 R').join(' ')}] /Count ${pageIds.length} >>`;obj[f1]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';obj[f2]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>';const max=f2;let pdf='%PDF-1.4\n',off=[0];for(let i=1;i<=max;i++){off[i]=pdf.length;pdf+=`${i} 0 obj\n${obj[i]}\nendobj\n`;}const xr=pdf.length;pdf+=`xref\n0 ${max+1}\n0000000000 65535 f \n`;for(let i=1;i<=max;i++)pdf+=String(off[i]).padStart(10,'0')+' 00000 n \n';pdf+=`trailer\n<< /Size ${max+1} /Root 1 0 R >>\nstartxref\n${xr}\n%%EOF`;return new Blob([pdf],{type:'application/pdf'});
   }
-  window.downloadEmployeeDailyDetailPdf=async function(){if(!['manager','owner'].includes(currentProfile?.role||''))return;const {from,to,employee}=monthlyReportRange();if(!employee){alert('Choose one Employee first.');return;}try{const all=await fetchRange(from,to),rows=aggregate(all.filter(r=>monthlyReportCanonicalPerson(r)===canonicalEmployeeName(employee).split(' · ')[0].trim()));detailRows=rows;if(!rows.length){alert('No finalized Daily Reports found for this employee and period.');return;}const safe=employee.replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'Employee';downloadBlob(pdfBlob(rows,employee,from,to),`Fred_Zhang_Daily_Detail_${safe}_${from}_to_${to}.pdf`);}catch(e){alert('Daily Detail PDF was not created.\n\n'+String(e?.message||e));}};
+  window.downloadEmployeeDailyDetailPdf=async function(){if(!['manager','owner'].includes(currentProfile?.role||''))return;const {from,to,employee}=monthlyReportRange();if(!employee){alert('Choose one Employee first.');return;}try{const all=await fetchRange(from,to),rows=aggregate(all.filter(r=>monthlyReportCanonicalPerson(r)===canonicalEmployeeName(employee).split(' · ')[0].trim()));detailRows=rows;if(!rows.length){alert('No finalized Daily Reports found for this employee and period.');return;}const safe=employee.replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'')||'Employee';await window.fz80DownloadManagerReport(pdfBlob(rows,employee,from,to),`Fred_Zhang_Daily_Detail_${safe}_${from}_to_${to}.pdf`,{from,to,employee});}catch(e){alert('Daily Detail PDF was not created.\n\n'+String(e?.message||e));}};
   function install(){
     const section=$('monthlyReport');if(!section||section.dataset.es186==='1')return false;section.dataset.es186='1';
     const actions=section.querySelector('.fz-monthly-head .actions');if(actions&&!$('fz186ThisWeek')){const b=document.createElement('button');b.id='fz186ThisWeek';b.type='button';b.className='btn light';b.textContent='THIS WEEK';b.onclick=thisWeek;actions.insertBefore(b,actions.firstChild);}
@@ -14403,7 +14465,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   }
   function signedEnough(sig){return !!sig&&sig.strokes.reduce((n,s)=>n+s.length,0)>=4;}
   async function printCommitted(report,popup){
-    es35ReceiptOutput(report,popup,true);
+    await es35ReceiptOutput(report,popup,true);
   }
   async function upperProcess(e){
     e?.preventDefault?.();e?.stopImmediatePropagation?.();
@@ -14617,7 +14679,7 @@ function es35PhoneNumber(raw){
   if(digits.length<8||digits.length>15||digits[0]==='0')throw new Error('Use the full international number with country code.');
   return digits;
 }
-function es35PhonePanel(view){
+async function es35PhonePanel(view){
   const dialog=view.dialog,status=dialog.querySelector('[role="status"]');let panel=dialog.querySelector('[data-phone-panel]');if(panel){panel.hidden=!panel.hidden;return;}
   if(!view.report){status.textContent='Download this report PDF to share it.';return;}
   panel=document.createElement('section');panel.dataset.phonePanel='';panel.style.cssText='padding:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center';
@@ -14625,7 +14687,7 @@ function es35PhonePanel(view){
   dialog.querySelector('.fz18-actions').after(panel);
   const report=view.report,name=smallReportCanonicalPerson(report)||report.employee||'Team member';
   const body=es43ReceiptMessage(name,report.date),input=panel.querySelector('input[type=tel]');panel.querySelector('textarea').value=body;
-  const blob=simplePdfBlob([{...report,totalPaidOut:smallReportPaidOut(report),employeeGrandTotal:smallReportGrandTotal(report)}]);
+  let blob;try{blob=await window.fz80ReportSnapshotPdf(simplePdfBlob([{...report,totalPaidOut:smallReportPaidOut(report),employeeGrandTotal:smallReportGrandTotal(report)}]),report);}catch(e){status.textContent='Report PDF could not be prepared. '+(e.message||e);return;}if(view.closed)return;
   const filename='Tip_Receipt_'+String(name).replace(/[^a-z0-9]+/gi,'_')+'_'+String(report.date||todayLocal()).replace(/[^0-9-]/g,'')+'.pdf';
   const file=new File([blob],filename,{type:'application/pdf'});
   panel.querySelector('[data-download-pdf]').onclick=()=>es18DownloadRaw(blob,filename);
@@ -15178,24 +15240,20 @@ function fz72PdfStreams(streams){
  * Read via authenticated callable getManagerBoardActivityV1({from,to}).
  *   => {rows:[{date,shift,employee,tables,guests,beepers:[],status,source}],
  *       warnings:[],loadedAt}; unknown counts are null, never fabricated zero.
- * This appends a separate card and separate downloads; it never touches payroll,
- * receipt/employee PDF generators, hourlyReports or Board database writes.
+ * Manager service reads remain isolated from payroll. ES80 appends activity
+ * to reports and separately saves employee-scoped snapshots; no Board writes.
  */
 (function fz78BoardManagerUI(){
-  const scopes=new Map();
-  const node=id=>document.getElementById(id);
-  // A separate, server-confirmed profile listener invalidates activity cached
-  // while a Manager / Owner is deactivated, removed or assigned another role.
-  // It deliberately does not mutate the app's shared currentProfile object.
+  // ES1.8.80: Board service activity is manager-only, independent of tip math.
+  const scopes=new Map(),node=id=>document.getElementById(id);
   const profileState={uid:'',verified:false,profile:null,unsub:null,token:0};
+  let profileEpoch=0,pendingDetailId='';
   const managerProfile=p=>!!p&&p.active===true&&['manager','owner'].includes(p.role)&&!['pending','rejected'].includes(p.approvalStatus);
-  const allowed=()=>!!currentUser && !currentUser.isAnonymous && managerProfile(currentProfile) && profileState.uid===currentUser.uid && profileState.verified && managerProfile(profileState.profile);
-  const active=()=>allowed() && frState?.open===true;
+  const allowed=()=>!!currentUser&&!currentUser.isAnonymous&&managerProfile(currentProfile)&&profileState.uid===currentUser.uid&&profileState.verified&&managerProfile(profileState.profile);
+  const active=()=>allowed()&&frState?.open===true;
   const html=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   const known=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0;
   const amount=v=>known(v)?String(v):'Unavailable';
-  // Exact Board identity aliases mirror the server-only reader. They apply
-  // only to activity matching; payroll names and formulas are not changed.
   const aliases=new Map([
     ['aj','Ariana Garner'],['a.j','Ariana Garner'],['a.j.','Ariana Garner'],['ariana garner','Ariana Garner'],['ariana garner.','Ariana Garner'],['ariana graner','Ariana Garner'],['ariana graner.','Ariana Garner'],
     ['alaina montalvo','Alainna Montalvo'],['alainna montalvo','Alainna Montalvo'],
@@ -15203,136 +15261,557 @@ function fz72PdfStreams(streams){
     ['caitlin dillon','Caitlin Dillon'],['caitlin bar','Caitlin Dillon']
   ]);
   const canonical=n=>{const clean=String(n||'').trim().replace(/\s+/g,' ').split(' · ')[0];return aliases.get(clean.toLowerCase())||clean;};
-  const beepers=r=>Array.isArray(r.beepers)?[...new Set(r.beepers.map(v=>String(v).trim()).filter(Boolean))]:[];
+  const unique=a=>[...new Set((Array.isArray(a)?a:[]).map(v=>String(v).trim()).filter(Boolean))];
+  const beepers=r=>unique(r.beepers);
   const csvCell=v=>{let s=String(v??'');if(/^[\s]*[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
   const callable=httpsCallable(functions,'getManagerBoardActivityV1',{timeout:180000});
+  function accessGuard(signal){
+    if(!allowed())throw new Error('A verified, active Manager / Owner login is required.');
+    const uid=currentUser.uid,epoch=profileEpoch;
+    return ()=>{if(!allowed()||currentUser.uid!==uid||profileEpoch!==epoch)throw new Error('Manager / Owner access changed. Reload this report.');if(signal?.aborted)throw Object.assign(new Error('Request cancelled.'),{name:'AbortError'});};
+  }
+  function validateRange(r){
+    if(!esDateValid(r.from)||!esDateValid(r.to)||r.from>r.to)throw new Error('Choose a valid start and end date to load FZ Board activity.');
+    if((Date.parse(r.to+'T12:00:00Z')-Date.parse(r.from+'T12:00:00Z'))/86400000>30)throw new Error('Choose up to 31 days for a Board activity report.');
+  }
+  function normalizedRows(result){
+    const advanced=Number(result?.schemaVersion)>=80;
+    return (Array.isArray(result?.rows)?result.rows:[]).map(r=>({...r,employee:canonical(r.employee||r.server||''),date:String(r.date||''),shift:String(r.shift||''),beepers:beepers(r),sections:advanced?unique(r.sections):[],advanced,
+      tableRotationsAvailable:advanced&&r.tableRotationsAvailable===true,
+      uniqueTables:advanced&&known(r.uniqueTables)?r.uniqueTables:null,
+      tableRotations:advanced&&r.tableRotationsAvailable===true&&Array.isArray(r.tableRotations)?r.tableRotations.filter(t=>t&&String(t.table||'').trim()&&Number.isInteger(t.rotations)&&t.rotations>=0).map(t=>({table:String(t.table).trim(),rotations:t.rotations,guests:known(t.guests)?t.guests:null})):[]
+    }));
+  }
   async function readBoardActivity(r){
-    if(!allowed())throw new Error('Manager / Owner login required.');
-    const uid=currentUser.uid;
-    if(r.signal?.aborted)throw Object.assign(new Error('Request cancelled.'),{name:'AbortError'});
-    const response=await callable({from:r.from,to:r.to});
-    if(!allowed()||currentUser.uid!==uid)throw new Error('Login changed.');
-    if(r.signal?.aborted)throw Object.assign(new Error('Request cancelled.'),{name:'AbortError'});
-    const data=response?.data;
-    if(!data||!Array.isArray(data.rows))throw new Error('Board returned an invalid activity response.');
+    validateRange(r);const assertCurrent=accessGuard(r.signal);assertCurrent();
+    const response=await callable({from:r.from,to:r.to});assertCurrent();
+    const data=response?.data;if(!data||!Array.isArray(data.rows))throw new Error('Board returned an invalid activity response.');
     const employee=canonical(r.employee).toLocaleLowerCase();
-    return {...data,rows:data.rows.filter(row=>!employee||canonical(row.employee||row.server).toLocaleLowerCase()===employee)};
+    return {data:{...data,rows:normalizedRows(data).filter(row=>!employee||row.employee.toLocaleLowerCase()===employee),from:r.from,to:r.to},assertCurrent};
   }
   function range(mode){
     const r=mode==='daily'?{from:node('smallReportDate')?.value||'',to:node('smallReportDate')?.value||'',employee:node('smallReportEmployee')?.value||''}:monthlyReportRange();
     return {from:String(r.from||''),to:String(r.to||''),employee:canonical(r.employee||'')};
   }
+  function scopeRange(s){return s.mode==='detail'?s.fixedRange:range(s.mode);}
   function key(r){return [r.from,r.to,r.employee].join('|');}
-  function sessionCurrent(s,uid,requestKey,token){return active()&&currentUser.uid===uid&&s.requestKey===requestKey&&s.token===token&&key(range(s.mode))===requestKey;}
-  function clear(){
-    for(const s of scopes.values()){s.controller?.abort();s.token++;s.result=null;s.requestKey='';s.host.remove();}
-    scopes.clear();
+  function scopeVisible(s){
+    if(!allowed())return false;
+    if(s.mode!=='detail')return active();
+    const modal=node('smallReportDetailModal');return scopes.get('detail')===s&&pendingDetailId===s.reportId&&!!modal&&!modal.classList.contains('hidden')&&modal.style.display!=='none';
   }
-  function normalizedRows(result){
-    return (Array.isArray(result?.rows)?result.rows:[]).map(r=>({...r,employee:canonical(r.employee||r.server||''),date:String(r.date||''),shift:String(r.shift||''),beepers:beepers(r)}));
-  }
-  function summaryRows(rows){
-    const groups=new Map();
-    for(const r of rows){const name=r.employee||'Unmatched employee';let g=groups.get(name);if(!g){g={employee:name,tables:0,guests:0,tableRows:0,guestRows:0,rows:0,beepers:new Set()};groups.set(name,g);}g.rows++;if(known(r.tables)){g.tables+=r.tables;g.tableRows++;}if(known(r.guests)){g.guests+=r.guests;g.guestRows++;}r.beepers.forEach(v=>g.beepers.add(v));}
-    return [...groups.values()].sort((a,b)=>a.employee.localeCompare(b.employee));
-  }
+  function sessionCurrent(s,uid,requestKey,token){return scopeVisible(s)&&currentUser.uid===uid&&s.requestKey===requestKey&&s.token===token&&key(scopeRange(s))===requestKey;}
+  function clearScope(mode){const s=scopes.get(mode);if(!s)return;s.controller?.abort();s.token++;s.result=null;s.rows=[];s.requestKey='';s.host.remove();scopes.delete(mode);}
+  function clear(){for(const mode of [...scopes.keys()])clearScope(mode);}
+  function revoke(){profileEpoch++;clear();}
   function partialRange(result){
     const shifts=Array.isArray(result?.shifts)?result.shifts:[],rows=Array.isArray(result?.rows)?result.rows:[];
     if(shifts.some(shift=>shift.countsAvailable!==true)||rows.some(row=>!known(row.tables)||!known(row.guests)))return true;
     return (Array.isArray(result?.warnings)?result.warnings:[]).some(warning=>/\b(?:Live Board|Saved analytics)\b.*could not be loaded|seating counts are unavailable|no recorded guest count|duplicated party ID/i.test(String(warning)));
   }
   function summarizeAmount(sum,n,total,partial=false){return n?String(sum)+(n<total||partial?' (partial)':''):'Unavailable';}
-  function warningDetails(warnings){
-    const rest=warnings.slice(3);return rest.length?'<details class="fz78-board-details"><summary>More availability notes ('+rest.length+')</summary><ul>'+rest.map(warning=>'<li>'+html(warning)+'</li>').join('')+'</ul></details>':'';
+  function groupsFor(rows){
+    const groups=new Map();
+    for(const r of rows){const name=r.employee||'Unmatched employee';let g=groups.get(name);if(!g){g={employee:name,tables:0,guests:0,tableRows:0,guestRows:0,rows:0,beepers:new Set(),am:new Set(),pm:new Set(),rotations:new Map(),tableIds:new Set(),rotationRows:0};groups.set(name,g);}g.rows++;if(known(r.tables)){g.tables+=r.tables;g.tableRows++;}if(known(r.guests)){g.guests+=r.guests;g.guestRows++;}r.beepers.forEach(v=>g.beepers.add(v));if(r.shift==='AM'||r.shift==='PM')r.sections.forEach(v=>g[r.shift.toLowerCase()].add(v));
+      if(r.tableRotationsAvailable){g.rotationRows++;for(const t of r.tableRotations){g.tableIds.add(t.table);const prev=g.rotations.get(t.table);g.rotations.set(t.table,{table:t.table,rotations:(prev?.rotations||0)+t.rotations,guests:prev?(prev.guests===null||t.guests===null?null:prev.guests+t.guests):t.guests});}}
+    }
+    return [...groups.values()].sort((a,b)=>a.employee.localeCompare(b.employee));
   }
+  function totalFor(groups){const t={employee:'TOTAL',tables:0,guests:0,tableRows:0,guestRows:0,rows:0,rotationRows:0,beepers:new Set(),tableIds:new Set()};for(const g of groups){for(const f of ['tables','guests','tableRows','guestRows','rows','rotationRows'])t[f]+=g[f];g.beepers.forEach(v=>t.beepers.add(v));g.tableIds.forEach(v=>t.tableIds.add(v));}return t;}
+  function distinctAmount(g,partial=false){return g.rotationRows?String(g.tableIds.size)+(g.rotationRows<g.rows||partial?' (partial)':''):'Not recorded';}
+  function dayGroups(rows){const dates=[...new Set(rows.map(r=>r.date))].sort();return dates.map(date=>({date,rows:rows.filter(r=>r.date===date),group:groupsFor(rows.filter(r=>r.date===date))[0]}));}
+  const sectionText=sections=>[...sections].join(', ')||'Not recorded';
+  function rotationText(row){return !row.tableRotationsAvailable?'Not recorded':row.tableRotations.length?row.tableRotations.map(t=>t.table+': '+t.rotations+' rotation'+(t.rotations===1?'':'s')+' / '+amount(t.guests)+' guests').join(' | '):'No seatings recorded';}
+  function advancedNotice(data){return Number(data.schemaVersion)>=80?'':'Sections and per-table rotations are not recorded by this connection. Manager / Owner connection update required.';}
+  function warningDetails(warnings){const rest=warnings.slice(3);return rest.length?'<details class="fz78-board-details"><summary>More availability notes ('+rest.length+')</summary><ul>'+rest.map(w=>'<li>'+html(w)+'</li>').join('')+'</ul></details>':'';}
+  function activityHtml(data,{collapsible=false,compact=false,includeWarnings=true,title='FZ Board Activity'}={}){
+    const rows=data.rows||[],partial=partialRange(data),groups=groupsFor(rows),total=totalFor(groups),font=compact?'14px':'14px';
+    const td='border:1px solid #b8cbd5;padding:5px;text-align:left;overflow-wrap:anywhere;',table='width:100%;border-collapse:collapse;table-layout:auto;font-size:'+font+';';
+    const summary=groups.concat(total).map(g=>'<tr><td style="'+td+'">'+html(g.employee)+'</td><td style="'+td+'">'+html(summarizeAmount(g.tables,g.tableRows,g.rows,partial))+'</td><td style="'+td+'">'+html(distinctAmount(g,partial))+'</td><td style="'+td+'">'+html(summarizeAmount(g.guests,g.guestRows,g.rows,partial))+'</td></tr>').join('');
+    let out='<section data-fz80-board-report style="font-family:Arial,sans-serif;color:#173447;font-size:'+font+';line-height:1.4;max-width:100%;overflow-wrap:anywhere;"><h3 style="font-size:18px;margin:8px 0;">'+html(title)+'</h3><p style="margin:4px 0;">'+html((data.from||'')+' to '+(data.to||''))+'</p><p style="margin:4px 0;">Rotations counts parties served. Distinct tables counts each table once in the selected period.</p>';
+    if(partial)out+='<p style="font-weight:bold;margin:5px 0;">Partial range: only recorded activity is totaled.</p>';
+    if(advancedNotice(data))out+='<p style="margin:5px 0;">'+html(advancedNotice(data))+'</p>';
+    if(!rows.length)return out+'<p>No recorded employee Board activity found. Unavailable history is not counted as zero.</p></section>';
+    out+='<table style="'+table+'"><thead><tr>'+['Employee','Rotations','Distinct tables','Guests served'].map(v=>'<th style="'+td+'background:#e3f0f4;">'+v+'</th>').join('')+'</tr></thead><tbody>'+summary+'</tbody></table>';
+    for(const g of groups){
+      const employeeRows=rows.filter(r=>r.employee===g.employee),rotationTotals=[...g.rotations.values()].sort((a,b)=>a.table.localeCompare(b.table,undefined,{numeric:true}));
+      out+='<article style="margin:10px 0;border:1px solid #bdcfd9;padding:8px;border-radius:6px;break-inside:avoid;"><b>'+html(g.employee)+'</b><div>AM sections: '+html(sectionText(g.am))+'</div><div>PM sections: '+html(sectionText(g.pm))+'</div><div>All beeper numbers: '+html([...g.beepers].join(', ')||'Not recorded')+'</div>';
+      out+='<div style="margin-top:5px;"><b>Per-table rotations</b>: '+html(g.rotationRows?rotationTotals.length?rotationTotals.map(t=>t.table+': '+t.rotations+' / '+amount(t.guests)+' guests').join(' | '):'No seatings recorded':'Not recorded')+(g.rotationRows<g.rows?' (not recorded for part of this range)':'')+'</div>';
+      const details=dayGroups(employeeRows).map(day=>'<div style="margin-top:10px;"><b>'+html(day.date+' total · Rotations: '+summarizeAmount(day.group.tables,day.group.tableRows,day.group.rows,partial)+' · Distinct tables: '+distinctAmount(day.group,partial))+'</b>'+day.rows.map(r=>'<div style="margin:8px 0;padding-top:5px;border-top:1px dotted #a8bdc7;"><b>'+html(r.date+' · '+r.shift)+'</b><div>Sections: '+html(sectionText(r.sections))+' · Rotations: '+html(amount(r.tables))+' · Distinct tables: '+html(r.tableRotationsAvailable?amount(r.uniqueTables??r.tableRotations.length):'Not recorded')+' · Guests: '+html(amount(r.guests))+'</div><div>Beeper numbers: '+html(r.beepers.join(', ')||'Not recorded')+'</div><div>Table rotations: '+html(rotationText(r))+'</div><small>'+html([r.source,r.status].filter(Boolean).join(' · '))+'</small></div>').join('')+'</div>').join('');
+      out+=collapsible?'<details class="fz78-board-details"><summary>Dates, AM / PM sections and table rotations</summary>'+details+'</details>':details;
+      out+='</article>';
+    }
+    if(includeWarnings)for(const w of data.warnings||[])out+='<p style="font-size:11px;margin:4px 0;">'+html(w)+'</p>';
+    return out+'</section>';
+  }
+  function activityLines(data,{title='FZ Board Activity'}={}){
+    const rows=data.rows||[],partial=partialRange(data),groups=groupsFor(rows),total=totalFor(groups),lines=[String(title).toUpperCase(),(data.from||'')+' to '+(data.to||''),'Rotations = parties served. Distinct tables = each table once in selected period.','Range completeness: '+(partial?'Partial - only recorded activity is totaled':'Recorded')];
+    if(advancedNotice(data))lines.push(advancedNotice(data));if(!rows.length)lines.push('No recorded employee Board activity. Missing history is not counted as zero.');
+    for(const g of groups.concat(total)){lines.push(' ',g.employee,'Rotations: '+summarizeAmount(g.tables,g.tableRows,g.rows,partial)+' | Distinct tables: '+distinctAmount(g,partial)+' | Guests served: '+summarizeAmount(g.guests,g.guestRows,g.rows,partial),'All beeper numbers: '+([...g.beepers].join(', ')||'Not recorded'));if(g.am){lines.push('AM sections: '+sectionText(g.am),'PM sections: '+sectionText(g.pm),'Per-table rotations: '+(g.rotationRows?[...g.rotations.values()].map(t=>t.table+': '+t.rotations+' / '+amount(t.guests)+' guests').join(' | ')||'No seatings recorded':'Not recorded')+(g.rotationRows<g.rows?' (not recorded for part of this range)':''));}}
+    lines.push(' ','DATES AND SHIFTS');for(const g of groups)for(const day of dayGroups(rows.filter(r=>r.employee===g.employee))){lines.push(' ',day.date+' | '+g.employee+' | DAILY TOTAL','Rotations: '+summarizeAmount(day.group.tables,day.group.tableRows,day.group.rows,partial)+' | Distinct tables: '+distinctAmount(day.group,partial));for(const r of day.rows)lines.push(r.date+' | '+r.shift+' | '+r.employee,'Sections: '+sectionText(r.sections),'Rotations: '+amount(r.tables)+' | Distinct tables: '+(r.tableRotationsAvailable?amount(r.uniqueTables??r.tableRotations.length):'Not recorded')+' | Guests: '+amount(r.guests),'Beeper numbers: '+(r.beepers.join(', ')||'Not recorded'),'Table rotations: '+rotationText(r),'Source / status: '+[r.source,r.status].filter(Boolean).join(' | '));}
+    for(const w of data.warnings||[])lines.push(String(w));return lines;
+  }
+  // Pure formatting accepts only its argument; it never reads data or authorizes access.
+  // Employee renderers separately validate ownership of saved report snapshots.
+  function format(data={},options={}){
+    const source={...data,schemaVersion:Number(data.schemaVersion??data.version)||0,from:String(data.from||data.date||''),to:String(data.to||data.date||''),warnings:Array.isArray(data.warnings)?data.warnings.map(String):[]};
+    source.rows=normalizedRows(source);return {html:activityHtml(source,options),lines:activityLines(source,options)};
+  }
+  function friendlyError(e){return ['functions/not-found','functions/unimplemented'].includes(e.code)?'Board connection needs activation by Manager / Owner. Activity is unavailable until the secure connection is active.':e.code==='functions/unavailable'?'FZ Board connection is temporarily unavailable. Reload the report; missing counts are not zero.':'FZ Board activity could not load: '+(e.message||String(e))+'. No missing counts are shown as zero.';}
+  async function prepare(options={}){
+    const r={from:String(options.from||''),to:String(options.to||''),employee:canonical(options.employee||''),signal:options.signal},result=await readBoardActivity(r);result.assertCurrent();
+    const data=result.data,formatted=format(data,{compact:!!options.compact,title:options.title||'FZ Board Activity'});return {data,...formatted,assertCurrent:result.assertCurrent};
+  }
+  window.fz80BoardReports=Object.freeze({prepare,allowed,format,sessionGuard:()=>accessGuard()});
   function render(s){
-    if(!active()){clear();return;}
-    const status=s.host.querySelector('[data-fz78-status]'),body=s.host.querySelector('[data-fz78-body]');
-    const buttons=[...s.host.querySelectorAll('[data-fz78-export]')];
-    buttons.forEach(b=>b.disabled=s.loading||!s.result||!s.rows.length);
-    if(s.loading){status.textContent='Loading FZ Board activity…';body.textContent='';return;}
-    if(s.error){status.textContent=s.error;body.textContent='';return;}
-    if(!s.result){status.textContent='Choose a date range and load FZ Board activity.';body.textContent='';return;}
-    const warnings=(Array.isArray(s.result.warnings)?s.result.warnings:[]).map(String),partial=partialRange(s.result),notes=warningDetails(warnings);
-    const time=s.result.loadedAt?new Date(s.result.loadedAt).toLocaleString('en-US',{timeZone:'America/Chicago'}):'';
+    if(!scopeVisible(s)){clearScope(s.mode);return;}
+    const status=s.host.querySelector('[data-fz78-status]'),body=s.host.querySelector('[data-fz78-body]');s.host.querySelectorAll('[data-fz78-export]').forEach(b=>b.disabled=s.loading||!s.result||!s.rows.length);
+    if(s.loading){status.textContent='Loading FZ Board activity…';body.textContent='';return;}if(s.error){status.textContent=s.error;body.textContent='';return;}if(!s.result){status.textContent='Choose a date range and load FZ Board activity.';body.textContent='';return;}
+    const warnings=(Array.isArray(s.result.warnings)?s.result.warnings:[]).map(String),partial=partialRange(s.result),time=s.result.loadedAt?new Date(s.result.loadedAt).toLocaleString('en-US',{timeZone:'America/Chicago'}):'';
     status.textContent=(s.rows.length?'Loaded '+s.rows.length+' employee / date / shift record(s).':'No recorded employee Board activity found for this range.')+(time?' Updated '+time+' (Huntsville).':'')+(partial?' Partial range: only recorded activity is totaled.':'')+(warnings.length?' '+warnings.slice(0,3).join(' ')+(warnings.length>3?' ('+(warnings.length-3)+' more availability notes below.)':''):'');
-    if(!s.rows.length){body.innerHTML='<p>Unavailable history is not counted as zero. Reload FZ Board activity after the Board has saved this date.</p>'+notes;return;}
-    const headings='<tr><th>Employee</th><th>Tables served</th><th>Guests served</th><th>All beeper numbers</th></tr>';
-    const summaries=summaryRows(s.rows);
-    const total={employee:'TOTAL',tables:0,guests:0,tableRows:0,guestRows:0,rows:0,beepers:new Set()};
-    for(const g of summaries){for(const f of ['tables','guests','tableRows','guestRows','rows'])total[f]+=g[f];g.beepers.forEach(v=>total.beepers.add(v));}
-    summaries.push(total);
-    body.innerHTML=notes+'<div class="fz78-board-scroll"><table><thead>'+headings+'</thead><tbody>'+summaries.map(g=>'<tr><td>'+html(g.employee)+'</td><td>'+html(summarizeAmount(g.tables,g.tableRows,g.rows,partial))+'</td><td>'+html(summarizeAmount(g.guests,g.guestRows,g.rows,partial))+'</td><td>'+html([...g.beepers].join(', ')||'Not recorded')+'</td></tr>').join('')+'</tbody></table></div><details class="fz78-board-details"><summary>Dates and shifts</summary><div class="fz78-board-scroll"><table><thead><tr><th>Date</th><th>Shift</th><th>Employee</th><th>Tables</th><th>Guests</th><th>Beeper numbers</th><th>Source / status</th></tr></thead><tbody>'+s.rows.map(r=>'<tr><td>'+html(r.date)+'</td><td>'+html(r.shift)+'</td><td>'+html(r.employee)+'</td><td>'+html(amount(r.tables))+'</td><td>'+html(amount(r.guests))+'</td><td>'+html(r.beepers.join(', ')||'Not recorded')+'</td><td>'+html([r.source,r.status].filter(Boolean).join(' · '))+'</td></tr>').join('')+'</tbody></table></div></details>';
+    body.innerHTML=warningDetails(warnings)+activityHtml(s.result,{collapsible:s.mode!=='detail',compact:s.mode==='detail',includeWarnings:false});
   }
   async function load(s,force=false){
-    if(!active()){clear();return;}
-    const r=range(s.mode),requestKey=key(r);
-    if(!force&&s.requestKey===requestKey&&(s.loading||s.result||s.error))return;
+    if(!scopeVisible(s)){clearScope(s.mode);return;}
+    const r=scopeRange(s),requestKey=key(r);if(!force&&s.requestKey===requestKey&&(s.loading||s.result||s.error))return;
     s.controller?.abort();s.controller=new AbortController();s.token++;s.requestKey=requestKey;s.result=null;s.rows=[];s.error='';s.loading=false;
-    if(!esDateValid(r.from)||!esDateValid(r.to)||r.from>r.to){s.error='Choose a valid start and end date to load FZ Board activity.';render(s);return;}
-    if((Date.parse(r.to+'T12:00:00Z')-Date.parse(r.from+'T12:00:00Z'))/86400000>30){s.error='Choose up to 31 days for a Board activity report.';render(s);return;}
+    try{validateRange(r);}catch(e){s.error=e.message;render(s);return;}
     const uid=currentUser.uid,token=s.token;s.loading=true;render(s);
-    try{const result=await readBoardActivity({...r,signal:s.controller.signal});if(!sessionCurrent(s,uid,requestKey,token))return;s.result=result;s.rows=normalizedRows(result);}
-    catch(e){if(!sessionCurrent(s,uid,requestKey,token)||e.name==='AbortError')return;s.error=['functions/not-found','functions/unavailable','functions/unimplemented'].includes(e.code)?'Board connection needs activation by Manager / Owner. Activity is unavailable until the secure connection is active.':'FZ Board activity could not load: '+(e.message||String(e))+'. No missing counts are shown as zero.';}
+    try{const result=await readBoardActivity({...r,signal:s.controller.signal});if(!sessionCurrent(s,uid,requestKey,token))return;s.result=result.data;s.rows=s.result.rows;s.assertCurrent=result.assertCurrent;}
+    catch(e){if(!sessionCurrent(s,uid,requestKey,token)||e.name==='AbortError')return;s.error=friendlyError(e);}
     finally{if(sessionCurrent(s,uid,requestKey,token)){s.loading=false;render(s);}}
   }
-  function filename(s,extension){const r=range(s.mode);return 'FZ_Board_Activity_'+r.from+'_to_'+r.to+'.'+extension;}
-  function exportGuard(s){if(!active()||!s.result||s.loading||!s.rows.length||s.requestKey!==key(range(s.mode)))throw new Error('Manager / Owner must reload the current Board activity before downloading.');return {uid:currentUser.uid,key:s.requestKey,token:s.token};}
+  function filename(s,extension){const r=scopeRange(s);return 'FZ_Board_Activity_'+r.from+'_to_'+r.to+'.'+extension;}
+  function exportGuard(s){if(!scopeVisible(s)||!s.result||s.loading||!s.rows.length||s.requestKey!==key(scopeRange(s)))throw new Error('Manager / Owner must reload the current Board activity before downloading.');s.assertCurrent?.();return {uid:currentUser.uid,key:s.requestKey,token:s.token};}
   function csv(s){
-    const guard=exportGuard(s);const fields=['Date','Shift','Employee','Tables served','Guests served','All beeper numbers','Source','Status','Range completeness'],completeness=partialRange(s.result)?'Partial':'Recorded';
-    const rows=[fields,...s.rows.map(r=>[r.date,r.shift,r.employee,known(r.tables)?r.tables:'Unavailable',known(r.guests)?r.guests:'Unavailable',r.beepers.join(', ')||'Not recorded',r.source||'',r.status||'',completeness])];
-    const blob=new Blob(['\ufeff'+rows.map(row=>row.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
-    if(!sessionCurrent(s,guard.uid,guard.key,guard.token))throw new Error('Login or report filters changed.');
-    downloadBlob(blob,filename(s,'csv'));
+    const guard=exportGuard(s),fields=['Date','Shift','Employee','Rotations','Guests served','All beeper numbers','Source','Status','Range completeness','Sections','Distinct tables (shift)','Per-table rotations'],completeness=partialRange(s.result)?'Partial':'Recorded';
+    const rows=[fields,...s.rows.map(r=>[r.date,r.shift,r.employee,known(r.tables)?r.tables:'Unavailable',known(r.guests)?r.guests:'Unavailable',r.beepers.join(', ')||'Not recorded',r.source||'',r.status||'',completeness,sectionText(r.sections),known(r.uniqueTables)?r.uniqueTables:'Not recorded',rotationText(r)])],blob=new Blob(['\ufeff'+rows.map(r=>r.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+    if(!sessionCurrent(s,guard.uid,guard.key,guard.token))throw new Error('Login or report filters changed.');s.assertCurrent?.();downloadBlob(blob,filename(s,'csv'));
   }
   function pdf(s){
-    const guard=exportGuard(s),r=range(s.mode),partial=partialRange(s.result);
-    if(typeof window.fz48TextPdf!=='function')throw new Error('PDF generator is unavailable.');
-    const lines=['Fred Zhang Tip Calculator','FZ BOARD ACTIVITY - MANAGER / OWNER',r.from+' to '+r.to,'Service activity - Huntsville work dates','Range completeness: '+(partial?'Partial - only recorded activity is totaled':'Recorded')];
-    const groups=summaryRows(s.rows),total={employee:'TOTAL',tables:0,guests:0,tableRows:0,guestRows:0,rows:0,beepers:new Set()};
-    for(const g of groups){for(const f of ['tables','guests','tableRows','guestRows','rows'])total[f]+=g[f];g.beepers.forEach(v=>total.beepers.add(v));}groups.push(total);
-    for(const g of groups){lines.push(' ',g.employee,'Tables served: '+summarizeAmount(g.tables,g.tableRows,g.rows,partial)+' | Guests served: '+summarizeAmount(g.guests,g.guestRows,g.rows,partial),'All beeper numbers: '+([...g.beepers].join(', ')||'Not recorded'));}
-    lines.push('__PAGE__','DATES AND SHIFTS');
-    for(const row of s.rows){lines.push(' ',row.date+' | '+row.shift+' | '+row.employee,'Tables: '+amount(row.tables)+' | Guests: '+amount(row.guests),'Beeper numbers: '+(row.beepers.join(', ')||'Not recorded'),'Source / status: '+[row.source,row.status].filter(Boolean).join(' | '));}
-    for(const warning of s.result.warnings||[])lines.push(String(warning));
-    const blob=window.fz48TextPdf(lines),name=filename(s,'pdf');
-    if(!sessionCurrent(s,guard.uid,guard.key,guard.token))throw new Error('Login or report filters changed.');
-    if(window.FZReceiptAndroid?.savePdf){const reader=new FileReader();reader.onload=()=>{if(sessionCurrent(s,guard.uid,guard.key,guard.token))window.FZReceiptAndroid.savePdf(name,String(reader.result).split(',')[1]);};reader.readAsDataURL(blob);}
-    else downloadBlob(blob,name);
+    const guard=exportGuard(s);if(typeof window.fz48TextPdf!=='function')throw new Error('PDF generator is unavailable.');
+    const blob=window.fz48TextPdf(['Fred Zhang Tip Calculator',...activityLines(s.result)]),name=filename(s,'pdf');if(!sessionCurrent(s,guard.uid,guard.key,guard.token))throw new Error('Login or report filters changed.');s.assertCurrent?.();
+    if(window.FZReceiptAndroid?.savePdf){const reader=new FileReader();reader.onload=()=>{if(sessionCurrent(s,guard.uid,guard.key,guard.token)){try{s.assertCurrent?.();window.FZReceiptAndroid.savePdf(name,String(reader.result).split(',')[1]);}catch(e){}}};reader.readAsDataURL(blob);}else downloadBlob(blob,name);
   }
-  function ensure(mode){
-    if(!active()){clear();return null;}
-    const parent=node(mode==='daily'?'smallReport':'monthlyReport');if(!parent)return null;
-    let s=scopes.get(mode);if(s&&s.host.isConnected)return s;if(s){s.controller?.abort();s.token++;}
+  function createScope(mode,parent,extra={}){
     const host=document.createElement('section');host.className='card fz78-board-activity';host.dataset.fz78BoardActivity=mode;
-    host.innerHTML='<div class="fz78-board-head"><div><h3>FZ Board Activity</h3><p>Manager / Owner only · tables, guests and all recorded beeper numbers</p></div><div class="actions"><button type="button" class="btn light" data-fz78-load>Reload Board</button><button type="button" class="btn light" data-fz78-export="csv" disabled>Download Activity CSV</button><button type="button" class="btn dark" data-fz78-export="pdf" disabled>Download Activity PDF</button></div></div><p role="status" aria-live="polite" data-fz78-status></p><div data-fz78-body></div>';
-    parent.appendChild(host);s={mode,host,requestKey:'',token:0,result:null,rows:[],loading:false,error:'',controller:null};scopes.set(mode,s);
-    host.querySelector('[data-fz78-load]').addEventListener('click',()=>void load(s,true));
-    host.querySelectorAll('[data-fz78-export]').forEach(b=>b.addEventListener('click',()=>{try{b.dataset.fz78Export==='pdf'?pdf(s):csv(s);}catch(e){s.error=e.message||String(e);render(s);}}));
-    return s;
+    host.innerHTML='<div class="fz78-board-head"><div><h3>FZ Board Activity</h3><p>Manager / Owner only · rotations, distinct tables, guests, AM / PM sections, table rotations and beeper numbers</p></div><div class="actions"><button type="button" class="btn light" data-fz78-load>Reload Board</button><button type="button" class="btn light" data-fz78-export="csv" disabled>Download Activity CSV</button><button type="button" class="btn dark" data-fz78-export="pdf" disabled>Download Activity PDF</button></div></div><p role="status" aria-live="polite" data-fz78-status></p><div data-fz78-body></div>';
+    parent.appendChild(host);const s={mode,host,requestKey:'',token:0,result:null,rows:[],loading:false,error:'',controller:null,...extra};scopes.set(mode,s);
+    host.querySelector('[data-fz78-load]').addEventListener('click',()=>void load(s,true));host.querySelectorAll('[data-fz78-export]').forEach(b=>b.addEventListener('click',()=>{try{b.dataset.fz78Export==='pdf'?pdf(s):csv(s);}catch(e){s.error=e.message||String(e);render(s);}}));return s;
   }
-  function paint(mode){if(!active()){clear();return;}const s=ensure(mode);if(s)void load(s);}
-  const daily=window.renderSmallReport,monthly=window.renderMonthlyReport;
+  function paint(mode){if(!active()){clearScope(mode);return;}const parent=node(mode==='daily'?'smallReport':'monthlyReport');if(!parent)return;let s=scopes.get(mode);if(s&&!s.host.isConnected){clearScope(mode);s=null;}if(!s)s=createScope(mode,parent);void load(s);}
+  function paintDetail(reportId,fresh=false){
+    if(fresh)clearScope('detail');if(!allowed())return;
+    const r=(latestHourlyReports||[]).find(row=>row.id===reportId),modal=node('smallReportDetailModal'),parent=node('smallReportDetailBody');if(!r||!parent||!modal||modal.classList.contains('hidden')||modal.style.display==='none')return;
+    let s=scopes.get('detail');if(s&&(!s.host.isConnected||s.reportId!==reportId)){clearScope('detail');s=null;}
+    if(!s)s=createScope('detail',parent,{reportId,fixedRange:{from:String(r.date||''),to:String(r.date||''),employee:canonical(r.personName||r.employee||'')}});void load(s,fresh);
+  }
+  const daily=window.renderSmallReport,monthly=window.renderMonthlyReport,openDetail=window.openSmallReportDetail,closeDetail=window.closeSmallReportDetail;
   if(typeof daily==='function')window.renderSmallReport=function(...args){const out=daily.apply(this,args);paint('daily');return out;};
   if(typeof monthly==='function')window.renderMonthlyReport=function(...args){const out=monthly.apply(this,args);paint('monthly');return out;};
+  if(typeof openDetail==='function')window.openSmallReportDetail=function(reportId){clearScope('detail');pendingDetailId=String(reportId||'');const out=openDetail.apply(this,arguments);paintDetail(pendingDetailId,true);return out;};
+  if(typeof closeDetail==='function')window.closeSmallReportDetail=function(...args){pendingDetailId='';clearScope('detail');return closeDetail.apply(this,args);};
   document.addEventListener('change',e=>{if(['smallReportDate','smallReportEmployee'].includes(e.target?.id))paint('daily');if(['monthlyReportFrom','monthlyReportTo','monthlyReportEmployee'].includes(e.target?.id))paint('monthly');});
   function stopProfile(){profileState.token++;profileState.unsub?.();profileState.unsub=null;profileState.uid='';profileState.verified=false;profileState.profile=null;}
   function watchProfile(user){
-    clear();stopProfile();if(!user||user.isAnonymous)return;
-    const uid=user.uid,token=profileState.token;profileState.uid=uid;
-    profileState.unsub=onSnapshot(doc(db,'users',uid),{includeMetadataChanges:true},snap=>{
-      if(profileState.uid!==uid||profileState.token!==token)return;
-      const previous=profileState.profile,profile=snap.exists()?snap.data():null;
-      const verified=snap.metadata?.fromCache===false&&snap.metadata?.hasPendingWrites!==true;
-      const changed=previous&&(previous.role!==profile?.role||previous.active!==profile?.active||previous.approvalStatus!==profile?.approvalStatus);
-      profileState.profile=profile;profileState.verified=verified;
-      if(!verified||!managerProfile(profile)||changed)clear();
-      if(active())paint(frState.mode==='monthly'?'monthly':'daily');
-    },()=>{if(profileState.uid===uid&&profileState.token===token){profileState.verified=false;profileState.profile=null;clear();}});
+    revoke();pendingDetailId='';stopProfile();if(!user||user.isAnonymous)return;const uid=user.uid,token=profileState.token;profileState.uid=uid;
+    profileState.unsub=onSnapshot(doc(db,'users',uid),{includeMetadataChanges:true},snap=>{if(profileState.uid!==uid||profileState.token!==token)return;const previous=profileState.profile,profile=snap.exists()?snap.data():null,verified=snap.metadata?.fromCache===false&&snap.metadata?.hasPendingWrites!==true,changed=previous&&(previous.role!==profile?.role||previous.active!==profile?.active||previous.approvalStatus!==profile?.approvalStatus);profileState.profile=profile;profileState.verified=verified;if(!verified||!managerProfile(profile)||changed)revoke();if(active())paint(frState.mode==='monthly'?'monthly':'daily');if(allowed()&&pendingDetailId)paintDetail(pendingDetailId);},()=>{if(profileState.uid===uid&&profileState.token===token){profileState.verified=false;profileState.profile=null;revoke();}});
   }
-  try{onAuthStateChanged(auth,watchProfile);}catch(e){clear();stopProfile();}
-  document.addEventListener('visibilitychange',()=>{if(!allowed())clear();});
-  const style=document.createElement('style');style.id='fz78BoardManagerStyles';style.textContent='.fz78-board-activity{margin-top:18px}.fz78-board-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}.fz78-board-head h3{margin:0 0 6px;font-size:24px}.fz78-board-head p{margin:0;color:#506477}.fz78-board-activity [data-fz78-status]{line-height:1.45;overflow-wrap:anywhere}.fz78-board-scroll{overflow:auto;border:1px solid #cbdde8;border-radius:12px}.fz78-board-scroll table{border-collapse:collapse;width:100%;min-width:630px}.fz78-board-scroll th,.fz78-board-scroll td{text-align:left;padding:11px;border:1px solid #dce6ee;font-size:15px;white-space:normal;overflow-wrap:anywhere}.fz78-board-scroll th{background:#15465b;color:#fff}.fz78-board-details{margin-top:12px}.fz78-board-details summary{font-size:16px;font-weight:700;padding:10px;cursor:pointer}.fz78-board-head .actions{display:flex;flex-wrap:wrap;gap:8px}.fz78-board-head button{min-height:44px}@media(max-width:600px){.fz78-board-head h3{font-size:21px}.fz78-board-head .actions{width:100%}.fz78-board-head .actions button{flex:1;min-width:145px}.fz78-board-scroll th,.fz78-board-scroll td{font-size:14px;padding:9px}}@media print{.fz78-board-activity{display:none!important}}';document.head.appendChild(style);
+  try{onAuthStateChanged(auth,watchProfile);}catch(e){revoke();stopProfile();}
+  document.addEventListener('visibilitychange',()=>{if(!allowed())revoke();});
+  const style=document.createElement('style');style.id='fz78BoardManagerStyles';style.textContent='.fz78-board-activity{margin-top:18px}.fz78-board-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px}.fz78-board-head h3{margin:0 0 6px;font-size:24px}.fz78-board-head p{margin:0;color:#506477}.fz78-board-activity [data-fz78-status]{line-height:1.45;overflow-wrap:anywhere}.fz78-board-details{margin-top:10px}.fz78-board-details summary{font-size:15px;font-weight:700;padding:8px;cursor:pointer}.fz78-board-details li{overflow-wrap:anywhere}.fz78-board-head .actions{display:flex;flex-wrap:wrap;gap:8px}.fz78-board-head button{min-height:44px}@media(max-width:600px){.fz78-board-head h3{font-size:21px}.fz78-board-head .actions{width:100%}.fz78-board-head .actions button{flex:1;min-width:145px}}@media print{.fz78-board-activity{display:block!important;break-inside:auto}.fz78-board-head .actions,.fz78-board-activity>p[role=status]{display:none!important}}';document.head.appendChild(style);
 })();
 
 /* END ES1.8.78 Manager Board Activity */
+
+
+/* ES1.8.80 saved Board report integration. Financial renderers stay unchanged. */
+(function fz80SavedBoardReports(){
+  const recent=new Map();
+  const clean=v=>String(v??'').trim();
+  const canonical=v=>canonicalEmployeeName(clean(v)).split(' · ')[0].trim();
+  const person=r=>employeeReportPersonIdentity78(r)?.personName||'';
+  const count=v=>typeof v==='number'&&Number.isFinite(v)&&v>=0?v:null;
+  const staff=()=>!!window.fz80BoardReports?.allowed();
+  function guard(){
+    if(!staff())throw new Error('A verified Manager / Owner session is required.');
+    const uid=currentUser.uid,live=window.fz80BoardReports.sessionGuard?.();return ()=>{if(!staff()||currentUser?.uid!==uid)throw new Error('Login changed. Reopen the report.');live?.();};
+  }
+  function savedData(report){
+    const s=report?.boardActivity80,name=person(report),date=clean(report?.date);
+    if(!s||s.version!==80||s.date!==date||canonical(s.employee)!==name||!Array.isArray(s.rows))return null;
+    return {...s,schemaVersion:80,from:date,to:date,rows:s.rows.filter(r=>r.date===date&&canonical(r.employee)===name&&['AM','PM'].includes(r.shift))};
+  }
+  function snapshot(report,data){
+    const name=person(report),date=clean(report.date);
+    if(!name||!esDateValid(date)||Number(data?.schemaVersion)<80)throw new Error('Update the FZ Board connection before saving its new report details.');
+    const rows=(data.rows||[]).filter(r=>r.date===date&&canonical(r.employee)===name&&['AM','PM'].includes(r.shift)).map(r=>({
+      date,shift:r.shift,employee:name,tables:count(r.tables),guests:count(r.guests),
+      uniqueTables:count(r.uniqueTables),tableRotationsAvailable:r.tableRotationsAvailable===true,
+      sections:[...new Set((r.sections||[]).map(clean).filter(Boolean))],
+      tableRotations:(r.tableRotations||[]).filter(t=>clean(t.table)&&Number.isInteger(t.rotations)&&t.rotations>=0).map(t=>({table:clean(t.table),rotations:t.rotations,guests:count(t.guests)})),
+      beepers:[...new Set((r.beepers||[]).map(clean).filter(Boolean))],source:clean(r.source),status:clean(r.status)
+    }));
+    const shifts=(data.shifts||[]).filter(s=>s.date===date&&['AM','PM'].includes(s.shift)).map(s=>({date,shift:s.shift,source:clean(s.source),status:clean(s.status),countsAvailable:s.countsAvailable===true,beepersAvailable:s.beepersAvailable===true,tableRotationsAvailable:s.tableRotationsAvailable===true}));
+    const warnings=[];
+    for(const s of shifts)if(!s.countsAvailable)warnings.push(date+' '+s.shift+': Board history is unavailable; missing activity is not zero.');
+    for(const r of rows){if(r.guests===null)warnings.push(date+' '+r.shift+': Guest count is not recorded.');if(!r.tableRotationsAvailable)warnings.push(date+' '+r.shift+': Per-table rotations are not recorded.');}
+    return {version:80,date,employee:name,rows,shifts,warnings:[...new Set(warnings)],loadedAt:Number.isFinite(data.loadedAt)?data.loadedAt:Date.now()};
+  }
+  async function prepareOne(report){
+    const assert=guard(),date=clean(report?.date),employee=person(report);
+    if(!employee||!esDateValid(date))throw new Error('Report employee or work date is missing.');
+    const key=currentUser.uid+'|'+date+'|'+employee;
+    let entry=recent.get(key);
+    if(!entry||Date.now()-entry.time>30000){
+      entry={time:Date.now(),promise:window.fz80BoardReports.prepare({from:date,to:date,employee,compact:true})};recent.set(key,entry);
+      entry.promise.catch(()=>{if(recent.get(key)===entry)recent.delete(key);});
+    }
+    const result=await entry.promise;assert();result.assertCurrent();return result;
+  }
+  async function persist(report,prepared){
+    const assert=guard();prepared.assertCurrent();const value=snapshot(report,prepared.data);
+    // Unsaved previews and incomplete drafts never create a report document.
+    if(!report.id||report.fzIncompleteDraft||report.exportCurrentUnsigned||report.status==='export_current')return {...report,boardActivity80:value};
+    const ref=doc(db,'hourlyReports',report.id);
+    await runTransaction(db,async tx=>{
+      const snap=await tx.get(ref);assert();prepared.assertCurrent();
+      if(!snap.exists())throw new Error('Saved report no longer exists.');
+      const current=snap.data();
+      if(clean(current.date)!==value.date||person(current)!==value.employee)throw new Error('Report identity changed. Board details were not saved.');
+      tx.update(ref,{boardActivity80:value});
+    });
+    assert();prepared.assertCurrent();
+    const enriched={...report,boardActivity80:value};
+    latestHourlyReports=latestHourlyReports.map(r=>r.id===report.id?{...r,boardActivity80:value}:r);
+    if(esSession?.reports)esSession.reports=esSession.reports.map(r=>r.id===report.id?{...r,boardActivity80:value}:r);
+    return enriched;
+  }
+  async function saveSnapshot(report,prepared){return persist(report,prepared||await prepareOne(report));}
+  window.fz80SaveBoardSnapshot=saveSnapshot;
+  function appendHtml(html,activity){return String(html).replace(/<\/body\s*>/i,activity+'</body>');}
+  function note(error){return '<section data-fz80-board-unavailable style="border:1px solid #b7791f;padding:10px;margin:12px 0;font:inherit"><b>FZ Board activity unavailable</b><div>'+esc(String(error?.message||error))+'</div><div>Missing activity is not zero. Reload Board and retry this report.</div></section>';}
+  function formatSaved(report){const data=savedData(report);return data?window.fz80BoardReports.format(data,{compact:true}):null;}
+  async function receipt(report,popup,sheet){
+    let assert;try{assert=guard();}catch(e){alert(e.message);return null;}const view=popup&&!popup.closed?popup:es18OpenPrintPreview(null,(report.employee||'Employee')+' — Preparing complete report');
+    view.boardReport80=true;let activity;
+    try{
+      const prepared=await prepareOne(report);assert();if(view.closed)return view;
+      report=await saveSnapshot(report,prepared);assert();prepared.assertCurrent();activity=window.fz80BoardReports.format(savedData(report),{compact:true});
+    }catch(e){
+      try{assert();}catch{view.close();return view;}
+      activity=formatSaved(report);if(activity){activity={...activity,html:note('Showing the previously saved Board snapshot. '+(e.message||e))+activity.html};}
+      else activity={html:note(e),lines:['FZ Board activity unavailable. Missing activity is not zero.']};
+    }
+    assert();if(view.closed)return view;
+    const thermalActivity=activity.html.replace(/font-size:14px/g,'font-size:22px').replace(/font-size:18px/g,'font-size:28px').replace(/font-size:11px/g,'font-size:20px');
+    const out=baseReceipt(report,view,sheet),html=appendHtml(esThermalHtml(report),thermalActivity);
+    out.boardReport80=true;out.setHtml(html);out.shareText+='\n\n'+activity.lines.join('\n');
+    const button=out.dialog.querySelector('[data-print]'),original=button.onclick;
+    button.onclick=async()=>{
+      try{
+        assert();if(out.closed||!out.ready)return;
+        if(!/Android/i.test(navigator.userAgent||'')){original?.();return;}
+        button.disabled=true;await prepareSmallReportPassPrntReturn(report);assert();
+        if(out.closed)return;
+        if(sheet){try{const b=JSON.parse(localStorage.getItem(PASS_PRNT_BRIDGE_KEY)||'{}');b.employeeSheet=true;localStorage.setItem(PASS_PRNT_BRIDGE_KEY,JSON.stringify(b));}catch{}esPersistLocal();}
+        const uri=new URL(esPassPrntUri(report,html));
+        if(!sheet){const back=new URL(uri.searchParams.get('back'));back.searchParams.delete('fzEmployeeSheetReturn');uri.searchParams.set('back',back.href);}
+        const a=document.createElement('a');a.href=uri.href;document.body.appendChild(a);a.click();a.remove();
+        out.dialog.querySelector('[role="status"]').textContent='Opened Star PassPRNT with the complete report. Return to the app after printing.';
+      }catch(e){await cancelSmallReportPassPrntReturn();if(!out.closed)out.dialog.querySelector('[role="status"]').textContent=e.message||String(e);}
+      finally{if(!out.closed)button.disabled=false;}
+    };
+    return out;
+  }
+  const baseReceipt=es35ReceiptOutput;es35ReceiptOutput=receipt;
+  function splitRange(from,to){
+    if(!esDateValid(from)||!esDateValid(to)||from>to)throw new Error('Choose a valid Board report date range.');
+    const ranges=[];let day=from;
+    while(day<=to){const end=new Date(day+'T12:00:00Z');end.setUTCDate(end.getUTCDate()+30);const last=end.toISOString().slice(0,10),stop=last<to?last:to;ranges.push({from:day,to:stop});end.setTime(Date.parse(stop+'T12:00:00Z'));end.setUTCDate(end.getUTCDate()+1);day=end.toISOString().slice(0,10);}
+    return ranges;
+  }
+  async function prepareRange(scope={}){
+    const assert=guard(),reports=Array.isArray(scope.rows)?scope.rows:[],dates=reports.map(r=>clean(r.date)).filter(esDateValid).sort();
+    const from=clean(scope.from)||dates[0],to=clean(scope.to)||dates.at(-1)||from,parts=[];
+    for(const range of splitRange(from,to)){parts.push(await window.fz80BoardReports.prepare({...range,employee:scope.employee||''}));assert();}
+    const data={schemaVersion:Math.min(...parts.map(p=>Number(p.data.schemaVersion)||0)),from,to,rows:parts.flatMap(p=>p.data.rows||[]),shifts:parts.flatMap(p=>p.data.shifts||[]),warnings:parts.flatMap(p=>p.data.warnings||[]),loadedAt:parts.at(-1)?.data.loadedAt};
+    if(reports.length){const accounts=new Set(reports.map(r=>clean(r.date)+'|'+person(r)));data.rows=data.rows.filter(r=>accounts.has(r.date+'|'+canonical(r.employee)));}
+    const assertCurrent=()=>{assert();for(const p of parts)p.assertCurrent();};assertCurrent();
+    // Store only each report's own date/person, never the full Manager range.
+    for(const r of reports)if(r.id&&!r.exportCurrentUnsigned&&!r.fzIncompleteDraft&&Number(data.schemaVersion)>=80){try{await persist(r,{data,assertCurrent});}catch(e){assertCurrent();data.warnings.push(person(r)+' '+r.date+': Board snapshot could not be saved to this employee report.');console.warn('Board report snapshot:',e.message);}}
+    assertCurrent();return {...window.fz80BoardReports.format(data),data,assertCurrent};
+  }
+  window.fz80DownloadManagerReport=async function(blob,filename,scope){
+    try{const prepared=await prepareRange(scope),complete=await window.fz80AppendBoardPdf(blob,prepared.lines);prepared.assertCurrent();downloadBlob(complete,filename);return true;}
+    catch(e){alert('Complete report PDF was not created.\n\n'+(e.message||e));return false;}
+  };
+  window.fz80ShareManagerReport=async function(blob,filename,target,scope){
+    try{const prepared=await prepareRange(scope),complete=await window.fz80AppendBoardPdf(blob,prepared.lines);prepared.assertCurrent();await shareReportFile(complete,filename,target);return true;}
+    catch(e){alert('Complete report PDF was not prepared.\n\n'+(e.message||e));return false;}
+  };
+  window.fz80PrintManagerReport=async function(html,title,scope){
+    const view=es18OpenPrintPreview(null,title);view.boardReport80=true;
+    try{const prepared=await prepareRange(scope);prepared.assertCurrent();if(!view.closed){view.setHtml(appendHtml(html,prepared.html));const b=view.dialog.querySelector('[data-print]'),print=b.onclick;b.onclick=()=>{try{prepared.assertCurrent();print?.();}catch(e){view.close();alert(e.message);}};}return view;}
+    catch(e){view.close();alert('Complete report could not be prepared.\n\n'+(e.message||e));return null;}
+  };
+  window.fz80EmployeeSnapshotPdf=async function(blob,report){
+    const own=window.fz80EmployeeBoard,lines=own?.lines(report)||[];
+    if(!lines.length)return blob;const token=own.assertCurrent(report);
+    const complete=await window.fz80AppendBoardPdf(blob,lines);own.assertCurrent(report,token);return complete;
+  };
+  window.fz80ReportSnapshotPdf=async function(blob,report){
+    if(currentProfile?.role==='employee')return window.fz80EmployeeSnapshotPdf(blob,report);
+    const assert=guard(),saved=formatSaved(report);if(!saved)return blob;
+    const complete=await window.fz80AppendBoardPdf(blob,saved.lines);assert();return complete;
+  };
+  async function afterSave(report){
+    try{return await saveSnapshot(report);}catch(e){console.warn('Tip report saved; Board snapshot needs retry:',e.message);return report;}
+  }
+  const commit=esCommit;esCommit=async function(...args){const result=await commit.apply(this,args);if(!result.incompleteDraft&&result.report?.id)result.report=await afterSave(result.report);return result;};
+  const hostCommit=hc15Commit;hc15Commit=async function(...args){return afterSave(await hostCommit.apply(this,args));};
+  const legacyCommit=writeHourlyFinalForAccount;writeHourlyFinalForAccount=async function(report,...args){const result=await legacyCommit.call(this,report,...args);await afterSave({...report,id:result.ref.id});return result;};
+  try{onAuthStateChanged(auth,()=>{recent.clear();if(es18PrintView?.boardReport80)es18PrintView.close();});}catch{}
+  if(typeof MutationObserver==='function')new MutationObserver(()=>{if(!staff()){recent.clear();if(es18PrintView?.boardReport80)es18PrintView.close();}}).observe(document.body,{childList:true,attributes:true,subtree:true,attributeFilter:['class','hidden']});
+})();
+/* END ES1.8.80 saved Board report integration */
+
+
+/* ES1.8.80 Board PDF appendix */
+(function fz80BoardPdfAppendModule(){
+  'use strict';
+  // Only the app's flat, uncompressed, generation-zero PDF writers are accepted.
+  // Original bytes are never decoded/re-encoded into the resulting document.
+  const fail=()=>{throw new Error('The financial PDF could not be safely combined with Board activity. No combined PDF was created.');};
+  const ascii=s=>String(s).replace(/[\u2010-\u2015\u2212\u2192]/g,'-')
+    .replace(/[\u2018\u2019]/g,"'").replace(/[\u201c\u201d]/g,'"')
+    .normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/\t/g,'    ')
+    .replace(/[^\x20-\x7e]/g,'?');
+  const escape=s=>s.replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
+  function originalPdf(bytes){
+    // latin1 is deliberately one code unit per byte, so xref offsets stay exact.
+    const text=new TextDecoder('latin1').decode(bytes);
+    if(!/^%PDF-1\.[3-7]\r?\n/.test(text))fail();
+    const end=text.match(/startxref\s+(\d+)\s+%%EOF\s*$/);
+    if(!end)fail();
+    const oldXref=Number(end[1]);
+    if(!Number.isSafeInteger(oldXref)||oldXref<9||oldXref>=bytes.length)fail();
+    const tail=text.slice(oldXref),head=tail.match(/^xref\r?\n0 (\d+)\r?\n/);
+    if(!head)fail();
+    const size=Number(head[1]);
+    if(size<6||size>100000)fail();
+    let pos=head[0].length;const offsets=[0];
+    for(let i=0;i<size;i++){
+      const entry=tail.slice(pos).match(/^(\d{10}) (\d{5}) ([nf]) \r?\n/);
+      if(!entry)fail();pos+=entry[0].length;
+      if(i===0){if(entry[1]!=='0000000000'||entry[2]!=='65535'||entry[3]!=='f')fail();}
+      else{
+        const offset=Number(entry[1]);
+        if(entry[2]!=='00000'||entry[3]!=='n'||offset<=offsets[i-1]||offset>=oldXref)fail();
+        offsets.push(offset);
+      }
+    }
+    // A strict trailer also excludes encryption, hybrid xref and prior revisions.
+    const trailer=tail.slice(pos).match(/^trailer\s*<<\s*\/Size (\d+)\s+\/Root 1 0 R\s*>>\s*startxref\s+(\d+)\s+%%EOF\s*$/);
+    if(!trailer||Number(trailer[1])!==size||Number(trailer[2])!==oldXref)fail();
+    const objects=new Map();
+    for(let id=1;id<size;id++){
+      const raw=text.slice(offsets[id],id+1<size?offsets[id+1]:oldXref);
+      const object=raw.match(new RegExp('^'+id+' 0 obj\\r?\\n([\\s\\S]*)\\r?\\nendobj\\s*$'));
+      if(!object)fail();
+      const value=object[1];
+      if(/^<<\s*\/Length\b/.test(value)){
+        const start=value.match(/^<<\s*\/Length (\d+)\s*>>\r?\nstream\r?\n/);
+        if(!start)fail();
+        const length=Number(start[1]);
+        if(!Number.isSafeInteger(length)||value.slice(start[0].length+length).replace(/^\r?\n/,'')!=='endstream')fail();
+      }else if(/\b(?:stream|endstream)\b/.test(value))fail();
+      objects.set(id,value);
+    }
+    if(!/^<<\s*\/Type \/Catalog\s+\/Pages 2 0 R\s*>>$/.test(objects.get(1)||''))fail();
+    const pages=(objects.get(2)||'').match(/^<<\s*\/Type \/Pages\s+\/Kids\s*\[([^\]]*)\]\s+\/Count (\d+)\s*>>$/);
+    if(!pages)fail();
+    const refs=pages[1].trim(),kids=[...refs.matchAll(/(\d+) 0 R/g)].map(m=>Number(m[1]));
+    if(refs.replace(/\d+ 0 R/g,'').trim()||!kids.length||kids.length!==Number(pages[2])||new Set(kids).size!==kids.length)fail();
+    for(const id of kids){
+      const page=objects.get(id)||'';
+      const layout=page.match(/^<<\s*\/Type \/Page\s+\/Parent 2 0 R\s+\/MediaBox \[0 0 (?:612 792|792 612)\]\s+\/Resources <<\s*\/Font <<\s*\/F1 (\d+) 0 R\s+\/F2 (\d+) 0 R\s*>>\s*>>\s+\/Contents (\d+) 0 R\s*>>$/);
+      if(!layout||!/^<<\s*\/Length\b/.test(objects.get(Number(layout[3]))||''))fail();
+      for(const font of layout.slice(1,3))if(!/^<<\s*\/Type \/Font\s+\/Subtype \/Type1\s+\/BaseFont \/Helvetica(?:-Bold)?\s*>>$/.test(objects.get(Number(font))||''))fail();
+      for(const ref of page.matchAll(/(\d+) 0 R/g))if(!objects.has(Number(ref[1])))fail();
+    }
+    return {size,oldXref,kids};
+  }
+  function boardPages(lines){
+    if(!Array.isArray(lines)||!lines.length||lines.length>50000||lines.some(x=>typeof x!=='string'))fail();
+    const pages=[];let current=[],characters=0;
+    const flush=()=>{if(current.length){pages.push(current);current=[];}};
+    const add=line=>{if(current.length===51)flush();current.push(line);};
+    for(const source of lines){
+      characters+=source.length;if(characters>2000000)fail();
+      if(source==='__PAGE__'){flush();continue;}
+      for(const raw of source.split(/\r\n|\r|\n/)){
+        let rest=ascii(raw);
+        while(rest.length>94){let cut=rest.lastIndexOf(' ',94);if(cut<30)cut=94;add(rest.slice(0,cut));rest=rest.slice(cut).replace(/^ +/,'');}
+        add(rest);
+      }
+    }
+    flush();if(!pages.length)fail();return pages;
+  }
+  window.fz80AppendBoardPdf=async function(blob,lines){
+    if(!blob||typeof blob.arrayBuffer!=='function'||!Number.isFinite(blob.size)||blob.size<100||blob.size>50000000)fail();
+    const bytes=new Uint8Array(await blob.arrayBuffer()),base=originalPdf(bytes),pages=boardPages(lines);
+    const font=base.size,bold=font+1,firstPage=bold+1,newObjects=new Map();
+    newObjects.set(font,'<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>');
+    newObjects.set(bold,'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+    const appendedKids=[];
+    pages.forEach((rows,index)=>{
+      const id=firstPage+index*2,content=id+1;appendedKids.push(id);
+      let stream='0.055 0.14 0.25 rg 0 716 612 76 re f\n1 1 1 rg\n';
+      stream+='BT /B2 17 Tf 36 752 Td (FZ Board Activity) Tj ET\n';
+      stream+='BT /B1 9 Tf 36 732 Td (Board appendix - original financial pages retained) Tj ET\n';
+      stream+='0.06 0.12 0.20 rg\n';
+      rows.forEach((row,i)=>{stream+='BT /B1 9.5 Tf 36 '+(695-i*12)+' Td ('+escape(row)+') Tj ET\n';});
+      const label='Board appendix '+(index+1)+'/'+pages.length+' | Report page '+(base.kids.length+index+1)+'/'+(base.kids.length+pages.length);
+      stream+='0.35 0.42 0.50 rg BT /B1 8 Tf 36 30 Td ('+label+') Tj ET\n';
+      newObjects.set(id,'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /B1 '+font+' 0 R /B2 '+bold+' 0 R >> >> /Contents '+content+' 0 R >>');
+      newObjects.set(content,'<< /Length '+stream.length+' >>\nstream\n'+stream+'endstream');
+    });
+    const kids=base.kids.concat(appendedKids);
+    newObjects.set(2,'<< /Type /Pages /Kids ['+kids.map(id=>id+' 0 R').join(' ')+'] /Count '+kids.length+' >>');
+    const ids=[...newObjects.keys()].sort((a,b)=>a-b),offsets=new Map();let suffix='\n';
+    // The suffix is ASCII only; byte offsets use original byte length, never text length.
+    for(const id of ids){offsets.set(id,bytes.length+suffix.length);suffix+=id+' 0 obj\n'+newObjects.get(id)+'\nendobj\n';}
+    const xref=bytes.length+suffix.length;
+    suffix+='xref\n2 1\n'+String(offsets.get(2)).padStart(10,'0')+' 00000 n \n';
+    suffix+=base.size+' '+(ids.length-1)+'\n';
+    for(const id of ids.filter(id=>id!==2))suffix+=String(offsets.get(id)).padStart(10,'0')+' 00000 n \n';
+    suffix+='trailer\n<< /Size '+(firstPage+pages.length*2)+' /Root 1 0 R /Prev '+base.oldXref+' >>\nstartxref\n'+xref+'\n%%EOF\n';
+    return new Blob([bytes,suffix],{type:'application/pdf'});
+  };
+})();
+/* END ES1.8.80 Board PDF appendix */
+
+
+/* ES1.8.80: employees may view/print their own saved Board snapshot only. */
+(function fz80EmployeeBoardModule(){
+  'use strict';
+  const clean=value=>String(value==null?'':value).trim().replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ');
+  const aliases=new Map([
+    ['aj','arianagarner'],['a.j','arianagarner'],['a.j.','arianagarner'],['arianagraner','arianagarner'],
+    ['alainamontalvo','alainnamontalvo'],
+    ['angelagizzard','angelagizzard'],['angelagrizzad','angelagizzard'],['angelaserver','angelagizzard'],['angelabar','angelagizzard'],
+    ['caitlindillon','caitlindillon'],['caitlinbar','caitlindillon']
+  ]);
+  const nameKey=value=>{
+    const name=clean(value).split(/\s*·\s*/)[0].toLowerCase();
+    const key=name.replace(/[^a-z0-9]+/g,'');
+    return aliases.get(name)||aliases.get(key)||key;
+  };
+  const personKey=value=>{
+    const keys=(typeof value==='string'?[value]:value&&typeof value==='object'?[value.employee,value.displayName,value.personName,value.workProfile]:[])
+      .filter(name=>typeof name==='string'&&name.trim()).map(nameKey);
+    return keys.length&&keys[0]&&keys.every(key=>key===keys[0])?keys[0]:'';
+  };
+  const date=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)
+    &&Number.isFinite(new Date(value+'T12:00:00Z').getTime())
+    &&new Date(value+'T12:00:00Z').toISOString().slice(0,10)===value?value:'';
+  const count=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+  const textList=(values,max=100)=>Array.isArray(values)?[...new Set(values.slice(0,max).filter(v=>typeof v==='string').map(v=>clean(v).slice(0,80)).filter(Boolean))]:[];
+  const sources=new Set(['Live FZ Board','Saved FZ Board analytics','Beeper assignment history only','Saved Board snapshot']);
+  const statuses=new Set(['ok','counts_unavailable','guests_unavailable','beepers_not_recorded','partial','unavailable']);
+  function publicPortal(){
+    try{return new URL(location.href).searchParams.has('report');}catch{return true;}
+  }
+  function approvedEmployee(){
+    return !publicPortal()&&currentUser?.uid&&!currentUser.isAnonymous&&currentProfile?.role==='employee'
+      &&currentProfile.active===true&&currentProfile.approvalStatus==='approved';
+  }
+  function ownReport(report){
+    if(!approvedEmployee()||!report||typeof report!=='object')return null;
+    const session=typeof fzEmployeeReportsState==='undefined'?null:fzEmployeeReportsState;
+    if(!session||typeof fzEmployeeReportsCurrent!=='function'||!fzEmployeeReportsCurrent(session))return null;
+    const saved=(session.reports||[]).find(row=>row===report||report.id&&row.id===report.id);
+    if(!saved||typeof fzEmployeeOwnReport!=='function'||!fzEmployeeOwnReport(saved,session))return null;
+    const key=personKey(currentProfile),reportKey=personKey(saved),suppliedKey=personKey(report);
+    if(!key||reportKey!==key||suppliedKey!==key||date(saved.date)!==date(report.date)||!date(saved.date))return null;
+    // An account key alone is never allowed to turn a different person's name
+    // into this employee. Known same-person legacy aliases remain valid.
+    const accountKey=clean(currentProfile.employeeKey),savedKey=clean(saved.employeeKey);
+    if(accountKey&&nameKey(accountKey)!==key||savedKey&&nameKey(savedKey)!==key)return null;
+    if(saved.employeeUid&&saved.employeeUid!==currentUser.uid
+      &&(!accountKey||savedKey!==accountKey))return null;
+    return saved;
+  }
+  function data(report){
+    const saved=ownReport(report);if(!saved)return null;
+    const snapshot=saved.boardActivity80;
+    if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot)
+      ||Number(snapshot.version??snapshot.schemaVersion)!==80||snapshot.date!==saved.date
+      ||personKey(snapshot.employee)!==personKey(saved)||!Array.isArray(snapshot.rows)||snapshot.rows.length>2)return null;
+    const key=personKey(saved),seen=new Set(),rows=[];
+    for(const row of snapshot.rows){
+      if(!row||typeof row!=='object'||row.date!==saved.date||!['AM','PM'].includes(row.shift)
+        ||personKey(row.employee)!==key||seen.has(row.shift))return null;
+      seen.add(row.shift);
+      const rawTables=Array.isArray(row.tableRotations)?row.tableRotations:[];
+      const tableRotations=rawTables.slice(0,300).map(item=>({
+        table:typeof item?.table==='string'?clean(item.table).slice(0,80):'',rotations:count(item?.rotations),guests:count(item?.guests)
+      })).filter(item=>item.table&&item.rotations!==null);
+      const available=row.tableRotationsAvailable===true&&Array.isArray(row.tableRotations)&&rawTables.length<=300
+        &&tableRotations.length===rawTables.length&&new Set(tableRotations.map(item=>item.table)).size===tableRotations.length
+        &&(count(row.tables)===null||tableRotations.reduce((total,item)=>total+item.rotations,0)===row.tables);
+      rows.push({date:saved.date,shift:row.shift,employee:clean(saved.employee||snapshot.employee),
+        tables:count(row.tables),guests:count(row.guests),
+        beepers:Array.isArray(row.beepers)?[...new Set(row.beepers.map(value=>clean(value)).filter(value=>/^\d+$/.test(value)&&Number(value)>=1&&Number(value)<=20).map(value=>String(Number(value))))].sort((a,b)=>Number(a)-Number(b)):[],
+        sections:textList(row.sections),tableRotations:available?tableRotations:[],tableRotationsAvailable:available,
+        uniqueTables:available?new Set(tableRotations.map(item=>item.table)).size:null,
+        source:sources.has(row.source)?row.source:'Saved Board snapshot',status:statuses.has(row.status)?row.status:'unavailable'});
+    }
+    rows.sort((a,b)=>a.shift.localeCompare(b.shift));
+    const shifts=Array.isArray(snapshot.shifts)?snapshot.shifts.slice(0,2).filter(shift=>shift&&shift.date===saved.date&&['AM','PM'].includes(shift.shift)).map(shift=>({
+      date:saved.date,shift:shift.shift,source:sources.has(shift.source)?shift.source:'Saved Board snapshot',
+      status:statuses.has(shift.status)?shift.status:'unavailable',countsAvailable:shift.countsAvailable===true,
+      tableRotationsAvailable:shift.tableRotationsAvailable===true,beepersAvailable:shift.beepersAvailable===true
+    })):[];
+    // Arbitrary manager/global warning text is not projected into employee data.
+    const incomplete=rows.some(row=>row.tables===null||row.guests===null||!row.tableRotationsAvailable)
+      ||shifts.some(shift=>!shift.countsAvailable)||Array.isArray(snapshot.warnings)&&snapshot.warnings.length>0;
+    return {version:80,schemaVersion:80,date:saved.date,from:saved.date,to:saved.date,
+      employee:clean(saved.employee||snapshot.employee),rows,shifts,
+      warnings:incomplete?['Some saved Board activity details are unavailable or incomplete for this date.']:[],
+      loadedAt:Number.isFinite(snapshot.loadedAt)&&snapshot.loadedAt>=0?snapshot.loadedAt:null};
+  }
+  function format(report,options={}){
+    if(options.guest===true)return null;
+    const snapshot=data(report);if(!snapshot)return null;
+    const formatter=window.fz80BoardReports?.format;
+    if(typeof formatter!=='function')return null;
+    const rendered=formatter(snapshot,{title:'Your Saved FZ Board Activity',compact:true});
+    if(!rendered||typeof rendered.html!=='string'||!Array.isArray(rendered.lines))return null;
+    return {html:rendered.html,lines:rendered.lines.map(String)};
+  }
+  function assertCurrent(report,guard=null){
+    const saved=ownReport(report),session=typeof fzEmployeeReportsState==='undefined'?null:fzEmployeeReportsState;
+    if(!saved||!data(report)||guard&&(guard.uid!==currentUser?.uid||guard.session!==session
+      ||guard.profile!==currentProfile||guard.report!==saved||guard.snapshot!==saved.boardActivity80))
+      throw new Error('Employee login or saved Board report changed. Open your report again before downloading.');
+    return Object.freeze({uid:currentUser.uid,session,profile:currentProfile,report:saved,snapshot:saved.boardActivity80});
+  }
+  const api=Object.freeze({data,html:(report,options={})=>format(report,options)?.html||'',
+    lines:report=>format(report)?.lines||[],assertCurrent});
+  window.fz80EmployeeBoard=api;
+  // Both the ready card and historical card route through this renderer. The
+  // explicit guest flag and URL gate prevent public-code portals from rendering
+  // Board details even when the browser also has an authenticated employee.
+  if(typeof employeeReportExactHtml==='function'){
+    const original=employeeReportExactHtml;
+    employeeReportExactHtml=function(report,options={}){
+      const html=original(report,options),board=api.html(report,options);
+      if(!board)return html;
+      const closing=/\n    <\/div>\n  <\/article>\s*$/;
+      return closing.test(html)?html.replace(closing,'\n'+board+'\n    </div>\n  </article>'):html;
+    };
+  }
+})();
+/* END ES1.8.80 employee saved Board snapshot */

@@ -14,7 +14,7 @@
 <link href="manifest.webmanifest" rel="manifest"/>
 <link href="icon-180.png" rel="apple-touch-icon"/>
 <title>Fred Zhang Tip Calculator</title>
-<script src="./install-app-v13849.js?v=13849-es18780"></script>
+<script src="./install-app-v13849.js?v=13849-es18800"></script>
 <style>
 :root{--navy:#101a30;--navy2:#1b2946;--gold:#f59e0b;--bg:#f4f6f8;--card:#fff;--line:#dde3ea;--ink:#111827;--muted:#6b7280;--green:#0f9d58;--red:#d93025;--blue:#2563eb}
 *{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Arial,sans-serif}
@@ -1733,10 +1733,10 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 #ownerSalesTable .owner-clock-grid{min-width:0}
 #ownerSalesTable .owner-clock-grid>label{min-width:0}
 </style>
-<link rel="stylesheet" href="employee-sheet-v1.css?v=es18780"/>
+<link rel="stylesheet" href="employee-sheet-v1.css?v=es18800"/>
 </head>
 <body>
-<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.49 · ES1.8.78 · FAST REPORT · AUTO UPDATE · PASSKEY FORMAT FIX · SESSION LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
+<div class="top hidden" id="top"><div class="toprow"><div class="brand"><b>Fred Zhang Tip Calculator</b><small id="whoText"></small><small style="opacity:.45;margin-left:8px">BUILD 13.8.49 · ES1.8.80 · FAST REPORT · AUTO UPDATE · PASSKEY FORMAT FIX · SESSION LOGIN</small></div><div style="display:flex;gap:8px;align-items:center"><span class="role" id="onlinePill" style="background:#dff3e6;color:#146c43">ONLINE</span><span class="role" id="rolePill"></span><button class="btn light" onclick="logout()" style="padding:7px 10px">Logout</button></div></div></div>
 <div class="wrap" id="loginView">
 <div class="login card">
 <div class="logo">JT</div>
@@ -2027,7 +2027,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div class="card"><h2>My Check Tip Status</h2><div id="employeeTipCheckStatus"></div></div>
 
 </div>
-<div id="employeeReportsContent"><div class="card fz-employee-reports-card"><h2>My Tip Reports</h2><div class="notice good" style="margin-bottom:10px"><b>Your finalized tip reports stay linked to your employee name.</b><br/>Reports created before you signed up will appear here after you log in.</div><div id="employeeHistoricalReports"><div class="small">Loading finalized reports...</div></div></div></div></div>
+<div id="employeeReportsContent"><div class="card fz-employee-reports-card"><h2>My Tip Reports</h2><div class="notice good" style="margin-bottom:10px"><b>Your finalized tip reports stay linked to your employee name.</b><br/>Reports created before you signed up will appear here after you log in.</div><div id="employeeHistoryAccess79" class="notice danger hidden" role="status" aria-live="polite"></div><div id="employeeHistoricalReports"><div class="small">Loading finalized reports...</div></div></div></div></div>
 <div class="hidden" id="staffApp">
 <section class="hidden hv1-shell" id="hourlyV1Workspace">
 <div class="hv1-hero">
@@ -2212,7 +2212,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 <div class="card">
 <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">
 <div><h2 style="margin-bottom:4px">Pending Employee Sign Ups</h2><div class="small">Historical finalized reports are linked automatically after approval.</div></div>
-<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn light" type="button" onclick="syncAllHistoricalReportsToAccounts()">Sync Historical Reports</button><button class="btn red" type="button" onclick="cleanHistoricalDuplicates()">Clean Approved Duplicates</button></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn light" type="button" id="syncHistoricalReports79" onclick="syncAllHistoricalReportsToAccounts()">Sync Historical Reports</button><button class="btn red" type="button" onclick="cleanHistoricalDuplicates()">Clean Approved Duplicates</button></div>
 </div>
 <div id="historicalSyncStatus" class="small" style="margin:10px 0"></div>
 <div id="approvalList"></div>
@@ -2800,7 +2800,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 })();
 </script>
 <script src="hourly-logic-v13840.js?v=13849"></script>
-<script src="app-v13849.js?v=13849-es18780" type="module"></script>
+<script src="app-v13849.js?v=13849-es18800" type="module"></script>
 
 <script id="fzP18SingleLoginScript">
 (function(){
@@ -2975,7 +2975,7 @@ input[type=checkbox]{width:21px!important;height:21px!important;min-height:0!imp
 
 <script>
 if('serviceWorker' in navigator){
-  navigator.serviceWorker.register('./service-worker-v13849.js?v=13849-es18780',{updateViaCache:'none'})
+  navigator.serviceWorker.register('./service-worker-v13849.js?v=13849-es18800',{updateViaCache:'none'})
     .then(reg=>reg.update())
     .catch(()=>{});
 }
@@ -3102,7 +3102,7 @@ if('serviceWorker' in navigator){
   </div>
 </div>
 
-<script type="module" src="host-cashier-tip-v13840.js?v=13849-es18780"></script>
+<script type="module" src="host-cashier-tip-v13840.js?v=13849-es18800"></script>
 <audio id="moneyReadyAudio" preload="auto" src="money-ready-chime.wav"></audio>
 </body>
 </html>
