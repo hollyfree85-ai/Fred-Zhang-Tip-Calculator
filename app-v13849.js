@@ -4017,7 +4017,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18810",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18820",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10600,7 +10600,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.81';
+const ES_BUILD='ES1.8.82';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12986,7 +12986,7 @@ function hc15Render(){
   if($('hc15Rows').contains(document.activeElement)&&(esPan||performance.now()<esTouchUntil)){clearTimeout(s.renderTimer);s.renderTimer=setTimeout(hc15Render,180);return;}
   const data=hc15View(s),members=tt15TeamRows({},data),key=JSON.stringify(members);
   if(s.rowsKey!==key||!$('hc15Rows').children.length){
-    s.rowsKey=key;$('hc15Rows').innerHTML=members.map(r=>`<tr data-hc15-row="${tt15Key(r.name)}"><th class="es-name"><b>${esc(tt15Label(r.name))}</b><span class="es-state" data-hc15-state></span><div class="es-row-actions">${['Save','Sign','Print'].map(a=>`<button type="button" data-hc15-action="${a.toLowerCase()}" data-hc15-name="${esc(r.name)}">${a}</button>`).join('')}</div></th><td>${esc(r.shift)}</td><td>${esc(r.role)}</td>${["clockIn","clockOut","clockIn2","clockOut2"].map(field=>`<td><input type="text" inputmode="numeric" placeholder="HH:MM" aria-label="${field} ${esc(r.name)}" data-hc15-clock="${field}" data-hc15-name="${esc(r.name)}"></td>`).join("")}<td data-hc15-out="am"></td><td data-hc15-out="pm"></td><td class="es-payout" data-hc15-out="total"></td></tr>`).join('')||'<tr><td colspan="10">No Host / Cashier on this date. Tap + Add row above, choose Cashier/Host and shift, then Apply changes.</td></tr>';
+    s.rowsKey=key;$('hc15Rows').innerHTML=members.map(r=>`<tr data-hc15-row="${tt15Key(r.name)}"><th class="es-name"><b>${esc(tt15Label(r.name))}</b><span class="es-state" data-hc15-state></span><div class="es-row-actions">${['Save','Sign','Print'].map(a=>`<button type="button" data-hc15-action="${a.toLowerCase()}" data-hc15-name="${esc(r.name)}">${a}</button>`).join('')}</div></th><td data-es82-host-field="shift">${esc(r.shift)}</td><td data-es82-host-field="role">${esc(r.role)}</td>${["clockIn","clockOut","clockIn2","clockOut2"].map(field=>`<td><input type="text" inputmode="numeric" placeholder="HH:MM" aria-label="${field} ${esc(r.name)}" data-hc15-clock="${field}" data-hc15-name="${esc(r.name)}"></td>`).join("")}<td data-hc15-out="am"></td><td data-hc15-out="pm"></td><td class="es-payout" data-hc15-out="total"></td></tr>`).join('')||'<tr><td colspan="10">No Host / Cashier on this date. Tap + Add row above, choose Cashier/Host and shift, then Apply changes.</td></tr>';
   }
   for(const input of $('hc15Pools').querySelectorAll('input')){if(input!==document.activeElement)input.value=String(data[input.dataset.hc15Pool]??0);input.disabled=!s.verified||s.busy;}
   for(const input of $('hc15Rows').querySelectorAll('input[data-hc15-clock]')){const r=hc15Member(data,input.dataset.hc15Name);input.disabled=!s.verified||s.busy||(input.dataset.hc15Clock.endsWith('2')&&r?.shift!=='DOUBLE');if(input!==document.activeElement)input.value=data.staffDetails?.[input.dataset.hc15Name]?.[input.dataset.hc15Clock]||'';}
@@ -14850,7 +14850,11 @@ function es36StoredPhone(raw){
   function replaceGroup(rows,k,next){return [...(rows||[]).filter(r=>person(r.name)!==k),...copy(next)];}
   function rememberEdit(s,names){
     if(s.mergeContext)for(const k of new Set(names.map(person).filter(Boolean))){s.mergeContext.base=replaceGroup(s.mergeContext.base,k,(s.base||[]).filter(r=>person(r.name)===k));s.mergeContext.edited=replaceGroup(s.mergeContext.edited,k,es64NamedAssignments(s.rows).filter(r=>person(r.name)===k));}
-    s.dirty=true;persist(s);paint();
+    s.dirty=true;persist(s);
+    // Keep invalid over-capacity assignments editable until the user removes
+    // or corrects them; the existing Apply validator still rejects the draft.
+    let hostReady=true;try{tt15HostMembership(es64NamedAssignments(s.rows));}catch(e){hostReady=false;message(e.message,true);}
+    if(hostReady)hc15Render();paint();
   }
   function add(){start();const s=state;if(!current(s)||s.busy)return;s.rows.push({name:'',role:'Server',shift:'AM'});rememberEdit(s,[]);}
   function edit(i,k,v){const s=state,r=s?.rows[i];if(!r||!current(s)||s.busy||!['name','role','shift'].includes(k)||r[k]===v)return;if(locked(s,r.name)||k==='name'&&locked(s,v)){message('Resolve this employee’s changed field below first. Other employee drafts are kept.',true);paint();return;}const before=r.name;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';rememberEdit(s,[before,r.name]);}
@@ -14982,25 +14986,40 @@ window.es41Install=function(){
 };
 window.es41PaintRows=function(){
   const s=window.es41Team?.get();if(!s||s.date!==esSession?.date||s.uid!==esSession?.uid||!$('esRows'))return;
-  const nodes=[...$('esRows').querySelectorAll('tr'),...($('hc15Rows')?.querySelectorAll('tr')||[])];
-  const paintKey=JSON.stringify([s.uid,s.date,s.rows,!!s.busy,tt15DirectoryEntries().map(x=>[x.name,x.displayName,x.active])]);
-  const previous=window.es63AssignmentPaint;
-  if(previous?.key===paintKey&&previous.nodes.length===nodes.length&&previous.nodes.every((n,i)=>n===nodes[i])&&previous.controls.every(n=>n.isConnected))return;
-  const active=document.activeElement;
-  if(active?.matches?.('select[data-es41-control]')&&active.isConnected){
-    if(!active.dataset.es63Blur){active.dataset.es63Blur='1';active.addEventListener('blur',()=>{delete active.dataset.es63Blur;setTimeout(()=>window.es41PaintRows(),0);},{once:true});}
-    return;
-  }
-  // Keep pending row elements mounted: removing the focused row collapses the
-  // table and makes browser scroll anchoring jump to an earlier employee.
-  const pending=new Map([...$('esRows').querySelectorAll('[data-es41-pending]')].map(n=>[Number(n.dataset.es41PendingIndex),n]));
-  document.querySelectorAll('[data-es41-control]').forEach(n=>{if(!n.closest('[data-es41-pending]'))n.remove();});
   const work=tt15AssignmentWorkRows(s.rows),dir=tt15DirectoryEntries(),claimedRows=new Set();
   const select=(r,i,k)=>{
     const options=k==='name'?dir.filter(x=>x.active||x.name===r.name).map(x=>[x.name,x.displayName]):(k==='role'?TT15_ROLES:tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>[x,x]);
     if(k==='name'&&r.name&&!options.some(x=>x[0]===r.name))options.push([r.name,r.name]);
     return `<select data-es41-control data-es41-index="${i}" data-es41-field="${k}" aria-label="${k==='name'?'Employee':k==='role'?'Position':'Shift'}"${s.busy?' disabled':''}>${esOption('','Choose '+k,r[k])}${options.map(([v,l])=>esOption(v,l,r[k])).join('')}</select>`;
   };
+  const decorate=(tr,r,i,host)=>{
+    const th=tr.querySelector('th');if(!th)return;
+    th.insertAdjacentHTML('afterbegin',select(r,i,'name'));
+    th.insertAdjacentHTML('beforeend',`<button type="button" data-es41-control data-es41-remove="${i}"${s.busy?' disabled':''}>Remove row</button>`);
+    if(host){(tr.querySelector('[data-es82-host-field="shift"]')||tr.children[1]).innerHTML=select(r,i,'shift');(tr.querySelector('[data-es82-host-field="role"]')||tr.children[2]).innerHTML=select(r,i,'role');}
+  };
+  const nodes=[...$('esRows').querySelectorAll('tr'),...($('hc15Rows')?.querySelectorAll('tr')||[])];
+  const paintKey=JSON.stringify([s.uid,s.date,s.rows,!!s.busy,tt15DirectoryEntries().map(x=>[x.name,x.displayName,x.active])]);
+  const previous=window.es63AssignmentPaint;
+  const active=document.activeElement;
+  if(active?.matches?.('select[data-es41-control]')&&active.isConnected){
+    if(!active.dataset.es63Blur){active.dataset.es63Blur='1';active.addEventListener('blur',()=>{delete active.dataset.es63Blur;setTimeout(()=>window.es41PaintRows(),0);},{once:true});}
+    // An unrelated open select must not leave newly arrived Host rows static.
+    // Preserve the focused row and repair only other Host assignment controls.
+    for(let i=0;i<s.rows.length;i++){
+      const r=s.rows[i];if(!tt15Host(r.role))continue;
+      const tr=$('hc15Rows')?.querySelector('[data-hc15-row="'+tt15Key(r.name)+'"]');if(!tr||claimedRows.has(tr))continue;claimedRows.add(tr);if(tr.contains(active))continue;
+      const intact=['name','shift','role'].every(k=>{const c=tr.querySelector('select[data-es41-field="'+k+'"]');return c&&Number(c.dataset.es41Index)===i&&c.value===r[k];});
+      if(!intact){tr.querySelectorAll('[data-es41-control]').forEach(n=>n.remove());decorate(tr,r,i,true);}
+    }
+    window.es63AssignmentPaint=null;
+    return;
+  }
+  if(previous?.key===paintKey&&previous.nodes.length===nodes.length&&previous.nodes.every((n,i)=>n===nodes[i])&&previous.controls.length>=s.rows.length*2&&previous.controls.every(n=>n.isConnected))return;
+  // Keep pending row elements mounted: removing the focused row collapses the
+  // table and makes browser scroll anchoring jump to an earlier employee.
+  const pending=new Map([...$('esRows').querySelectorAll('[data-es41-pending]')].map(n=>[Number(n.dataset.es41PendingIndex),n]));
+  document.querySelectorAll('[data-es41-control]').forEach(n=>{if(!n.closest('[data-es41-pending]'))n.remove();});
   for(let i=0;i<s.rows.length;i++){
     const r=s.rows[i],w=work[i];let tr=null,host=false;
     const ri=tt15Host(r.role)?-1:esSession.rows.findIndex(x=>x.name===w.workName&&x.role===r.role);if(ri>=0)tr=$('esRows').querySelector('[data-es-index="'+ri+'"]');
@@ -15010,9 +15029,7 @@ window.es41PaintRows=function(){
     if(tr&&claimedRows.has(tr))tr=null;
     if(tr){
       claimedRows.add(tr);
-      const th=tr.querySelector('th');th.insertAdjacentHTML('afterbegin',select(r,i,'name'));
-      th.insertAdjacentHTML('beforeend',`<button type="button" data-es41-control data-es41-remove="${i}"${s.busy?' disabled':''}>Remove row</button>`);
-      if(host){tr.children[1].innerHTML=select(r,i,'shift');tr.children[2].innerHTML=select(r,i,'role');}
+      decorate(tr,r,i,host);
     }else{
       $('esRows').querySelector('.es-empty')?.closest('tr')?.remove();
       const row=pending.get(i)||document.createElement('tr');pending.delete(i);row.dataset.es41Pending='1';row.dataset.es41PendingIndex=String(i);row.innerHTML='<th class="es-name">'+select(r,i,'name')+`<div class="es64-pending-actions">${["save","sign","print"].map(action=>`<button type="button" data-es64-pending-action="${action}" data-es64-index="${i}"${s.busy||!r.name?" disabled":""}>${action[0].toUpperCase()+action.slice(1)}</button>`).join("")}</div><button type="button" data-es41-remove="${i}"${s.busy?' disabled':''}>Remove row</button></th>`+ES_COLUMNS.map(([field])=>'<td>'+(field==='role'?select(r,i,'role'):field==='shift'?select(r,i,'shift'):field==='paid'?'Apply changes to activate this row.':'—')+'</td>').join('');if(!row.isConnected)$('esRows').appendChild(row);
@@ -15916,7 +15933,18 @@ function fz72PdfStreams(streams){
     const currentDraft=!!preview&&esAllowed()&&!!batch&&batch.uid===currentUser?.uid
       &&team?.session===batch&&team.uid===batch.uid&&team.date===batch.date
       &&!team.busy&&(team.dirty===true||!!team.conflicts?.length);
-    return original(data,currentDraft);
+    // A verified REST team read can precede the general financial listeners.
+    // Use only the exact batch already accepted by this team/session; never a
+    // clean cached team that disagrees with a newer financial batch snapshot.
+    const restReady=!!preview&&!data.__hc74Preview&&!data.__hc74Committed
+      &&esAllowed()&&!!batch&&batch.uid===currentUser?.uid
+      &&team?.session===batch&&team.uid===batch.uid&&team.date===batch.date
+      &&(!data.date||data.date===batch.date)&&team.verified===true
+      &&!batch.cloudReady&&Array.isArray(batch.rawBase?.todayTeamAssignments)
+      &&Array.isArray(team.latestRaw?.todayTeamAssignments)
+      &&tt15Same(batch.rawBase.todayTeamAssignments,team.latestRaw.todayTeamAssignments);
+    const source=restReady?{...data,todayTeamAssignments:batch.rawBase.todayTeamAssignments}:data;
+    return original(source,currentDraft);
   };
 })();
 /* END ES1.8.81 Host preview authority */
