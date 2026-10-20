@@ -4017,7 +4017,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18820",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18830",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10600,7 +10600,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.82';
+const ES_BUILD='ES1.8.83';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12489,14 +12489,20 @@ function tt15TeamRows(batch={},host={}){
   return rows;
 }
 function tt15CanonicalName(name){return canonicalEmployeeName(employeeWorkProfile(name)?.personName||String(name||'').split(' \u00b7 ')[0]||name);}
-function tt15AssignmentWorkRows(rows){
+function tt15AssignmentWorkRows(rows,source=null){
   const counts=new Map(),seen=new Map(),hosts=new Set(rows.filter(r=>tt15Host(r.role)).map(r=>tt15Key(r.name)));
+  // An existing work account belongs to its exact person + role + shift.
+  // Removing the first assignment must not move another shift onto its money.
+  const existing=new Map(),identity=(name,role,shift)=>JSON.stringify([tt15Key(tt15CanonicalName(name)),String(role||'').trim(),String(shift||'').trim()]);
+  for(const name of source?.team||[]){const d=source.drafts?.[name],v=d?.values||{},raw=d?.employeeSheetRawRow||{};if(!d)continue;const role=esFixedRole(name)||v.hPosition||raw.role||'Server',shift=v.hShift||raw.shift||'';if(!shift)continue;const key=identity(name,role,shift),names=existing.get(key)||[];if(!names.includes(name))names.push(name);existing.set(key,names);}
   for(const r of rows)if(!tt15Host(r.role))counts.set(tt15Key(r.name),(counts.get(tt15Key(r.name))||0)+1);
   return rows.map(r=>{
     const key=tt15Key(r.name);if(tt15Host(r.role))return {...r,personName:r.name,workName:r.name};
     const n=(seen.get(key)||0)+1;seen.set(key,n);
-    const workName=hosts.has(key)||counts.get(key)>1&&n>1 ? `${r.name} · ${r.shift} · ${r.role}` : r.name;
-    return {...r,personName:r.name,workName};
+    const generated=hosts.has(key)||counts.get(key)>1&&n>1 ? `${r.name} · ${r.shift} · ${r.role}` : r.name;
+    const matches=existing.get(identity(r.name,r.role,r.shift))||[];
+    const workName=matches.length===1?matches[0]:generated;
+    return {...r,personName:r.name,workName,...(matches.length>1&&!matches.includes(generated)?{workAccountAmbiguous83:true}:{})};
   });
 }
 function tt15HostMembership(rows){
@@ -12638,7 +12644,8 @@ function tt15MergeTeam(base,edited,remote,resolutions={}){
 function es64NamedAssignments(rows){return (rows||[]).filter(r=>String(r.name||'').trim());}
 function tt15BuildTeam(raw,host,rows,date){
   const batch=tt15Copy(raw||{});batch.date=date;batch.drafts ||= {};hv1EnsureBarState(batch);
-  const workRows=tt15AssignmentWorkRows(rows);
+  const workRows=tt15AssignmentWorkRows(rows,raw);
+  const ambiguous=workRows.find(r=>r.workAccountAmbiguous83);if(ambiguous)throw new Error(tt15Label(ambiguous.name)+' has more than one saved work account for '+ambiguous.shift+' '+ambiguous.role+'. Review those rows before applying; saved inputs are kept.');
   batch.todayTeamAssignments=rows.map(r=>({name:r.name,role:r.role,shift:r.shift}));
   const servers=workRows.filter(r=>!tt15Host(r.role)).map(r=>({...r,name:r.workName})),removed=new Set(batch.todayTeamRemoved||[]);
   // Preserve an existing tip draft when a Host assignment adds a work-account suffix.
@@ -14842,7 +14849,8 @@ function es36StoredPhone(raw){
   function current(s){return !!s&&state===s&&esSession===s.session&&currentUser?.uid===s.uid&&esSession?.uid===s.uid&&esSession?.date===s.date&&esAllowed();}
   function defaults(date,raw){const x=raw?.todayTeamBusser||{};return {AM:typeof x.AM==='boolean'?x.AM:isWeekendDate(date),PM:typeof x.PM==='boolean'?x.PM:true};}
   function teamRows(raw={},host={}){return raw.todayTeamManaged===true&&Array.isArray(raw.todayTeamAssignments)&&!raw.todayTeamAssignments.length?[]:tt15TeamRows(raw,host);}
-  function duplicateKey(rows){return JSON.stringify(tt15BartenderDuplicateGroups(rows).map(g=>[g.shift,[...g.names].sort()]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));}
+  function duplicateKey(rows){const groups=new Map();for(const r of rows||[]){if(String(r.role||'').trim()!=='Bartender')continue;const shift=String(r.shift||'').trim().toUpperCase(),name=person(r.name);if(!shift||!name)continue;if(!groups.has(shift))groups.set(shift,new Set());groups.get(shift).add(name);}return JSON.stringify([...groups].filter(([,names])=>names.size>1).map(([shift,names])=>[shift,[...names].sort()]).sort((a,b)=>a[0].localeCompare(b[0])));}
+  function reviewedBartenders(rows,confirmed){const reviewed=new Map(JSON.parse(confirmed));return JSON.parse(duplicateKey(rows)).every(([shift,names])=>names.every(name=>(reviewed.get(shift)||[]).includes(name)));}
   function sameRows(a,b){const rows=x=>(x||[]).map(r=>[person(r.name),r.role,r.shift].join('|')).sort();return JSON.stringify(rows(a))===JSON.stringify(rows(b));}
   function persist(s){try{localStorage.setItem(key(s),JSON.stringify({rows:s.rows,base:s.base,busser:s.busser,baseBusser:s.baseBusser,dirty:s.dirty,busserDirty:s.busserDirty,busserTouched:s.busserTouched,mergeContext:s.mergeContext,conflicts:s.conflicts,previewRows:s.previewRows}));}catch(e){}}
   function message(text,error=false){const n=$('es38Status');if(n){n.textContent=text;n.style.color=error?'#9c362b':'#36576c';}}
@@ -14856,9 +14864,10 @@ function es36StoredPhone(raw){
     let hostReady=true;try{tt15HostMembership(es64NamedAssignments(s.rows));}catch(e){hostReady=false;message(e.message,true);}
     if(hostReady)hc15Render();paint();
   }
-  function add(){start();const s=state;if(!current(s)||s.busy)return;s.rows.push({name:'',role:'Server',shift:'AM'});rememberEdit(s,[]);}
+  function closeAssignmentPicker(){const active=document.activeElement;if(active?.matches?.('select[data-es41-control]')&&$('employeeSheet')?.contains(active))active.blur();}
+  function add(){start();const s=state;if(!current(s)||s.busy)return;closeAssignmentPicker();s.rows.push({name:'',role:'Server',shift:'AM'});rememberEdit(s,[]);}
   function edit(i,k,v){const s=state,r=s?.rows[i];if(!r||!current(s)||s.busy||!['name','role','shift'].includes(k)||r[k]===v)return;if(locked(s,r.name)||k==='name'&&locked(s,v)){message('Resolve this employee’s changed field below first. Other employee drafts are kept.',true);paint();return;}const before=r.name;r[k]=v;if(k==='name')r.role=tt15DirectoryEntries().find(x=>x.name===v)?.defaultRole||'Server';if(tt15Host(r.role)&&!TT15_HOST_SHIFTS.includes(r.shift))r.shift='PM';rememberEdit(s,[before,r.name]);}
-  function remove(i){const s=state,r=s?.rows[i];if(!r||!current(s)||s.busy)return;if(locked(s,r.name)){message('Choose which changed assignment to keep for this employee first.',true);return;}s.rows.splice(i,1);rememberEdit(s,[r.name]);}
+  function remove(i){const s=state,r=s?.rows[i];if(!r||!current(s)||s.busy)return;if(locked(s,r.name)){message('Choose which changed assignment to keep for this employee first.',true);return;}closeAssignmentPicker();s.rows.splice(i,1);rememberEdit(s,[r.name]);message(tt15Label(r.name)+' · '+r.shift+' · '+r.role+' removed from this draft. Tap Apply changes to save.');}
   window.es41Team={get:()=>state,add,edit,remove,apply:()=>apply(),reload:()=>{start();return current(state)&&!state.busy?load(state,true):Promise.resolve(false);},resolve:(id,choice)=>resolve(id,choice)};
   function conflictValue(value){if(value===null)return 'Removed';if(Array.isArray(value))return value.length?value.map(conflictValue).join(' / '):'No assignments';if(value&&typeof value==='object')return [value.role,value.shift].filter(Boolean).join(' · ');return String(value??'Not recorded');}
   function conflictCard(s){
@@ -14875,7 +14884,7 @@ function es36StoredPhone(raw){
     }).join('')||'<p>Add an employee here. Existing sales and reports are kept.</p>';
     window.es41PaintRows?.();
     for(const control of document.querySelectorAll('[data-es41-index]')){const row=s.rows[Number(control.dataset.es41Index)];if(row&&locked(s,row.name))control.disabled=true;}
-    const work=tt15AssignmentWorkRows(s.rows);for(const control of $('esRows')?.querySelectorAll('[data-es-field="role"],[data-es-field="shift"]')||[]){const row=s.session.rows[Number(control.dataset.esRow)],i=row?work.findIndex(r=>r.workName===row.name):-1;if(i>=0){control.value=s.rows[i][control.dataset.esField];control.disabled=s.busy||locked(s,s.rows[i].name);}}
+    const work=tt15AssignmentWorkRows(s.rows,esSession?.rawBase);for(const control of $('esRows')?.querySelectorAll('[data-es-field="role"],[data-es-field="shift"]')||[]){const row=s.session.rows[Number(control.dataset.esRow)],i=row?work.findIndex(r=>r.workName===row.name):-1;if(i>=0){control.value=s.rows[i][control.dataset.esField];control.disabled=s.busy||locked(s,s.rows[i].name);}}
     conflictCard(s);if(typeof hc15UpdateValues==='function')hc15UpdateValues();
   }
   function stop(s){if(!s)return;(s.unsubs||[]).forEach(u=>u());s.unsubs=[];(s.controllers||new Set()).forEach(c=>c.abort());clearTimeout(s.hydrateTimer);s.readSeq++;}
@@ -14930,7 +14939,7 @@ function es36StoredPhone(raw){
       const named=es64NamedAssignments(s.rows);tt15TeamValidate(named);if(s.base&&named.length===0&&s.base.length&&!confirm('Remove everyone from the active team? Saved reports are kept.'))return false;
       const duplicate=tt15ConfirmDuplicateBartenders(named);for(const id of ['tt15BartenderDuplicateCancel','tt15BartenderDuplicateContinue'])if($(id))$(id).disabled=false;if(!await duplicate||!current(s))return false;const confirmedBartenders=duplicateKey(named);
       const edited=copy(named),base=copy(s.base||[]),chosen=copy(s.busser),baseBusser=copy(s.baseBusser),touched=copy(s.busserTouched||{});
-      const result=await runTransaction(db,async tx=>{const ref=doc(db,'hourlyV1Batches',s.date),href=doc(db,'hostCashierTipReports',s.date),dref=doc(db,'hostCashierTipReports','employee-roster');const bs=await tx.get(ref);if(!current(s))throw new Error('Date or login changed. Your draft is kept.');const hs=await tx.get(href);if(!current(s))throw new Error('Date or login changed. Your draft is kept.');const ds=await tx.get(dref);tt15Require(s.uid);if(!current(s))throw new Error('Date or login changed. Your draft is kept.');const raw=bs.exists()?bs.data():{},host=hs.exists()?hs.data():{};for(const data of [raw,host])if(data?.date&&data.date!==s.date)throw new Error('Saved team date does not match this sheet. Your draft is kept.');const remote=teamRows(raw,host),plan=tt15TeamMergePlan81(base,edited,remote),bp=busserPlan(baseBusser,chosen,defaults(s.date,raw),touched,{});if(plan.conflicts.length||bp.conflicts.length){const e=new Error('Another device changed the same assignment field. Choose only that field below.');e.teamConflict=true;e.teamRaw=raw;e.teamHost=host;e.teamBase=base;e.teamEdited=edited;e.busserBase=baseBusser;e.busserEdited=chosen;throw e;}const rows=plan.rows;if(duplicateKey(rows)!==confirmedBartenders){const e=new Error('Bartender assignments changed on another device. Review the latest team and Apply again to confirm the updated bartender group.');e.teamRefreshRaw=raw;e.teamRefreshHost=host;throw e;}const dir=tt15DirectoryEntries(ds.exists()?ds.data():{});for(const r of rows)if(!remote.some(x=>person(x.name)===person(r.name))&&!dir.some(e=>person(e.name)===person(r.name)&&e.active))throw new Error(r.name+' is not active. Add or restore them in Manage Employee.');tt15TeamValidate(rows);const out=tt15BuildTeam(raw,host,rows,s.date);out.batch.todayTeamBusser=bp.values;tx.set(ref,{...out.batch,...tt15Stamp()});tx.set(href,{...out.host,...tt15Stamp()});return {rows,busser:bp.values,raw:out.batch,host:out.host};});
+      const result=await runTransaction(db,async tx=>{const ref=doc(db,'hourlyV1Batches',s.date),href=doc(db,'hostCashierTipReports',s.date),dref=doc(db,'hostCashierTipReports','employee-roster');const bs=await tx.get(ref);if(!current(s))throw new Error('Date or login changed. Your draft is kept.');const hs=await tx.get(href);if(!current(s))throw new Error('Date or login changed. Your draft is kept.');const ds=await tx.get(dref);tt15Require(s.uid);if(!current(s))throw new Error('Date or login changed. Your draft is kept.');const raw=bs.exists()?bs.data():{},host=hs.exists()?hs.data():{};for(const data of [raw,host])if(data?.date&&data.date!==s.date)throw new Error('Saved team date does not match this sheet. Your draft is kept.');const remote=teamRows(raw,host),plan=tt15TeamMergePlan81(base,edited,remote),bp=busserPlan(baseBusser,chosen,defaults(s.date,raw),touched,{});if(plan.conflicts.length||bp.conflicts.length){const e=new Error('Another device changed the same assignment field. Choose only that field below.');e.teamConflict=true;e.teamRaw=raw;e.teamHost=host;e.teamBase=base;e.teamEdited=edited;e.busserBase=baseBusser;e.busserEdited=chosen;throw e;}const rows=plan.rows;if(!reviewedBartenders(rows,confirmedBartenders)){const e=new Error('A new bartender group needs confirmation. Review the latest team and Apply again to confirm the additional bartenders');e.teamRefreshRaw=raw;e.teamRefreshHost=host;throw e;}const dir=tt15DirectoryEntries(ds.exists()?ds.data():{});for(const r of rows)if(!remote.some(x=>person(x.name)===person(r.name))&&!dir.some(e=>person(e.name)===person(r.name)&&e.active))throw new Error(r.name+' is not active. Add or restore them in Manage Employee.');tt15TeamValidate(rows);const out=tt15BuildTeam(raw,host,rows,s.date);out.batch.todayTeamBusser=bp.values;tx.set(ref,{...out.batch,...tt15Stamp()});tx.set(href,{...out.host,...tt15Stamp()});return {rows,busser:bp.values,raw:out.batch,host:out.host};});
       if(!current(s))return false;s.rows=copy(result.rows);s.base=copy(result.rows);s.busser=copy(result.busser);s.baseBusser=copy(result.busser);s.busserTouched={};s.dirty=false;s.busserDirty=false;s.conflicts=[];s.mergeContext=null;s.latestRaw=copy(result.raw);s.latestHost=copy(result.host);s.pendingHydrate={raw:result.raw,host:result.host,seq:++s.readSeq,epoch:s.sourceEpoch};s.pendingRemote=null;localStorage.removeItem(key(s));message('Team applied · shared with your other devices.');committed=true;return true;
     }catch(e){if(current(s)){if(e.teamRefreshRaw)rebase(s,e.teamRefreshRaw,e.teamRefreshHost);if(e.teamConflict&&e.teamRaw){s.mergeContext={base:copy(e.teamBase),edited:copy(e.teamEdited),busserBase:copy(e.busserBase),busserEdited:copy(e.busserEdited),touched:copy(s.busserTouched),resolutions:{}};rebase(s,e.teamRaw,e.teamHost);}message('Team was not applied: '+(e.message||e)+'. Your draft is kept.',true);persist(s);}return false;}
     finally{await unlock(s);if(current(s)&&committed)message('Team applied · shared with your other devices.');}
@@ -14942,7 +14951,7 @@ function es36StoredPhone(raw){
   for(const route of ['employeeSheetClose','fzOpenFinalReport']){const fn=window[route];if(typeof fn==='function')window[route]=function(...args){leave();return fn.apply(this,args);};}
   // Position/shift controls belong to the assignment draft until Apply. The
   // original handler remains unchanged for every money/clock/BAR field.
-  const change=esChange;esChange=function(input,final){const s=state,field=input?.dataset?.esField;if(current(s)&&['role','shift'].includes(field)){if(s.busy)return;const row=s.session.rows[Number(input.dataset.esRow)],work=tt15AssignmentWorkRows(s.rows),i=row?work.findIndex(r=>r.workName===row.name):-1;if(i>=0){edit(i,field,input.value);return;}}return change.apply(this,arguments);};
+  const change=esChange;esChange=function(input,final){const s=state,field=input?.dataset?.esField;if(current(s)&&['role','shift'].includes(field)){if(s.busy)return;const row=s.session.rows[Number(input.dataset.esRow)],work=tt15AssignmentWorkRows(s.rows,esSession?.rawBase),i=row?work.findIndex(r=>r.workName===row.name):-1;if(i>=0){edit(i,field,input.value);return;}}return change.apply(this,arguments);};
   try{onAuthStateChanged(auth,user=>{if(state&&(!user||user.uid!==state.uid||user.isAnonymous)){stop(state);state=null;$('es81TeamConflicts')?.remove();}});}catch(e){}
 })();
 function es38MergeUnverified(remote,edited){
@@ -14978,7 +14987,7 @@ window.es41Install=function(){
     // Existing sheet position/shift inputs keep their normal draft behavior and also update assignments.
     if(['shift','role'].includes(target.dataset.esField)){
       const row=esSession?.rows[Number(target.dataset.esRow)],team=window.es41Team.get();if(!row||!team)return;
-      const work=tt15AssignmentWorkRows(team.rows),i=work.findIndex(x=>x.workName===row.name);
+      const work=tt15AssignmentWorkRows(team.rows,esSession?.rawBase),i=work.findIndex(x=>x.workName===row.name);
       if(i>=0)window.es41Team.edit(i,target.dataset.esField,target.value);
     }
   });$('employeeSheet').addEventListener('click',e=>{const b=e.target.closest('[data-es41-remove]');if(b)window.es41Team.remove(Number(b.dataset.es41Remove));});}
@@ -14986,7 +14995,10 @@ window.es41Install=function(){
 };
 window.es41PaintRows=function(){
   const s=window.es41Team?.get();if(!s||s.date!==esSession?.date||s.uid!==esSession?.uid||!$('esRows'))return;
-  const work=tt15AssignmentWorkRows(s.rows),dir=tt15DirectoryEntries(),claimedRows=new Set();
+  const assignmentIdentity=(name,role,shift)=>JSON.stringify([tt15Key(tt15CanonicalName(name)),String(role||'').trim(),String(shift||'').trim()]);
+  const activeAssignments=new Set(s.rows.filter(r=>!tt15Host(r.role)).map(r=>assignmentIdentity(r.name,r.role,r.shift)));
+  for(const tr of $('esRows').querySelectorAll('tr[data-es-index]')){const row=esSession.rows[Number(tr.dataset.esIndex)];if(!row)continue;const removed=!activeAssignments.has(assignmentIdentity(row.name,row.role,row.shift));tr.dataset.es83Removed=removed?'1':'0';if(removed)tr.hidden=true;else if(tr.hidden)tr.hidden=!!$('esSearch')?.value&&!(tt15Label(row.name)+' '+row.name).toLowerCase().includes(String($('esSearch').value).toLowerCase());}
+  const work=tt15AssignmentWorkRows(s.rows,esSession?.rawBase),dir=tt15DirectoryEntries(),claimedRows=new Set();
   const select=(r,i,k)=>{
     const options=k==='name'?dir.filter(x=>x.active||x.name===r.name).map(x=>[x.name,x.displayName]):(k==='role'?TT15_ROLES:tt15Host(r.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>[x,x]);
     if(k==='name'&&r.name&&!options.some(x=>x[0]===r.name))options.push([r.name,r.name]);
@@ -15183,7 +15195,7 @@ function es43ValidateContacts(payload){
  function exportRecap(){const w=currentWeek(),filter=roleFilter();const lines=[[t('Employee','Karyawan'),'Role',t('Week start','Mulai minggu'),t('Week end','Akhir minggu'),'Attendance /70','Sidework /25','Guest /5','Total /100',t('Reviewed','Direview'),t('Expected','Terjadwal'),t('Recommendation','Rekomendasi'),t('Reason','Alasan')]];for(const n of allNames()){const s=summaryFor(n,filter),r=recommend(s,config);lines.push([tt15Label(n),filter||'ALL',w.start,w.end,s.attendance,s.sidework,s.guest,s.total,s.reviewed,s.expected,actionText(r.code),reasonText(r.reason,s)]);}const csv='\ufeff'+lines.map(row=>row.map(v=>'"'+String(v??'').replace(/"/g,'""')+'"').join(',')).join('\r\n');const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});es18DownloadRaw(blob,'Team_Weekly_Recap_'+w.start+'.csv');}
 
  let sheetRows=[],sheetSubscriptions=[],sheetToken=0,sheetReady=false,sheetTimer=null;
- function projectSheets(batches,hosts){const out=[];for(const dateKey of new Set([...Object.keys(batches),...Object.keys(hosts)])){const batch=batches[dateKey]||{},host=hosts[dateKey]||{};const current=tt15TeamRows(batch,host),assignments=[...current];for(const old of Object.values(batch.performanceAssignments||{})){if(!current.some(r=>tt15CanonicalName(r.name)===tt15CanonicalName(old.name)&&normalizeRole(r.role)===normalizeRole(old.role))&&!assignments.some(r=>tt15CanonicalName(r.name)===tt15CanonicalName(old.name)&&normalizeRole(r.role)===normalizeRole(old.role)&&r.shift===old.shift))assignments.push(old);}for(const assignment of tt15AssignmentWorkRows(assignments)){const name=assignment.name,workName=assignment.workName,role=normalizeRole(assignment.role),d=tt15Host(assignment.role)?{}:batch.drafts?.[workName]||batch.drafts?.[name]||{},v=d.values||{},raw=d.employeeSheetRawRow||{},hc=host.staffDetails?.[name]||{},shift=assignment.shift||v.hShift||raw.shift||'',isHost=role==='Cashier/Host',double=shift==='DOUBLE';const ci=String(isHost?hc.clockIn||hc.in||'':double?v.hAmIn||raw.clockIn||'':v.hIn||raw.clockIn||''),co=String(isHost?hc.clockOut||hc.out||'':double?v.hAmOut||raw.clockOut||'':v.hOut||raw.clockOut||''),ci2=double?String(isHost?hc.clockIn2||'':v.hPmIn||raw.clockIn2||''):'',co2=double?String(isHost?hc.clockOut2||'':v.hPmOut||raw.clockOut2||''):'';const hasWork=!!(ci||co||ci2||co2||d.finalized||d.hourlyReportId||Number(v.hGrandTotal||raw.grand||0)!==0||Number(v.hPaidTip||raw.paid||0)!==0||Number(hc.sales||0)!==0);const employee=typeof tt15CanonicalName==='function'?tt15CanonicalName(name):name;out.push({employee,workAccount:workName,date:dateKey,role,shift,actual:ci,clockOut:co,clockIn2:ci2,clockOut2:co2,scheduled:batch.performanceSchedule?.[name]?.start||host.performanceSchedule?.[name]?.start||'',hasWork,blank:!hasWork,...((batch.employeeAttendance54||{})[encodeURIComponent(name+'|'+assignment.role+'|'+shift)]||{}),sourceCollection:isHost?'hostCashierTipReports':'hourlyV1Batches'});}}return out;}
+ function projectSheets(batches,hosts){const out=[];for(const dateKey of new Set([...Object.keys(batches),...Object.keys(hosts)])){const batch=batches[dateKey]||{},host=hosts[dateKey]||{};const current=tt15TeamRows(batch,host),assignments=[...current];for(const old of Object.values(batch.performanceAssignments||{})){if(!current.some(r=>tt15CanonicalName(r.name)===tt15CanonicalName(old.name)&&normalizeRole(r.role)===normalizeRole(old.role))&&!assignments.some(r=>tt15CanonicalName(r.name)===tt15CanonicalName(old.name)&&normalizeRole(r.role)===normalizeRole(old.role)&&r.shift===old.shift))assignments.push(old);}for(const assignment of tt15AssignmentWorkRows(assignments,batch)){const name=assignment.name,workName=assignment.workName,role=normalizeRole(assignment.role),d=tt15Host(assignment.role)?{}:batch.drafts?.[workName]||batch.drafts?.[name]||{},v=d.values||{},raw=d.employeeSheetRawRow||{},hc=host.staffDetails?.[name]||{},shift=assignment.shift||v.hShift||raw.shift||'',isHost=role==='Cashier/Host',double=shift==='DOUBLE';const ci=String(isHost?hc.clockIn||hc.in||'':double?v.hAmIn||raw.clockIn||'':v.hIn||raw.clockIn||''),co=String(isHost?hc.clockOut||hc.out||'':double?v.hAmOut||raw.clockOut||'':v.hOut||raw.clockOut||''),ci2=double?String(isHost?hc.clockIn2||'':v.hPmIn||raw.clockIn2||''):'',co2=double?String(isHost?hc.clockOut2||'':v.hPmOut||raw.clockOut2||''):'';const hasWork=!!(ci||co||ci2||co2||d.finalized||d.hourlyReportId||Number(v.hGrandTotal||raw.grand||0)!==0||Number(v.hPaidTip||raw.paid||0)!==0||Number(hc.sales||0)!==0);const employee=typeof tt15CanonicalName==='function'?tt15CanonicalName(name):name;out.push({employee,workAccount:workName,date:dateKey,role,shift,actual:ci,clockOut:co,clockIn2:ci2,clockOut2:co2,scheduled:batch.performanceSchedule?.[name]?.start||host.performanceSchedule?.[name]?.start||'',hasWork,blank:!hasWork,...((batch.employeeAttendance54||{})[encodeURIComponent(name+'|'+assignment.role+'|'+shift)]||{}),sourceCollection:isHost?'hostCashierTipReports':'hourlyV1Batches'});}}return out;}
  window.fz48ProjectSheets=projectSheets;
  function sheetForCurrent(){const matches=r=>r.employee===person()&&r.date===$a('Date').value&&r.role===$a('Role').value&&r.shift===$a('Shift').value;return sheetRows.find(matches)||reviews.find(matches)?.sheetSource||null;}
  let recovery52Running=false;
@@ -15266,7 +15278,7 @@ function es43ValidateContacts(payload){
  const drafts=new Map();
  const paint=window.es41PaintRows;
  window.es41PaintRows=function(...args){const out=paint.apply(this,args),s=window.es41Team?.get();if(!s||s.date!==esSession?.date||s.uid!==esSession?.uid)return out;
-  const work=tt15AssignmentWorkRows(s.rows);
+  const work=tt15AssignmentWorkRows(s.rows,esSession?.rawBase);
   if($('es41Actions')&&!$('es54AttendancePdf')){const pdf=document.createElement('button');pdf.id='es54AttendancePdf';pdf.textContent='Attendance PDF / PDF Kehadiran';pdf.onclick=()=>{const lines=['Fred Zhang Tip Calculator','ATTENDANCE / KEHADIRAN',esSession.date];for(const row of window.es41Team.get().rows){const v=esSession.rawBase?.employeeAttendance54?.[key(row)]||{};lines.push(row.name+' | '+row.role+' | '+row.shift,labels[v.attendance]||'Not confirmed / Belum dikonfirmasi',v.attendanceReason||'',v.replacement?'Replacement / Pengganti: '+v.replacement:'',v.protectedStatus||'');}const blob=window.fz48TextPdf(lines),name='Attendance_'+esSession.date+'.pdf';if(window.FZReceiptAndroid?.savePdf){const reader=new FileReader();reader.onload=()=>window.FZReceiptAndroid.savePdf(name,String(reader.result).split(',')[1]);reader.readAsDataURL(blob);}else es18DownloadRaw(blob,name);};$('es41Actions').appendChild(pdf);}
   const canonical=n=>typeof tt15CanonicalName==='function'?tt15CanonicalName(n):n;
   const entries=s.rows.map((r,i)=>({...r,esIndex:tt15Host(r.role)?-1:esSession.rows.findIndex(x=>x.role===r.role&&(x.name===work[i].workName||(canonical(x.name)===canonical(r.name)&&x.shift===r.shift)))}));
@@ -15315,7 +15327,7 @@ window.es59ManageEmployee=function(){
   const b=e.target.closest?.('[data-es-action],[data-hc15-action],[data-es64-pending-action]'),team=window.es41Team?.get();
   if(!b||!team?.dirty)return;e.preventDefault();e.stopImmediatePropagation();if(applying)return;applying=true;
   const pending=b.dataset.es64PendingAction,control=b.closest('tr')?.querySelector('[data-es41-field="name"]'),assignmentIndex=pending?Number(b.dataset.es64Index):control?Number(control.dataset.es41Index):-1,assignment=team.rows[assignmentIndex];
-  const host=assignment?tt15Host(assignment.role):!!b.dataset.hc15Action,action=pending||b.dataset.hc15Action||b.dataset.esAction,old=assignment?(tt15Host(assignment.role)?assignment.name:tt15AssignmentWorkRows(team.rows)[assignmentIndex].workName):host?b.dataset.hc15Name:esSession.rows[Number(b.dataset.esRow)]?.name;
+  const host=assignment?tt15Host(assignment.role):!!b.dataset.hc15Action,action=pending||b.dataset.hc15Action||b.dataset.esAction,old=assignment?(tt15Host(assignment.role)?assignment.name:tt15AssignmentWorkRows(team.rows,esSession?.rawBase)[assignmentIndex].workName):host?b.dataset.hc15Name:esSession.rows[Number(b.dataset.esRow)]?.name;
   const scroll=es14CaptureScroll();try{
    await window.es41Team.apply();const t=window.es41Team.get();if(t?.dirty||t?.busy)throw new Error('Assignment changes could not save. Review the message above.');
    // employeeSheetOpen returns before the host listener is verified: wait for this date only.
@@ -15948,3 +15960,25 @@ function fz72PdfStreams(streams){
   };
 })();
 /* END ES1.8.81 Host preview authority */
+
+/* ES1.8.83 — saved reports remain archives after assignment removal.
+ * Only current person/role/shift assignments may hydrate the active sheet.
+ * The preparer keeps report identities intact; stored reports are not renamed.
+ */
+(function es83ManagedAssignmentReports(){
+  const prepare=esPrepareBatch;
+  esPrepareBatch=function(source,reports,date){
+    if(source?.todayTeamManaged!==true||!Array.isArray(source.todayTeamAssignments))return prepare(source,reports,date);
+    const active=tt15AssignmentWorkRows(source.todayTeamAssignments,source).filter(r=>!tt15Host(r.role));
+    const key=name=>tt15Key(tt15CanonicalName(name||''));
+    const selected=(reports||[]).flatMap(report=>{
+      if(report.date!==date)return [report];
+      const role=String(report.position||report.role||employeeWorkProfile(report.employee)?.position||'').trim(),shift=String(report.shift||'').trim();
+      const matches=active.filter(r=>key(r.name)===key(report.employee)&&(!role||r.role===role)&&(!shift||r.shift===shift));
+      const exact=matches.find(r=>r.workName===report.employee),assignment=exact||(matches.length===1?matches[0]:null);
+      return assignment?[report]:[];
+    });
+    const names=[...new Set(active.map(r=>r.workName))],currentSource={...source,team:names};
+    const prepared=prepare(currentSource,selected,date);prepared.team=names;return prepared;
+  };
+})();

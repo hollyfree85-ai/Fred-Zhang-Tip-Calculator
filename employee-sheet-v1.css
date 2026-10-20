@@ -664,3 +664,6 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 #employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table>thead>tr>th{height:44px!important;min-height:0;max-height:44px;padding:4px 7px!important;font-size:15px!important;line-height:1.15!important;overflow:hidden;overflow-wrap:normal}
 #employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table>thead small,
 #employeeSheet.es-compact.es-mobile-keyboard:not(.es-desktop-page) .es-table>thead .es-name>span{display:none!important}
+
+/* ES1.8.83: removed assignment rows stay hidden until Apply or draft undo. */
+#employeeSheet #esRows tr[data-es83-removed="1"]{display:none!important}
