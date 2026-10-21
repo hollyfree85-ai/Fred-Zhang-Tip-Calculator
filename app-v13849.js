@@ -4017,7 +4017,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18840",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18850",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10600,7 +10600,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.84';
+const ES_BUILD='ES1.8.85';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12940,9 +12940,12 @@ function hc15Member(data,name){return tt15TeamRows({},hc74AssignmentData(data)).
 function hc15Field(name,field){return JSON.stringify([name||'',field]);}
 function hc15Get(data,key){const [name,field]=JSON.parse(key);return name?String(data.staffDetails?.[name]?.[field]??''):field.startsWith('creditAccounts')?(data[field]||[]):String(data[field]??0);}
 function hc15Put(data,key,value){const [name,field]=JSON.parse(key);if(name){data.staffDetails ||= {};data.staffDetails[name] ||= {};data.staffDetails[name][field]=value;}else{data[field]=field.startsWith('creditAccounts')?tt15Copy(value):(es14MoneyValid(value)?Number(value)||0:String(value));if(field==='creditAM'||field==='creditPM')data['creditAccounts'+field.slice(-2)]=[{label:'Sheet total',amount:Number(value)||0}];}}
-function hc15Equal(key,a,b){const [name,field]=JSON.parse(key);return name?String(a??'')===String(b??''):field.startsWith('creditAccounts')?tt15Same(a,b):es14MoneyText(a)===es14MoneyText(b);}
+function hc15Equal(key,a,b){const [name,field]=JSON.parse(key);return name?String(a??'')===String(b??''):field.startsWith('creditAccounts')?es182StableJson(a)===es182StableJson(b):es14MoneyText(a)===es14MoneyText(b);}
 function hc15Valid(key,value){const [name,field]=JSON.parse(key);if(name)return value===''||/^([01]\d|2[0-3]):[0-5]\d$/.test(value);if(field.startsWith('creditAccounts'))return Array.isArray(value)&&value.length<=50&&value.every(r=>es14MoneyValid(r.amount)&&String(r.label||'').length<=80);return es14MoneyValid(value);}
-function hc15View(s=hc15Session){const data=tt15Copy(s?.data||{});for(const [key,e]of Object.entries(s?.edits||{}))hc15Put(data,key,e.local);return hc74AssignmentData(data,true);}
+// Credit totals also update the default ledger. Apply an explicit account list
+// after its total so restoring a draft never makes object insertion order win.
+function hc85DraftEntries(edits){return Object.entries(edits||{}).sort(([a],[b])=>Number(JSON.parse(a)[1].startsWith('creditAccounts'))-Number(JSON.parse(b)[1].startsWith('creditAccounts')));}
+function hc15View(s=hc15Session){const data=tt15Copy(s?.data||{});for(const [key,e]of hc85DraftEntries(s?.edits))hc15Put(data,key,e.local);return hc74AssignmentData(data,true);}
 function hc15LocalKey(s){return 'fz_hc15_draft_'+s.uid+'_'+s.date;}
 function hc15KeepLocal(s=hc15Session){if(!s)return false;try{if(Object.keys(s.edits).length||Object.keys(s.draftSaves||{}).length)localStorage.setItem(hc15LocalKey(s),JSON.stringify({data:s.data,edits:s.edits,draftSaves:s.draftSaves||{},savedAt:Date.now()}));else localStorage.removeItem(hc15LocalKey(s));return true;}catch(e){return false;}}
 function hc15Accept(s,data,verified=true){
@@ -12991,7 +12994,7 @@ function hc15Schedule(s=hc15Session){
 }
 async function hc15Flush(s=hc15Session){
   if(s?.writing)return s.writing;if(!s||!s.verified||navigator.onLine===false)return false;
-  const edits=tt15Copy(Object.fromEntries(Object.entries(s.edits).filter(([k,e])=>!s.conflicts.includes(k)&&hc15Valid(k,e.local))));if(!Object.keys(edits).length)return true;
+  const edits=tt15Copy(Object.fromEntries(hc85DraftEntries(s.edits).filter(([k,e])=>!s.conflicts.includes(k)&&hc15Valid(k,e.local))));if(!Object.keys(edits).length)return true;
   clearTimeout(s.timer);
   s.writing=(async()=>{
     const ref=doc(db,'hostCashierTipReports',s.date);
@@ -13004,10 +13007,14 @@ async function hc15Flush(s=hc15Session){
         hc15Put(next,key,e.local);applied.push(key);
       }
       if(applied.length){next.sheetRevision=Number(raw.sheetRevision||0)+1;tx.set(ref,{...next,...tt15Stamp()});}
-      return {next,applied,conflicts};
+      return {next,before:raw,applied,conflicts};
     });
     if(s===hc15Session){
       for(const key of result.applied)if(s.edits[key]){if(hc15Equal(key,s.edits[key].local,edits[key].local))delete s.edits[key];else s.edits[key].base=tt15Copy(edits[key].local);}
+      // A total saved by THIS transaction also writes its default account list.
+      // A newer ledger edit on this phone may still use the pre-write base.
+      // Advance only that known own-write base; never a truly changed remote one.
+      for(const key of result.applied){const [name,field]=JSON.parse(key);if(name||!['creditAM','creditPM'].includes(field))continue;const ledger=hc15Field('','creditAccounts'+field.slice(-2)),edit=s.edits[ledger];if(edit&&!result.applied.includes(ledger)&&!result.conflicts.includes(ledger)&&hc15Equal(ledger,edit.base,hc15Get(result.before,ledger)))edit.base=tt15Copy(hc15Get(result.next,ledger));}
       s.conflicts=[...new Set([...s.conflicts,...result.conflicts])];s.error=result.conflicts.length?'Another device changed the same field. Review changes below.':'';
       hc15Accept(s,result.next,true);
     }return true;
@@ -13126,14 +13133,22 @@ async function hc188RebaseExplicitHostSave(s){
 }
 async function hc15Commit(name,signature=null,expected=''){
   const s=hc15Session;if(!s?.verified)throw new Error('Checking cloud. Your signature is kept.');tt15Require(s.uid);
+  const workDate=s.date,guard=()=>{tt15Require(s.uid);if(hc15Session!==s||s.date!==workDate)throw new Error('Host / Cashier date or login changed. Your draft is kept.');};
+  // An older autosave may still own s.writing while the screen has newer input.
+  // Settle it BEFORE inspecting conflicts, then flush the remaining current draft.
+  if(s.writing){if(!(await s.writing))throw new Error(s.error||'Host / Cashier draft could not sync.');guard();}
   if(s.conflicts.length&&!signature)await hc188RebaseExplicitHostSave(s);
+  guard();
   if(!(await hc15Flush(s)))throw new Error(s.error||'Host / Cashier draft could not sync.');
+  guard();
   const view=hc15View(s);for(const f of TT15_POOLS)if(!es14MoneyValid(view[f]))throw new Error('Enter valid '+f+' with at most 2 decimals.');
-  if(s.conflicts.length&&!signature)throw new Error('Another device changed the same Host / Cashier pool again while saving. Tap Save once more after reviewing the current values.');
+  if(s.conflicts.length)throw new Error('Host / Cashier input changed while saving. Review the current pool values before Save; your draft is kept.');
+  if(Object.keys(s.edits).some(key=>!JSON.parse(key)[0]))throw new Error('The latest Host / Cashier pool input has not synced yet. Your draft is kept; no report was finalized.');
+  const reviewedFingerprint=hc15Fingerprint(hc15Report(view,name));
   // Legacy clock drafts remain stored, but no longer block a tip report.
   const reportRef=doc(db,'hourlyReports','hc15-'+s.date+'-'+tt15Key(name)),ref=doc(db,'hostCashierTipReports',s.date);
   const out=await runTransaction(db,async tx=>{
-    const hs=await tx.get(ref),rs=await tx.get(reportRef),bs=await tx.get(doc(db,'hourlyV1Batches',s.date));tt15Require(s.uid);
+    const hs=await tx.get(ref),rs=await tx.get(reportRef),bs=await tx.get(doc(db,'hourlyV1Batches',s.date));guard();
     if(!hs.exists())throw new Error('Set this date’s Host / Cashier team first.');
     let data=hs.data();const batch=bs.exists()?bs.data():{};
     if(Array.isArray(batch.todayTeamAssignments))data={...data,todayTeamAssignments:batch.todayTeamAssignments,todayTeamRevision:Number(batch.todayTeamRevision||0)};
@@ -13141,6 +13156,7 @@ async function hc15Commit(name,signature=null,expected=''){
     const before=rs.exists()?rs.data():null,r=hc15Report(data,name);
     if(before&&(!tt15IsHostReport(before)||!hourlyReportBelongsTo(before,name,s.date)))throw new Error('Report identity mismatch. No data was replaced.');
     const fp=hc15Fingerprint(r);
+    if(fp!==reviewedFingerprint)throw new Error('The saved Host / Cashier pool or team changed while saving. Refresh and review the current values before Save. Your draft is kept.');
     if(signature&&fp!==expected)throw new Error('Amounts or team changed while signing. Cancel, review the updated row, then sign again. Your signature remains visible.');
     const same=hc184SameFingerprint(before?.hostCashierFingerprint,fp),sig=signature||(same?before?.pickupSignature:null);
     const report={...r,hostCashierFingerprint:fp,pickupSignature:sig||null,signatureStatus:sig?'SIGNED':'PENDING',status:'money_ready',employeeSheetBuild:ES_BUILD,employeeKey:fzEmployeeIdentityKey(employeeWorkProfile(name)?.personName||name),reportIdentityVersion:'13.8.28',updatedAt:serverTimestamp(),updatedBy:currentProfile?.displayName||currentProfile?.username||''};
@@ -15010,7 +15026,7 @@ function es36StoredPhone(raw){
   }
   async function readBoth(s){const seq=++s.readSeq;try{const results=await Promise.all([readDoc('hourlyV1Batches',s.date,s),readDoc('hostCashierTipReports',s.date,s)]);if(!current(s)||seq!==s.readSeq)return false;rebase(s,...results);return true;}catch(e){e.teamReadSeq=seq;throw e;}}
   function lock(s){if(!current(s)||s.busy||s.session.busy||hc15Session?.uid===s.uid&&hc15Session?.date===s.date&&hc15Session.busy)return false;s.busy=true;s.lockHost=hc15Session?.uid===s.uid&&hc15Session?.date===s.date?hc15Session:null;s.lockHostBusy=s.lockHost?.busy||false;if(s.lockHost)s.lockHost.busy=true;esSetBusy(true);paint();return true;}
-  async function unlock(s){s.busy=false;if(s.lockHost)s.lockHost.busy=s.lockHostBusy;s.lockHost=null;if(!current(s))return;esSetBusy(false);if(s.pendingRemote){const pair=s.pendingRemote;s.pendingRemote=null;if(pair.epoch===s.sourceEpoch){++s.readSeq;rebase(s,pair.raw,pair.host);}}await hydrate(s);if(current(s))paint();}
+  async function unlock(s){s.busy=false;if(s.lockHost)s.lockHost.busy=s.lockHostBusy;s.lockHost=null;if(!current(s))return;esSetBusy(false);if(s.pendingRemote){const pair=s.pendingRemote;s.pendingRemote=null;if(pair.epoch===s.sourceEpoch){++s.readSeq;rebase(s,pair.raw,pair.host);}}await hydrate(s);if(current(s)){let hostReady=true;try{tt15HostMembership(es64NamedAssignments(s.rows));}catch(e){hostReady=false;}if(hostReady)hc15Render();paint();}}
   function foreground(s){return current(s)&&document.visibilityState!=='hidden'&&document.body.classList.contains('es-active');}
   function queueSync(s,delay=25000){clearTimeout(s.syncTimer);if(!foreground(s))return;s.syncTimer=setTimeout(()=>{s.syncTimer=0;if(!foreground(s))return;if(s.busy||s.session.busy||hc15Session?.busy){s.resumePending=true;queueSync(s,1000);return;}void recover(s,false);},delay);}
   function watch(s){
