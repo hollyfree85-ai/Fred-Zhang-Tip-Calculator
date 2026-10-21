@@ -79,6 +79,7 @@ const authSecurityReady=(async()=>{
     if(passPrntReturnBridge)cleanPassPrntCallbackUrl();
   }catch(e){console.warn('Session initialization:',e);}
 })();
+
 async function es18PasswordSignIn(email,password){
   await authSecurityReady;
   await setPersistence(auth,browserSessionPersistence);
@@ -4017,7 +4018,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18860",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18890",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -8707,6 +8708,14 @@ async function writeHourlyFinalForAccount(r,candidateId,submissionId){
     const snap=candidateRef?await transaction.get(candidateRef):null;
     const before=snap?.exists()?snap.data():null;
     const wasEditing=hourlyReportBelongsTo(before,r.employee,r.date);
+    // The legacy calculator cannot edit a dedicated Busser cutoff. Prevent a
+    // fresh transaction from replacing its fees while retaining old metadata.
+    if(wasEditing&&es88BusserCutoff(before)!=='')throw new Error('This report uses a Busser arrival cutoff. Edit and save it in Employee Sheet.');
+    if(String(r.position||'Server').toLowerCase()==='server'){
+      const batchSnap=await transaction.get(doc(db,'hourlyV1Batches',r.date));
+      const draft=batchSnap.exists()?batchSnap.data().drafts?.[r.employee]:null;
+      if(String(draft?.employeeSheetBusserCutoff88??'').trim()!==''||draft?.employeeSheetSalesInputs89?.version===1)throw new Error('This work account has separate Busser sales. Save it in Employee Sheet so the adjusted split is preserved.');
+    }
     // Verify both links before any write. A stale report/submission ID must
     // never rename another work account's record or share its Money Ready row.
     const sourceId=submissionId||(wasEditing?before.sourceSubmissionId:'')||'';
@@ -8733,6 +8742,11 @@ window.saveHourlyV01=async function(){
   if(hourlyV1Mode && hv1EditingEmployee
     && ($("hEmployee")?.value!==hv1EditingEmployee || $("hDate")?.value!==hv1DateValue())){
     alert("Employee/date does not match the open Team Board card. Reopen the correct employee card before submitting.");return;
+  }
+  const busserDate88=$('hDate')?.value;
+  const busserDraft88=busserDate88&&hv1DateValue()===busserDate88?hv1Load()?.drafts?.[$('hEmployee')?.value]:null;
+  if(String(busserDraft88?.employeeSheetBusserCutoff88??'').trim()!==''||busserDraft88?.employeeSheetSalesInputs89?.version===1){
+    alert('This work account has a Busser arrival cutoff. Save it in Employee Sheet so the adjusted Busser calculation is preserved.');return;
   }
   const r=calculateHourlyV01();
   if(!r) return;
@@ -10601,7 +10615,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.86';
+const ES_BUILD='ES1.8.89';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10684,11 +10698,9 @@ function esBarMask(row,route){
   return {barAM:['AM','DOUBLE',SHIFT_EARLY].includes(row.shift),bar24:['LONG','DOUBLE',SHIFT_MIDDLE].includes(row.shift)||(row.shift==='AM'&&!!route['2PM_4PM']),barPM:['PM','DOUBLE','LONG'].includes(row.shift)};
 }
 function esLinkSales(row,field,route){
-  if(row.role==='Bartender')return;
-  let linked='';
-  if(row.shift===SHIFT_EARLY || (row.shift==='AM'&&!route['2PM_4PM']))linked='totalAM';
-  if(row.shift===SHIFT_MIDDLE || (row.shift==='AM'&&route['2PM_4PM']))linked='total24';
-  if(linked){if(field===linked)row.grand=row[linked];else if(field==='grand' || field==='shift')row[linked]=row.grand;}
+  // ES1.8.89: BAR checkpoints, Busser cutoff and final sales are independent
+  // inputs. Editing a checkpoint must never replace another input.
+  return;
 }
 function esValidateSales(row,route,complete=false){
   const errors=[];const mask=esSalesMask(row,route);
@@ -10759,8 +10771,6 @@ s.date=date;s.team=rows.map(r=>r.name);s.drafts ||= {};hv1EnsureBarState(s);
     if(row.role==='Server'){
       const mask=esSalesMask(row,route),barMask=esBarMask(row,route);
       const amount={AM:mask.totalAM?row.totalAM:'','2PM_4PM':mask.total24?row.total24:'',PM:barMask.barPM?row.grand:''};
-      if(row.shift===SHIFT_EARLY || (row.shift==='AM'&&!route['2PM_4PM']))amount.AM=row.grand;
-      if(row.shift===SHIFT_MIDDLE || (row.shift==='AM'&&route['2PM_4PM']))amount['2PM_4PM']=row.grand;
       for(const [cp,field] of [['AM','barAM'],['2PM_4PM','bar24'],['PM','barPM']]){
         s.bar[cp].entries[name]=String(amount[cp]??'');
         s.bar[cp].excluded ||= {};s.bar[cp].excluded[name]=!barMask[field]||!row[field];
@@ -10779,6 +10789,12 @@ s.date=date;s.team=rows.map(r=>r.name);s.drafts ||= {};hv1EnsureBarState(s);
   }
   // These are the same, unchanged BAR functions as the existing Team Board.
   hv1ApplyBarAutomation(s);
+  // ES1.8.89: legacy BAR automation still prepares its own checkpoints, but
+  // Grand Total belongs to the explicit sheet input on every Server shift.
+  for(const row of rows)if(row.role==='Server'){
+    const d=s.drafts[row.name];d.values.hGrandTotal=String(row.grand??'');
+    d.entered.hGrandTotal=String(row.grand??'').trim()!=='';
+  }
   // Preserve intentional blanks through the legacy wizard/BAR bridge. A legacy
   // editor changing its underlying values invalidates this raw overlay.
   for(const row of rows){const d=s.drafts[row.name];d.employeeSheetRawRow=esClone(row);d.employeeSheetRawSource=es16RawSource(s,row.name);}
@@ -11906,10 +11922,11 @@ function es14Patch(baseRows,editedRows,remoteRows,dirty,route,skipInvalid=true){
       if(changes.__new){target=esDefaults(edited.name,'');rows.push(target);applied[edited.name]={__new:true};}
       else{conflicts.push(es14Conflict(edited.name,'__removed','present','keep row','removed'));continue;}
     }
-    const salesErrors=esValidateSales({...edited,paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);
+    const salesErrors=esValidateSales({...edited,busserTotalAM:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);
     for(const field of ES_FIELDS){
       if(!changes[field]&&!changes.__new)continue;
       const value=ES_MONEY.includes(field)&&es14MoneyValid(edited[field],field)?es14MoneyText(edited[field]):edited[field];
+      if(skipInvalid&&field==='busserTotalAM'&&es88BusserErrors(edited).length){skipped.push({name:edited.name,field});continue;}
       if(skipInvalid&&((ES_MONEY.includes(field)&&!es14MoneyValid(value,field))||(['totalAM','total24','grand'].includes(field)&&salesErrors.length))){skipped.push({name:edited.name,field});continue;}
       const original=base?.[field]??esDefaults(edited.name,'')[field];
       if(base&&es14Same(field,value,original))continue; // No remaining local edit.
@@ -12024,8 +12041,8 @@ function es14HasPublishable(s){
   const conflicts=s.conflicts||[];
   for(const row of s.rows){const changes=s.dirty[row.name];if(!changes)continue;
     if(changes.__new&&!s.baseRows.some(r=>r.name===row.name))return true;
-    const salesErrors=esValidateSales({...row,paid:'0',cardFee:'0',cash:'0',meal:'0'},s.routing,false);
-    for(const f of ES_FIELDS)if(changes[f]&&!conflicts.some(c=>c.name===row.name&&c.field===f)&&(!ES_MONEY.includes(f)||es14MoneyValid(row[f],f))&&(!['grand','totalAM','total24'].includes(f)||!salesErrors.length))return true;
+    const salesErrors=esValidateSales({...row,busserTotalAM:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},s.routing,false);
+    for(const f of ES_FIELDS)if(changes[f]&&!conflicts.some(c=>c.name===row.name&&c.field===f)&&(!ES_MONEY.includes(f)||es14MoneyValid(row[f],f))&&(!['grand','totalAM','total24'].includes(f)||!salesErrors.length)&&(f!=='busserTotalAM'||!es88BusserErrors(row).length))return true;
   }
   return ES_PERIODS.some(cp=>(s.routing[cp]||'')!==(s.baseRouting[cp]||'')&&!conflicts.some(c=>c.name==='BAR routing'&&c.field===cp));
 }
@@ -12114,7 +12131,7 @@ esCommit=async function(name,signature=null,expectedSignatureFingerprint=''){
     // fees, meals or unfinished clocks. A server's own fees are row-isolated.
     if(row.role==='Bartender')for(const server of merge.rows)if(server.role==='Server'){
       const affected=ES_PERIODS.some(cp=>route[cp]===name&&!hv1BarExcluded(cp,batch,server.name));if(!affected)continue;
-      const p=esValidateSales({...server,paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);if(p.length)throw new Error(server.name+' sales need review before calculating this bartender: '+p.join(' '));
+      const p=esValidateSales({...server,busserTotalAM:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);if(p.length)throw new Error(server.name+' sales need review before calculating this bartender: '+p.join(' '));
     }
     const calculated=esCalculate(row,batch,before);
     if(signature&&expectedSignatureFingerprint!==esFingerprint(calculated)){
@@ -13479,6 +13496,130 @@ function es16DailyPdfBlob(rows,group,date){
   const normalized=rows.map(r=>({...r,totalPaidOut:smallReportPaidOut(r),employeeGrandTotal:smallReportGrandTotal(r)}));
   return simplePdfBlob(normalized);
 }
+
+/* ES1.8.87 — An additional saved-report table, without changing payroll math
+ * or the existing individual PDF/XLS. No live sheet drafts or Board data.
+ */
+const ES87_TABLE_HEADERS=['Employee Name','Clock In','Clock Out','Paid Tip','Pay Card Tip Fee','Busser AM','Busser PM','Bar AM','Bar PM','Total Before Meal','Grand Total'];
+function es87PdfTableSavedRows(savedRows){
+  const excluded=new Set(['draft','pending','rejected','deleted','voided','incomplete_draft','export_current','export_current_unsigned']);
+  return (savedRows||[]).filter(r=>r&&/^(server|bartender)$/i.test(String(r.position||'').trim())
+    &&!r.fzIncompleteDraft&&!r.exportCurrentUnsigned&&!r.deleted&&!r.voided&&!excluded.has(String(r.status||'').trim().toLowerCase()));
+}
+function es87PdfTableRows(savedRows){
+  const number=(...values)=>{for(const value of values)if(value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value)))return Number(value);return 0;};
+  return es87PdfTableSavedRows(savedRows).map(r=>{
+      const work=fz72ReportWork(r),split=work.sessions.length>1;
+      const clock=key=>work.sessions.map(q=>(split?q.label+' ':'')+(q[key]||'-')).join('\n');
+      const busser=monthlyReportBusserSplit(r),bartender=isBartenderReport(r);
+      let barAM,barPM;
+      if(bartender){
+        const recorded=bartenderReceiptPeriods(r).length||['AM','2PM_4PM','PM'].includes(String(r.bartenderShiftType||''));
+        barAM=recorded?bartenderPeriodAmount(r,'AM'):null;
+        barPM=recorded?number(bartenderPeriodAmount(r,'2PM_4PM'))+number(bartenderPeriodAmount(r,'PM')):null;
+      }else{
+        barAM=number(r.barTipAM,r.barBreakdown?.amFee,r.amBarTipOut,r.amBarTip);
+        // Saved Server barTipPM already includes the 2–4 amount. Only the
+        // older barBreakdown stores those two pieces separately.
+        const breakdownPM=r.barBreakdown&&(r.barBreakdown.pmFee!=null||r.barBreakdown.fee24!=null)
+          ?number(r.barBreakdown.fee24)+number(r.barBreakdown.pmFee):null;
+        barPM=number(r.barTipPM,breakdownPM,r.pmBarTipOut,r.pmBarTip);
+      }
+      return {name:smallReportCanonicalPerson(r)||r.employeeDisplayName||r.employee||'Employee',
+        detail:String(r.position||'')+' | '+String(r.shift||'-'),
+        cells:[smallReportCanonicalPerson(r)||r.employeeDisplayName||r.employee||'Employee',clock('start'),clock('end'),
+          number(r.paidTip,r.paidTips),number(r.payCardTipFee,r.cardFee),busser.am,busser.pm,barAM,barPM,
+          number(r.totalBeforeMeal),smallReportGrandTotal(r)]};
+    });
+}
+function es87PdfTableBlob(savedRows,date){
+  const rows=es87PdfTableRows(savedRows);
+  if(!rows.length)throw new Error('No saved Server / Bartender reports for this work date.');
+  const clean=value=>String(value??'').normalize('NFKD').replace(/[^\x20-\x7E\n]/g,' ').replace(/[ \t]+/g,' ').trim();
+  const money=value=>value===null?'N/R':Number(value).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const width=(font,size,value)=>hc185PdfWidth(font,size,clean(value));
+  const wrap=(value,max,font,size)=>{
+    const lines=[];
+    for(const paragraph of clean(value).split('\n')){
+      let line='';
+      for(const word of paragraph.split(/\s+/).filter(Boolean)){
+        if(line&&width(font,size,line+' '+word)>max){lines.push(line);line='';}
+        if(width(font,size,word)<=max){line+=(line?' ':'')+word;continue;}
+        // Very long names remain complete, including a single long surname.
+        for(const char of word){if(line&&width(font,size,line+char)>max){lines.push(line);line='';}line+=char;}
+      }
+      lines.push(line||'-');
+    }
+    return lines;
+  };
+  let moneySize=13,pageWidth=792,pageHeight=612,widths;
+  const minimums=size=>[124,64,64,...Array.from({length:8},(_,i)=>Math.max([66,62,58,58,58,58,76,76][i],...rows.map(r=>width('F2',size,money(r.cells[i+3]))+10)))];
+  widths=minimums(moneySize);
+  if(widths.reduce((a,b)=>a+b,0)>pageWidth-28){moneySize=12;widths=minimums(moneySize);}
+  const needed=widths.reduce((a,b)=>a+b,0);
+  // Ordinary reports fit Letter landscape. Large stored amounts use a wider
+  // landscape sheet instead of clipping digits or making the text tiny.
+  if(needed>pageWidth-28){pageWidth=1008;pageHeight=612;}
+  if(needed>pageWidth-28){pageWidth=1190.55;pageHeight=841.89;}
+  if(needed>pageWidth-28)throw new Error('A saved amount is too wide for the PDF table. Review the saved report amount first.');
+  widths[0]+=pageWidth-28-needed;
+  const xs=[14];widths.forEach(w=>xs.push(xs[xs.length-1]+w));
+  const tableWidth=pageWidth-28,headerHeight=72,tableTop=pageHeight-82,bottom=62,lineHeight=17;
+  const rect=(x,y,w,h,fill)=>`${fill} rg ${x.toFixed(2)} ${y.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f\n`;
+  const text=(font,size,x,y,value,color='0.08 0.18 0.24',right=false)=>`${color} rg BT /${font} ${size} Tf ${(right?x-width(font,size,value):x).toFixed(2)} ${y.toFixed(2)} Td (${pdfEscape(clean(value))}) Tj ET\n`;
+  const grid=(top,height)=>{
+    let c=`0.64 0.72 0.77 RG 0.6 w 14 ${(top-height).toFixed(2)} ${tableWidth.toFixed(2)} ${height.toFixed(2)} re S\n`;
+    for(const x of xs.slice(1,-1))c+=`${x.toFixed(2)} ${(top-height).toFixed(2)} m ${x.toFixed(2)} ${top.toFixed(2)} l S\n`;
+    return c;
+  };
+  const pages=[];let stream='',y=0,pageRows=0;
+  const start=()=>{
+    stream=rect(0,pageHeight-60,pageWidth,60,'0.06 0.18 0.25');
+    stream+=text('F2',19,14,pageHeight-26,'FRED ZHANG TIP CALCULATOR','1 1 1');
+    stream+=text('F1',12,14,pageHeight-46,'PDF TABLE | Server / Bartender | Work date: '+date+' | '+rows.length+' saved reports | All amounts USD','1 1 1');
+    stream+=rect(14,tableTop-headerHeight,tableWidth,headerHeight,'0.10 0.27 0.35');
+    ES87_TABLE_HEADERS.forEach((label,i)=>{
+      const lines=wrap(label,widths[i]-10,'F2',12);
+      lines.forEach((s,j)=>{stream+=text('F2',12,xs[i]+5,tableTop-17-j*14,s,'1 1 1');});
+    });
+    stream+=grid(tableTop,headerHeight);y=tableTop-headerHeight;pageRows=0;
+  };
+  const finish=()=>{pages.push(stream);};
+  start();
+  for(const row of rows){
+    const nameLines=wrap(row.name,widths[0]-12,'F2',14),detailLines=wrap(row.detail,widths[0]-12,'F1',12);
+    const clockLines=[wrap(row.cells[1],widths[1]-10,'F1',12),wrap(row.cells[2],widths[2]-10,'F1',12)];
+    const height=Math.max(60,14+nameLines.length*lineHeight+detailLines.length*15,14+Math.max(...clockLines.map(v=>v.length))*lineHeight);
+    if(height>tableTop-headerHeight-bottom)throw new Error('An employee name is too long to fit on a PDF table page. Review the saved employee name.');
+    if(y-height<bottom){finish();start();}
+    stream+=rect(14,y-height,tableWidth,height,pageRows%2?'0.94 0.97 0.98':'1 1 1');
+    stream+=rect(xs[10],y-height,widths[10],height,'0.88 0.95 0.91');
+    nameLines.forEach((s,j)=>{stream+=text('F2',14,xs[0]+6,y-18-j*lineHeight,s);});
+    detailLines.forEach((s,j)=>{stream+=text('F1',12,xs[0]+6,y-18-nameLines.length*lineHeight-j*15,s);});
+    clockLines.forEach((lines,i)=>lines.forEach((s,j)=>{stream+=text('F1',12,xs[i+1]+5,y-22-j*lineHeight,s);}));
+    row.cells.slice(3).forEach((value,i)=>{stream+=text('F2',moneySize,xs[i+4]-5,y-25,money(value),value!==null&&value<0?'0.65 0.12 0.12':'0.08 0.18 0.24',true);});
+    stream+=grid(y,height);y-=height;pageRows++;
+  }
+  finish();
+  const streams=pages.map((c,i)=>c
+    +text('F1',10,14,43,'Server BAR = tip out; Bartender BAR = received. BAR PM includes 2-4. N/R = split not recorded.')
+    +text('F1',10,14,28,'Grand Total = saved tip total (Total Before Meal + Cash Tip). Saved reports only. '+ES_BUILD)
+    +text('F2',11,pageWidth-14,15,'Page '+(i+1)+' / '+pages.length,'0.08 0.18 0.24',true));
+  const objects=[],f1=3+streams.length*2,f2=f1+1;
+  objects[1]='<< /Type /Catalog /Pages 2 0 R >>';
+  objects[2]=`<< /Type /Pages /Kids [${streams.map((_,i)=>(3+i*2)+' 0 R').join(' ')}] /Count ${streams.length} >>`;
+  streams.forEach((c,i)=>{
+    objects[3+i*2]=`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /Font << /F1 ${f1} 0 R /F2 ${f2} 0 R >> >> /Contents ${4+i*2} 0 R >>`;
+    objects[4+i*2]=`<< /Length ${c.length} >>\nstream\n${c}\nendstream`;
+  });
+  objects[f1]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';objects[f2]='<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>';
+  let pdf='%PDF-1.4\n',offsets=[0];
+  for(let i=1;i<=f2;i++){offsets[i]=pdf.length;pdf+=`${i} 0 obj\n${objects[i]}\nendobj\n`;}
+  const xref=pdf.length;pdf+=`xref\n0 ${f2+1}\n0000000000 65535 f \n`;
+  for(let i=1;i<=f2;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
+  pdf+=`trailer\n<< /Size ${f2+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return new Blob([pdf],{type:'application/pdf'});
+}
 function es16ExportMessage(text,error=false){const out=$('es16ExportStatus');if(out){out.textContent=text;out.dataset.error=error?'1':'0';}}
 function es16DailyExportControls(){
   const wrap=$('es16DailyExports');if(!wrap)return;
@@ -13490,15 +13631,20 @@ function es16DailyExportControls(){
 window.employeeSheetDownload=async function(group,format){
   if(es16ExportBusy)return false;
   try{
-    es16ExportGroup(group);if(!['xls','pdf'].includes(format))throw new Error('Choose XLS or PDF.');
+    es16ExportGroup(group);if(!['xls','pdf','pdf-table'].includes(format)||format==='pdf-table'&&group!=='server')throw new Error('Choose XLS, PDF, or Server PDF Table.');
     const date=$('esDate')?.value||esSession?.date||'';
-    es16ExportSession(date);es16ExportBusy=true;es16DailyExportControls();
+    const exportSession=es16ExportSession(date),exportUid=currentUser.uid;
+    const guard=()=>{if(es16ExportSession(date)!==exportSession||currentUser.uid!==exportUid)throw new Error('The session changed. Please download again.');};
+    es16ExportBusy=true;es16DailyExportControls();
     es16ExportMessage('Loading saved '+es16ExportGroupTitle(group)+' reports for '+date+'…');
     if(hc15Session?.writing)await hc15Session.writing;
-    const rows=await es16DailyExportRows(group,date);
+    let rows=await es16DailyExportRows(group,date);guard();
+    if(format==='pdf-table'){
+      rows=es87PdfTableSavedRows(rows);
+    }
     if(!rows.length){es16ExportMessage(group==='host-cashier'?'No Host / Cashier team or server pool data is available for '+date+'.':'No saved '+es16ExportGroupTitle(group)+' Daily Reports for '+date+'. Finish and save a row to Final Report, then download. Draft-only rows are not included.');return false;}
-    const blob=format==='xls'?es16DailyXlsBlob(rows,group,date):es16DailyPdfBlob(rows,group,date);
-    const file='Fred_Zhang_Daily_Report_'+(group==='server'?'Server_Bartender':'Host_Cashier')+'_'+date+'.'+format;
+    const blob=format==='xls'?es16DailyXlsBlob(rows,group,date):format==='pdf-table'?es87PdfTableBlob(rows,date):es16DailyPdfBlob(rows,group,date);guard();
+    const file='Fred_Zhang_Daily_Report_'+(group==='server'?'Server_Bartender':'Host_Cashier')+'_'+date+(format==='pdf-table'?'_Table.pdf':'.'+format);
     downloadBlob(blob,file);es16ExportMessage('Downloaded '+rows.length+' '+(group==='host-cashier'?'Host / Cashier':'saved Server / Bartender')+' report'+(rows.length===1?'':'s')+' · '+date+'. Names: '+rows.map(r=>r.employeeDisplayName||r.employee).join(', ')+(group==='host-cashier'?' · Signature is optional for download.':''));return true;
   }catch(e){es16ExportMessage(e.message||'The saved report could not be downloaded. Please try again.',true);return false;}
   finally{es16ExportBusy=false;es16DailyExportControls();}
@@ -13506,7 +13652,7 @@ window.employeeSheetDownload=async function(group,format){
 function es16DailyExportsInit(){
   if($('es16DailyExports')||!$('esGrid'))return;
   const section=document.createElement('section');section.id='es16DailyExports';section.className='es16-daily-exports';section.setAttribute('aria-labelledby','es16ExportTitle');
-  section.innerHTML='<div class="es16-export-heading"><div><h3 id="es16ExportTitle">Download Daily Report</h3><p>Work date: <b id="es16ExportDate"></b></p></div><span class="es16-export-tag">Server reports</span></div><p class="es16-export-note">Server includes Bartender. Server/Bartender downloads use saved Daily Reports. Host/Cashier downloads use the current server pool/team and do not require a signature.</p><div class="es16-export-buttons"><button type="button" data-es16-group="server" data-es16-format="xls">Download XLS Server</button><button type="button" data-es16-group="server" data-es16-format="pdf">Download PDF Server</button><button type="button" data-es16-group="host-cashier" data-es16-format="xls">Download XLS Host/Cashier</button><button type="button" data-es16-group="host-cashier" data-es16-format="pdf">Download PDF Host/Cashier</button></div><p id="es16ExportStatus" role="status" aria-live="polite"></p>';
+  section.innerHTML='<div class="es16-export-heading"><div><h3 id="es16ExportTitle">Download Daily Report</h3><p>Work date: <b id="es16ExportDate"></b></p></div><span class="es16-export-tag">Server reports</span></div><p class="es16-export-note">Server includes Bartender. Server/Bartender downloads use saved Daily Reports. PDF Table is a landscape table with larger text. Host/Cashier downloads use the current server pool/team and do not require a signature.</p><div class="es16-export-buttons"><button type="button" data-es16-group="server" data-es16-format="xls">Download XLS Server</button><button type="button" data-es16-group="server" data-es16-format="pdf">Download PDF Server</button><button type="button" data-es16-group="server" data-es16-format="pdf-table">PDF Table</button><button type="button" data-es16-group="host-cashier" data-es16-format="xls">Download XLS Host/Cashier</button><button type="button" data-es16-group="host-cashier" data-es16-format="pdf">Download PDF Host/Cashier</button></div><p id="es16ExportStatus" role="status" aria-live="polite"></p>';
   $('esGrid').appendChild(section);
   section.addEventListener('click',e=>{const b=e.target.closest('button[data-es16-group]');if(b)window.employeeSheetDownload(b.dataset.es16Group,b.dataset.es16Format);});
   es16DailyExportControls();
@@ -14845,7 +14991,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const commit=esCommit;
   esCommit=async function(name,signature=null,expected=''){
     if(!(signature&&esSignature?.fzIncomplete&&esSignature.name===name))return commit.apply(this,arguments);
-    const s=esSession,row=s?.rows?.find(r=>r.name===name);if(!s||!row)throw new Error('Employee row not found.');const issues=esSignature.fzProblems||problems(name);const draft=await es16SaveDraft(name);const calc={...(s.results[name]||esCalculate(row,s.working||esBuildBatch(s.baseBatch,s.rows,s.date,s.routing),esFindReport(s.reports,name))),date:s.date,employee:name,position:row.role,shift:row.shift,pickupSignature:signature,signatureStatus:'SIGNED',status:'incomplete_draft',fzIncompleteDraft:true,incompleteProblems:issues};
+    const s=esSession,row=s?.rows?.find(r=>r.name===name);if(!s||!row)throw new Error('Employee row not found.');const issues=esSignature.fzProblems||problems(name);const draft=await es16SaveDraft(name);es89RequireBusserCutoff(s.rows.find(current=>current.name===name));const calc={...(s.results[name]||esCalculate(row,s.working||esBuildBatch(s.baseBatch,s.rows,s.date,s.routing),esFindReport(s.reports,name))),date:s.date,employee:name,position:row.role,shift:row.shift,pickupSignature:signature,signatureStatus:'SIGNED',status:'incomplete_draft',fzIncompleteDraft:true,incompleteProblems:issues};
     s.draftSaves ||= {};s.draftSaves[name]={...(s.draftSaves[name]||{}),row:esClone(row),pendingSignature:signature,pendingSignatureFingerprint:esFingerprint(calc),incompleteProblems:issues,savedAt:Date.now()};esPersistLocal();
     if(draft?.shared&&s.cloudReady&&es14IsOnline())try{const ref=doc(db,'hourlyV1Batches',s.date);await runTransaction(db,async tx=>{const snap=await tx.get(ref);if(!snap.exists())return;const raw=snap.data(),next=esClone(raw);next.drafts ||= {};next.drafts[name] ||= {};Object.assign(next.drafts[name],{employeeSheetPendingSignature:signature,employeeSheetPendingSignatureFingerprint:esFingerprint(calc),employeeSheetIncompleteProblems:issues,employeeSheetIncompleteProcessedAt:Date.now()});tx.set(ref,{...next,updatedAt:serverTimestamp(),updatedByUid:s.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});});}catch(e){console.warn('Incomplete signed draft cloud signature:',e);}
     return {report:calc,incompleteDraft:true,draft};
@@ -15538,5 +15684,210 @@ function fz72PdfStreams(streams){
     });
     const names=[...new Set(active.map(r=>r.workName))],currentSource={...source,team:names};
     const prepared=prepare(currentSource,selected,date);prepared.team=names;return prepared;
+  };
+})();
+
+/* ES1.8.89 — Independent BAR checkpoints and required Busser cutoff.
+ * Busser uses only its cumulative cutoff and the explicit Grand Total.
+ * Blank is an unfinished draft, never an inferred BAR checkpoint.
+ * The underlying BAR, Paid Tip and payout formulas remain unchanged.
+ */
+function es88BusserErrors(row){
+  if(row?.role!=='Server'||String(row.busserTotalAM??'').trim()==='')return [];
+  if(!es14MoneyValid(row.busserTotalAM,'busserTotalAM'))return ['Total AM Busser must be 0 or more, with at most 2 decimals.'];
+  const grand=String(row.grand??'').trim();
+  if(grand!==''&&es14MoneyValid(grand,'grand')&&Math.round(Number(row.busserTotalAM)*100)>Math.round(Number(grand)*100))return ['Total AM Busser cannot exceed Grand Total.'];
+  return [];
+}
+function es88BusserBasis(row,r){
+  const server=row?.role==='Server',rawGrand=String(row?.grand??'').trim();
+  const grand=Math.max(0,Number(server?rawGrand:r?.grandTotal)||0);
+  const raw=String(row?.busserTotalAM??'').trim(),manual=server&&raw!=='';
+  if(!server)return {am:0,pm:0,grand,manual:false,valid:true};
+  if(manual){
+    const value=Number(raw),valid=rawGrand!==''&&es14MoneyValid(rawGrand,'grand')&&es14MoneyValid(raw,'busserTotalAM')&&Math.round(value*100)<=Math.round(grand*100);
+    const am=valid?Math.round(value*100)/100:0;
+    return {am,pm:valid?Math.round((grand-am)*100)/100:0,grand,manual:true,valid};
+  }
+  return {am:0,pm:0,grand,manual:false,valid:false};
+}
+function es88BusserCutoff(r){
+  const x=r?.busserSalesAdjustment88;
+  return x?.version===1&&x.mode==='PM_ARRIVAL_CUMULATIVE'&&x.totalAM!==null&&x.totalAM!==undefined
+    &&es14MoneyValid(String(x.totalAM),'busserTotalAM')&&String(x.totalAM).trim()!==''?String(x.totalAM):'';
+}
+function es88BusserPercent(amount,grand){return Number(grand)>0?Number(amount||0)/Number(grand)*100:0;}
+function es88BusserPercentText(value){return Number(Number(value||0).toFixed(3))+'%';}
+(function installES1889BusserCutoff(){
+  ES_MONEY.push('busserTotalAM');ES_FIELDS.push('busserTotalAM');
+  const insert=ES_COLUMNS.findIndex(c=>c[0]==='busserTotal');
+  ES_COLUMNS.splice(insert,0,['busserTotalPM','Total PM Busser',185,'busser'],
+    ['busserEffectiveRateAM','Busser AM %',155,'busser'],['busserEffectiveRatePM','Busser PM %',155,'busser']);
+  ES_COLUMNS.splice(ES_COLUMNS.findIndex(c=>c[0]==='grand'),0,['busserTotalAM','Total AM Busser',205,'sales']);
+  ES_COLUMNS.find(c=>c[0]==='totalAM')[1]='Total AM Bar';
+  ES_COLUMNS.find(c=>c[0]==='total24')[1]='Total 2–4 Bar';
+  const rateColumn=ES_COLUMNS.find(c=>c[0]==='busserRate');if(rateColumn)rateColumn[1]='Busser Effective %';
+  const defaults=esDefaults;esDefaults=function(...args){return {...defaults.apply(this,args),busserTotalAM:''};};
+  const hydrate=hv1DraftFromFinalizedReport;hv1DraftFromFinalizedReport=function(r,...args){const d=hydrate.call(this,r,...args);d.employeeSheetBusserCutoff88=es88BusserCutoff(r);return d;};
+  const rows=esRowsFromBatch;esRowsFromBatch=function(batch,reports=[],date){
+    return rows.call(this,batch,reports,date).map(row=>{
+      const d=batch.drafts?.[row.name]||{},saved=esFindReport(reports,row.name);
+      row.busserTotalAM=Object.prototype.hasOwnProperty.call(d,'employeeSheetBusserCutoff88')?String(d.employeeSheetBusserCutoff88??'')
+        :Object.prototype.hasOwnProperty.call(row,'busserTotalAM')&&String(row.busserTotalAM??'')!==''?String(row.busserTotalAM):es88BusserCutoff(saved);
+      return row;
+    });
+  };
+  const build=esBuildBatch;esBuildBatch=function(source,rows,...args){
+    const batch=build.call(this,source,rows,...args);
+    for(const row of rows)if(batch.drafts?.[row.name])batch.drafts[row.name].employeeSheetBusserCutoff88=row.role==='Server'?String(row.busserTotalAM??''):'';
+    return batch;
+  };
+  const reportRow=es14ReportRow;es14ReportRow=function(r,...args){const row=reportRow.call(this,r,...args);row.busserTotalAM=es88BusserCutoff(r);return row;};
+  const validate=esValidateSales;esValidateSales=function(row,route,complete=false){
+    const errors=[...validate.call(this,{...row,busserTotalAM:''},route,complete),...es88BusserErrors(row)];
+    if(row.role==='Server')for(const field of ['totalAM','total24']){
+      const raw=String(row[field]??'').trim();
+      if(raw!==''&&!es14MoneyValid(raw,field))errors.push((field==='totalAM'?'Total AM Bar':'Total 2–4 Bar')+' must be 0 or more, with at most 2 decimals.');
+    }
+    if(complete&&row.role==='Server'){
+      if(String(row.busserTotalAM??'').trim()==='')errors.push('Enter Total AM Busser (use 0 if none).');
+      // Single-period BAR now reads its own input rather than Grand Total.
+      const barField=row.shift===SHIFT_EARLY||(row.shift==='AM'&&!route['2PM_4PM'])?'totalAM':row.shift===SHIFT_MIDDLE||(row.shift==='AM'&&route['2PM_4PM'])?'total24':'';
+      if(barField&&String(row[barField]??'').trim()==='')errors.push('Enter '+(barField==='totalAM'?'Total AM Bar':'Total 2–4 Bar')+' (use 0 if none).');
+    }
+    return [...new Set(errors)];
+  };
+  const calculate=esCalculate;esCalculate=function(row,batch,oldReport=null){
+    const r=calculate(row,batch,oldReport),basis=es88BusserBasis(row,r),L=window.FredTipCalculatorLogic;
+    r.busserSalesAdjustment88=null;r.busserCalculationPending88=row.role==='Server'&&!basis.valid;
+    r.totalAMBusser=basis.valid?basis.am:null;r.totalPMBusser=basis.valid?basis.pm:null;
+    if(basis.manual&&basis.valid){
+      const presence=r.busserPresence||{AM:r.busserAM==='WITH',PM:r.busserPM==='WITH'};
+      const am=presence.AM?L.roundCent(basis.am*0.015):0,pm=presence.PM?L.roundCent(basis.pm*0.015):0,total=L.roundCent(am+pm);
+      r.busserTipOutAM=am;r.busserTipOutPM=pm;r.busserTipOut=total;r.totalShared=total;
+      r.totalTips=L.roundCent(Number(r.paidTip||0)+Number(r.payCardTipFee??r.cardFee??0)+total);
+      r.busserRate=es88BusserPercent(total,basis.grand);
+      r.busserAM=presence.AM?'WITH':'WITHOUT';r.busserPM=presence.PM?'WITH':'WITHOUT';
+      r.busserPolicyVersion='BUSSER_PM_ARRIVAL_CUMULATIVE_V1';
+      r.busserSalesBasis=(presence.AM?basis.am:0)+(presence.PM?basis.pm:0);
+      r.salesWithoutBusser=(presence.AM?0:basis.am)+(presence.PM?0:basis.pm);
+      r.busserSalesAdjustment88={version:1,mode:'PM_ARRIVAL_CUMULATIVE',totalAM:basis.am,totalPM:basis.pm,grandTotal:basis.grand,baseRate:1.5,presence:{AM:!!presence.AM,PM:!!presence.PM}};
+    }
+    if(r.busserCalculationPending88){
+      for(const key of ['busserTipOutAM','busserTipOutPM','busserTipOut','totalShared','totalTips','busserRate','busserSalesBasis','salesWithoutBusser'])r[key]=null;
+    }
+    r.busserEffectiveRateAM=basis.valid?es88BusserPercent(r.busserTipOutAM,basis.grand):null;
+    r.busserEffectiveRatePM=basis.valid?es88BusserPercent(r.busserTipOutPM,basis.grand):null;
+    r.busserEffectiveRateTotal=basis.valid?es88BusserPercent(r.busserTipOut,basis.grand):null;
+    return r;
+  };
+  const fingerprint=esFingerprint;esFingerprint=function(r){const base=fingerprint(r),cutoff=es88BusserCutoff(r);return cutoff===''?base:base+'|busserCutoff88:'+es14MoneyText(cutoff);};
+  const input=esInput;esInput=function(row,field,label){
+    if(row.role==='Server'&&['totalAM','total24'].includes(field)){
+      const idx=esSession.rows.indexOf(row);
+      return `<input data-es-row="${idx}" data-es-field="${field}" aria-label="${esc(row.name+' — '+label)}" type="text" inputmode="numeric" data-es182-money="1" title="Type digits: 2000 = 20.00" autocomplete="off" spellcheck="false" value="${esc(es182MoneyDisplay(row[field]))}" placeholder="0.00">`;
+    }
+    if(field!=='busserTotalAM')return input.call(this,row,field,label);
+    const idx=esSession.rows.indexOf(row),r=esSession.results[row.name]||{},basis=es88BusserBasis(row,r),active=row.role==='Server';
+    const attr=`data-es-row="${idx}" data-es-field="busserTotalAM" data-es88-uid="${esc(esSession.uid)}" data-es88-date="${esc(esSession.date)}" data-es88-name="${esc(row.name)}"`;
+    return `<input ${attr} aria-label="${esc(row.name+' — Total AM Busser, cumulative sales until PM Busser arrives')}" type="text" inputmode="numeric" data-es182-money="1" title="Type digits: 50000 = 500.00" autocomplete="off" value="${esc(active?es182MoneyDisplay(row.busserTotalAM):'')}" placeholder="${active?'Enter sales':'N/A'}"${active?' aria-required="true"':' disabled'}><small data-es88-note>${active?'Independent of Bar · required':'Bartender · 0%'}</small>`;
+  };
+  const output=esOutput;esOutput=function(row,field){
+    const r=esSession.results[row.name]||{},pending=r.busserCalculationPending88;
+    if(['busserTotalPM','busserEffectiveRateAM','busserEffectiveRatePM','busserRate','busserTotal','busserAM','busserPM'].includes(field)&&pending)return String(row.busserTotalAM??'').trim()===''?'Enter Total AM Busser':'Check Busser sales';
+    if(field==='busserTotalPM')return row.role==='Server'?esMoney(r.totalPMBusser):'N/A';
+    if(field==='busserEffectiveRateAM'||field==='busserEffectiveRatePM')return es88BusserPercentText(r[field]);
+    if(field==='busserRate')return es88BusserPercentText(r.busserEffectiveRateTotal);
+    return output.call(this,row,field);
+  };
+  const change=esChange;esChange=function(input,...args){
+    if(input.dataset?.esField==='busserTotalAM'){
+      const s=esSession,row=s?.rows?.[Number(input.dataset.esRow)];
+      if(!esAllowed()||!s?.ready||s.busy||s.uid!==currentUser?.uid||input.dataset.es88Uid!==s.uid||input.dataset.es88Date!==s.date||input.dataset.es88Name!==row?.name||row?.role!=='Server'||$('esDate')?.value!==s.date)return;
+    }
+    return change.call(this,input,...args);
+  };
+  function paint(){
+    const s=esSession;if(!s?.ready)return;
+    for(const input of document.querySelectorAll('#esRows [data-es-field="busserTotalAM"]')){
+      const row=s.rows[Number(input.dataset.esRow)];if(!row)continue;const r=s.results[row.name]||{},basis=es88BusserBasis(row,r),cell=input.closest('td');
+      input.placeholder=row.role==='Server'?'Enter sales':'N/A';
+      const note=cell?.querySelector('[data-es88-note]');if(note)note.textContent=row.role!=='Server'?'Bartender · 0%':!basis.manual?'Independent of Bar · required':!basis.valid?'Check cutoff and Grand Total':'Cumulative sales before PM arrives';
+    }
+  }
+  const update=esUpdateComputed;esUpdateComputed=function(...args){const out=update.apply(this,args);paint();return out;};
+  const render=esRenderRows;esRenderRows=function(...args){const out=render.apply(this,args);paint();return out;};
+  const init=esInit;esInit=function(...args){
+    const out=init.apply(this,args),sheet=$('employeeSheet');if(!sheet||$('es88BusserGuide'))return out;
+    const guide=document.createElement('details');guide.id='es88BusserGuide';guide.className='es88-busser-guide';
+    guide.innerHTML='<summary>Separate Bar / Busser sales · all Server shifts</summary><p>Enter Total AM Bar, Total 2–4 Bar, Total AM Busser and Grand Total separately. Total AM Busser = this Server’s cumulative POS sales until Busser PM actually arrives. Example: PM arrives 17:30; include sales from 16:00–17:30 here. Total PM Busser = Grand Total − Total AM Busser. AM ON: Total AM Busser × 1.5%; AM OFF: $0. PM ON: Total PM Busser × 1.5%; PM OFF: $0. Effective % = the Busser tip out divided by Grand Total. Enter 0 explicitly if none; a blank Busser input stays an unfinished draft. Save the row to update its reports.</p>';
+    sheet.querySelector('.es-guide')?.appendChild(guide);
+    return out;
+  };
+})();
+
+/* ES1.8.89 — Preserve the four sheet inputs through the legacy draft bridge.
+ * This metadata records inputs only. Saved historical amounts are never
+ * recalculated until their row is explicitly completed and saved again.
+ */
+function es89SalesInputs(row){
+  return {version:1,totalAMBar:String(row.totalAM??''),total24Bar:String(row.total24??''),grandTotal:String(row.grand??'')};
+}
+function es89ApplySalesInputs(row,inputs){
+  if(row?.role==='Server'&&inputs?.version===1){
+    row.totalAM=String(inputs.totalAMBar??'');row.total24=String(inputs.total24Bar??'');row.grand=String(inputs.grandTotal??'');
+  }
+  return row;
+}
+function es89RequireBusserCutoff(row){
+  if(row?.role!=='Server')return;
+  if(String(row.busserTotalAM??'').trim()==='')throw new Error('Enter Total AM Busser (use 0 if none) before signing or printing.');
+  const errors=es88BusserErrors(row);if(errors.length)throw new Error(errors.join(' '));
+  if(!es88BusserBasis(row,{}).valid)throw new Error('Enter a valid Grand Total before processing Busser tip out.');
+}
+(function installES1889IndependentSales(){
+  const hydrate=hv1DraftFromFinalizedReport;
+  hv1DraftFromFinalizedReport=function(report,...args){
+    const d=hydrate.call(this,report,...args);
+    if(String(report?.position||report?.role||'').toLowerCase()==='server'&&report.salesInputs89?.version===1){
+      d.employeeSheetSalesInputs89=esClone(report.salesInputs89);
+      d.values.hGrandTotal=String(report.salesInputs89.grandTotal??'');
+      d.entered.hGrandTotal=d.values.hGrandTotal.trim()!=='';
+    }
+    return d;
+  };
+  const rows=esRowsFromBatch;
+  esRowsFromBatch=function(batch,reports=[],...args){
+    return rows.call(this,batch,reports,...args).map(row=>es89ApplySalesInputs(row,batch.drafts?.[row.name]?.employeeSheetSalesInputs89));
+  };
+  const build=esBuildBatch;
+  esBuildBatch=function(source,rows,...args){
+    const batch=build.call(this,source,rows,...args);
+    for(const row of rows)if(batch.drafts?.[row.name]){
+      if(row.role==='Server')batch.drafts[row.name].employeeSheetSalesInputs89=es89SalesInputs(row);
+      else delete batch.drafts[row.name].employeeSheetSalesInputs89;
+      // Snapshot only after every legacy overlay, including date-wide Busser
+      // presence, so an unchanged draft remains valid on the next read.
+      batch.drafts[row.name].employeeSheetRawSource=es16RawSource(batch,row.name);
+    }
+    return batch;
+  };
+  const reportRow=es14ReportRow;
+  es14ReportRow=function(report,...args){return es89ApplySalesInputs(reportRow.call(this,report,...args),report?.salesInputs89);};
+  const calculate=esCalculate;
+  esCalculate=function(row,...args){const report=calculate.call(this,row,...args);report.salesInputs89=row.role==='Server'?es89SalesInputs(row):null;return report;};
+  const fingerprint=esFingerprint;
+  esFingerprint=function(report){
+    const base=fingerprint(report),inputs=report?.salesInputs89;
+    return String(report?.position||report?.role||'').toLowerCase()==='server'&&inputs?.version===1
+      ?base+'|salesInputs89:'+es182StableJson({version:1,totalAMBar:es14MoneyText(inputs.totalAMBar),total24Bar:es14MoneyText(inputs.total24Bar),grandTotal:es14MoneyText(inputs.grandTotal)}):base;
+  };
+  const commit=esCommit;
+  esCommit=async function(name,...args){es89RequireBusserCutoff(esSession?.rows?.find(row=>row.name===name));return commit.call(this,name,...args);};
+  const sign=window.employeeSheetSign;
+  window.employeeSheetSign=async function(name,...args){
+    try{es89RequireBusserCutoff(esSession?.rows?.find(row=>row.name===name));}
+    catch(error){es14HandleError(error);return false;}
+    return sign.call(this,name,...args);
   };
 })();

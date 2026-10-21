@@ -667,3 +667,10 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 
 /* ES1.8.83: removed assignment rows stay hidden until Apply or draft undo. */
 #employeeSheet #esRows tr[data-es83-removed="1"]{display:none!important}
+
+/* ES1.8.89: keep independent Busser sales readable on phones. */
+#employeeSheet [data-es-col="busserTotalAM"] [data-es88-note]{display:block;margin-top:6px;font-size:14px;line-height:1.3;color:#456374;white-space:normal}
+#employeeSheet .es88-busser-guide{margin-top:8px;max-width:100%}
+#employeeSheet .es88-busser-guide summary{font-weight:800}
+#employeeSheet .es88-busser-guide p{font-size:15px;line-height:1.4;max-width:920px;white-space:normal}
+
