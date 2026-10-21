@@ -4017,7 +4017,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18830",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18840",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10600,7 +10600,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.83';
+const ES_BUILD='ES1.8.84';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -12420,17 +12420,107 @@ function tt15DirectoryEntries(data=tt15Directory.data){
   return [...map.values()].sort((a,b)=>a.displayName.localeCompare(b.displayName));
 }
 function tt15Label(name){const canonical=canonicalEmployeeName(name);return tt15DirectoryEntries().find(e=>e.name===canonical)?.displayName||canonical;}
-function tt15DirectoryStart(){
-  if(!esAllowed())return;
-  const uid=currentUser.uid;if(tt15Directory.uid===uid&&tt15Directory.unsub)return;
-  tt15Directory.unsub?.();tt15Directory={uid,data:{},ready:false,unsub:null};
-  tt15Directory.unsub=onSnapshot(doc(db,'hostCashierTipReports','employee-roster'),{includeMetadataChanges:true},snap=>{
-    if(!esAllowed()||currentUser.uid!==uid||tt15Directory.uid!==uid)return;
-    tt15Directory.data=snap.exists()?snap.data():{};
-    tt15Directory.ready=snap.metadata?.fromCache!==true&&snap.metadata?.hasPendingWrites!==true;
-    tt15DirectoryPaint();tt15PaintNames();hc15UpdateValues();if(tt15State?.open&&!tt15State.editing)tt15Render();
-  },e=>{tt15Directory.ready=false;tt15Message('Employee list could not sync: '+(e.message||e),true);tt15DirectoryPaint();});
+/* ES1.8.84: the private roster uses a parallel authenticated read, so an SDK
+ * reconnect cannot hold custom employee names behind a stalled listener. Only
+ * verified server data enables directory writes; the cache is memory-only and
+ * scoped to this Firebase project and signed-in Manager / Owner. */
+let tt84DirectoryRead=null,tt84DirectoryGeneration=0,tt84DirectoryResumeTimer=0;
+const tt84DirectoryCache=new Map();
+function tt84DirectoryStaff(){return esAllowed()&&(currentProfile?.active===undefined||currentProfile.active===true)&&!['pending','rejected'].includes(currentProfile?.approvalStatus);}
+function tt84DirectoryCurrent(s){if(s&&tt84DirectoryRead===s&&(s.uid!==currentUser?.uid||!tt84DirectoryStaff())){tt84DirectoryStop(true);return false;}return !!s&&tt84DirectoryRead===s&&s.directory===tt15Directory&&s.uid===currentUser?.uid&&s.project===String(FIREBASE_CONFIG.projectId||'')&&tt84DirectoryStaff();}
+function tt84DirectoryStamp(value){try{if(typeof value?.toMillis==='function')return value.toMillis();if(typeof value?.seconds==='number')return value.seconds*1000+Number(value.nanoseconds||0)/1000000;const stamp=Date.parse(String(value||''));return Number.isFinite(stamp)?stamp:0;}catch(e){return 0;}}
+function tt84DirectorySame(a,b){const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])):value;const normalized=data=>stable({...data,updatedAt:tt84DirectoryStamp(data?.updatedAt)||data?.updatedAt||null});return JSON.stringify(normalized(a))===JSON.stringify(normalized(b));}
+function tt84DirectoryPaint(s,text=''){
+  if(!tt84DirectoryCurrent(s))return;
+  tt15DirectoryPaint();tt15PaintNames();hc15UpdateValues();if(tt15State?.open&&!tt15State.editing)tt15Render();
+  if(text&&$('tt15DirectoryStatus'))$('tt15DirectoryStatus').textContent=text;
 }
+function tt84DirectoryStop(clearCache=false){
+  const s=tt84DirectoryRead;tt84DirectoryRead=null;++tt84DirectoryGeneration;clearTimeout(tt84DirectoryResumeTimer);tt84DirectoryResumeTimer=0;
+  if(s){++s.epoch;s.request?.controller.abort();s.unsubscribe?.();if(tt15Directory===s.directory){tt15Directory.ready=false;tt15Directory.unsub=null;if(clearCache){tt15Directory.data={};tt15Directory.uid='';if($('tt15DirectoryList'))$('tt15DirectoryList').innerHTML='';if($('tt15DirectoryStatus'))$('tt15DirectoryStatus').textContent='';const panel=$('tt15DirectoryPanel');if(panel){panel.hidden=true;panel.classList.add('hidden');}}}}
+  if(clearCache)tt84DirectoryCache.clear();
+}
+function tt84DirectoryAccept(s,data,stamp,origin,request=null){
+  if(!tt84DirectoryCurrent(s)||!data||typeof data!=='object'||Array.isArray(data))return false;
+  const previous=s.verifiedData,same=previous!==null&&tt84DirectorySame(previous,data);
+  if(previous!==null&&!same){
+    if(stamp&&s.stamp&&stamp<s.stamp)return false;
+    if(origin==='sdk'&&(!stamp||!s.stamp||stamp===s.stamp)){
+      // A server snapshot without a comparable document version may have been
+      // queued before the HTTPS response. Confirm it with a fresh server GET.
+      const signature=JSON.stringify(data);if(s.rejectedSdk!==signature){s.rejectedSdk=signature;void tt84DirectoryFetch(s,true);}return false;
+    }else if((!stamp||!s.stamp)&&request&&request.accepted!==s.accepted){s.followUp=true;return false;}
+    // Equal / missing timestamps cannot roll back an employee's revision.
+    if((!stamp||!s.stamp||stamp===s.stamp)&&(origin==='sdk'||request&&request.accepted!==s.accepted))for(const [key,entry]of Object.entries(previous.directoryEntries||{})){
+      const next=data.directoryEntries?.[key];if(Number(entry?.revision||0)>Number(next?.revision||0))return false;
+    }
+  }
+  const repaint=!same||!s.directory.ready;
+  s.verifiedData=tt15Copy(data);s.stamp=Math.max(s.stamp,stamp||0);s.accepted++;s.directory.data=tt15Copy(data);s.directory.ready=true;s.error='';
+  const cacheKey=s.project+'|'+s.uid;tt84DirectoryCache.delete(cacheKey);tt84DirectoryCache.set(cacheKey,{project:s.project,uid:s.uid,data:tt15Copy(data)});while(tt84DirectoryCache.size>3)tt84DirectoryCache.delete(tt84DirectoryCache.keys().next().value);
+  if(repaint)tt84DirectoryPaint(s);return true;
+}
+function tt84DirectoryFail(s,error,permission=false){
+  if(!tt84DirectoryCurrent(s))return;
+  s.directory.ready=false;s.error=error?.message||String(error||'Employee list unavailable.');
+  if(permission){s.denied=true;++s.epoch;s.request?.controller.abort();s.followUp=false;s.unsubscribe?.();}
+  tt84DirectoryPaint(s,'Employee list could not refresh: '+s.error+' Reconnect or reopen Manage Employee to retry.');
+}
+function tt84DirectoryFetch(s,followUp=false){
+  if(!tt84DirectoryCurrent(s)||s.denied||typeof fetch!=='function'||!s.project)return Promise.resolve(false);
+  if(s.request&&!s.request.controller.signal.aborted){if(followUp)s.followUp=true;return s.request.promise;}
+  const request={controller:new AbortController(),epoch:s.epoch,accepted:s.accepted,promise:null};s.request=request;
+  const current=()=>tt84DirectoryCurrent(s)&&s.request===request&&request.epoch===s.epoch&&!request.controller.signal.aborted;
+  request.promise=(async()=>{
+    let timer;const deadline=new Promise((_,reject)=>{request.controller.signal.addEventListener('abort',()=>reject(Object.assign(new Error(request.expired?'Request timed out.':'Request canceled.'),{name:request.expired?'TimeoutError':'AbortError'})),{once:true});timer=setTimeout(()=>{request.expired=true;request.controller.abort();},10000);});
+    try{
+      return await Promise.race([(async()=>{
+      const token=await currentUser.getIdToken();if(!current())return false;
+      const resource='projects/'+s.project+'/databases/(default)/documents/hostCashierTipReports/employee-roster';
+      const response=await fetch('https://firestore.googleapis.com/v1/'+resource,{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:request.controller.signal});if(!current())return false;
+      if(response.status!==404&&!response.ok){const error=new Error('Employee list read failed ('+response.status+').');error.directoryDenied=response.status===401||response.status===403;throw error;}
+      const body=response.status===404?null:await response.json();if(!current())return false;
+      if(body?.name&&body.name!==resource)throw new Error('Employee list response identity mismatch.');
+      const data=body?esDecodeFirestore({mapValue:{fields:body.fields||{}}}):{},stamp=tt84DirectoryStamp(body?.updateTime)||tt84DirectoryStamp(data.updatedAt);
+      return tt84DirectoryAccept(s,data,stamp,'rest',request);
+      })(),deadline]);
+    }catch(error){if(tt84DirectoryCurrent(s)&&s.request===request&&request.epoch===s.epoch&&!(s.directory.ready&&request.accepted!==s.accepted))tt84DirectoryFail(s,error,!!error.directoryDenied);return false;}
+    finally{clearTimeout(timer);if(s.request===request){s.request=null;const retry=s.followUp;s.followUp=false;if(retry&&tt84DirectoryCurrent(s))void tt84DirectoryFetch(s);}}
+  })();return request.promise;
+}
+function tt84DirectoryListen(s){
+  if(!tt84DirectoryCurrent(s)||s.unsubscribe)return;
+  let nativeStop=null,stopped=false;
+  const unsubscribe=()=>{if(stopped)return;stopped=true;nativeStop?.();if(s.unsubscribe===unsubscribe)s.unsubscribe=null;if(s.directory.unsub===unsubscribe)s.directory.unsub=null;};
+  s.unsubscribe=unsubscribe;s.directory.unsub=unsubscribe;
+  try{nativeStop=onSnapshot(doc(db,'hostCashierTipReports','employee-roster'),{includeMetadataChanges:true},snap=>{
+    if(stopped||!tt84DirectoryCurrent(s))return;
+    // Firestore's device cache has no signed-in UID provenance. The explicit
+    // in-memory cache above is the only unverified roster shown on a new read.
+    if(snap.metadata?.fromCache!==false||snap.metadata?.hasPendingWrites!==false)return;
+    const data=snap.exists()?snap.data():{};tt84DirectoryAccept(s,data,tt84DirectoryStamp(data.updatedAt),'sdk');
+  },error=>{if(stopped||!tt84DirectoryCurrent(s))return;unsubscribe();tt84DirectoryFail(s,error,/permission|unauthenticated/i.test(String(error?.code||'')));});if(stopped)nativeStop?.();}
+  catch(error){unsubscribe();tt84DirectoryFail(s,error,/permission|unauthenticated/i.test(String(error?.code||'')));}
+}
+function tt15DirectoryStart(){
+  if(!tt84DirectoryStaff()){tt84DirectoryStop(true);return Promise.resolve(false);}
+  const uid=currentUser.uid,project=String(FIREBASE_CONFIG.projectId||'');let s=tt84DirectoryRead;
+  if(!tt84DirectoryCurrent(s)){
+    tt84DirectoryStop();tt15Directory.unsub?.();const cached=tt84DirectoryCache.get(project+'|'+uid);
+    tt15Directory={uid,data:cached?.project===project&&cached.uid===uid?tt15Copy(cached.data):{},ready:false,unsub:null};
+    s={uid,project,directory:tt15Directory,generation:++tt84DirectoryGeneration,epoch:0,accepted:0,verifiedData:null,stamp:0,request:null,unsubscribe:null,followUp:false,rejectedSdk:'',denied:false,error:''};tt84DirectoryRead=s;tt84DirectoryPaint(s);
+  }
+  s.denied=false;tt84DirectoryListen(s);return tt84DirectoryFetch(s);
+}
+function tt84DirectoryResume(){
+  if(document.visibilityState==='hidden'||!tt84DirectoryRead)return;
+  if(!tt84DirectoryStaff()||tt84DirectoryRead.uid!==currentUser?.uid){tt84DirectoryStop(true);return;}
+  if(tt84DirectoryResumeTimer)return;
+  tt84DirectoryResumeTimer=setTimeout(()=>{tt84DirectoryResumeTimer=0;if(tt84DirectoryRead&&tt84DirectoryStaff())void tt15DirectoryStart();},80);
+}
+window.addEventListener('online',tt84DirectoryResume);window.addEventListener('pageshow',tt84DirectoryResume);document.addEventListener('visibilitychange',tt84DirectoryResume);
+try{onAuthStateChanged(auth,user=>{if(tt84DirectoryRead&&(!user||user.isAnonymous||user.uid!==tt84DirectoryRead.uid||!tt84DirectoryStaff()))tt84DirectoryStop(true);});}catch(e){}
+/* END ES1.8.84 private directory read */
 // ES1.8.75: Host pool eligibility belongs to the Host role assignment only.
 // A Server/Bartender shift for the same person never grants a Host pool share.
 // ES1.8.75: one assignment source for Host display, membership and payout.
@@ -14887,17 +14977,21 @@ function es36StoredPhone(raw){
     const work=tt15AssignmentWorkRows(s.rows,esSession?.rawBase);for(const control of $('esRows')?.querySelectorAll('[data-es-field="role"],[data-es-field="shift"]')||[]){const row=s.session.rows[Number(control.dataset.esRow)],i=row?work.findIndex(r=>r.workName===row.name):-1;if(i>=0){control.value=s.rows[i][control.dataset.esField];control.disabled=s.busy||locked(s,s.rows[i].name);}}
     conflictCard(s);if(typeof hc15UpdateValues==='function')hc15UpdateValues();
   }
-  function stop(s){if(!s)return;(s.unsubs||[]).forEach(u=>u());s.unsubs=[];(s.controllers||new Set()).forEach(c=>c.abort());clearTimeout(s.hydrateTimer);s.readSeq++;}
+  function stop(s){if(!s)return;(s.unsubs||[]).forEach(u=>u());s.unsubs=[];++s.watchEpoch;(s.controllers||new Set()).forEach(c=>c.abort());clearTimeout(s.hydrateTimer);clearTimeout(s.syncTimer);s.readSeq++;}
   async function readDoc(col,date,s){
-    const controller=new AbortController();s.controllers.add(controller);const timer=setTimeout(()=>controller.abort(),9000);
-    try{const token=await currentUser.getIdToken();if(!current(s))throw new Error('Date or login changed.');
-      const url='https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(FIREBASE_CONFIG.projectId)+'/databases/(default)/documents/'+col+'/'+encodeURIComponent(date),response=await fetch(url,{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:controller.signal});if(!current(s))throw new Error('Date or login changed.');if(response.status===404)return {};if(!response.ok)throw new Error('Team read failed ('+response.status+').');const body=await response.json();if(!current(s))throw new Error('Date or login changed.');return esDecodeFirestore({mapValue:{fields:body.fields||{}}});
+    const controller=new AbortController();s.controllers.add(controller);let timer;
+    const guard=()=>{if(!current(s)||controller.signal.aborted)throw new Error('Date, login or assignment request changed.');};
+    try{return await Promise.race([new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();const e=new Error('Assignment request timed out');e.name='AbortError';reject(e);},9000);}), (async()=>{const token=await currentUser.getIdToken();guard();
+      const url='https://firestore.googleapis.com/v1/projects/'+encodeURIComponent(FIREBASE_CONFIG.projectId)+'/databases/(default)/documents/'+col+'/'+encodeURIComponent(date),response=await fetch(url,{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:controller.signal});guard();if(response.status===404)return {};if(!response.ok)throw new Error('Team read failed ('+response.status+').');const body=await response.json();guard();return esDecodeFirestore({mapValue:{fields:body.fields||{}}});})()]);
     }finally{clearTimeout(timer);s.controllers.delete(controller);}
   }
   function newer(data,previous,fields){if(!previous||!Object.keys(data||{}).length)return data;for(const f of fields)if(Number.isFinite(Number(data?.[f]))&&Number.isFinite(Number(previous?.[f]))&&Number(data[f])<Number(previous[f]))return previous;return data;}
   function busserPlan(base,edited,remote,touched,resolutions){const values={},conflicts=[];for(const cp of ['AM','PM']){const a=base?.[cp],b=edited[cp],c=remote[cp];if(typeof a==='boolean')values[cp]=b===a?c:b;else if(!touched?.[cp]||b===c)values[cp]=c;else{const id='busser81:'+encodeURIComponent(JSON.stringify([cp,a??null,b,c])),choice=resolutions?.[id];values[cp]=choice==='remote'?c:b;if(choice!=='local'&&choice!=='remote')conflicts.push({id,key:id,employeeKey:'__busser__',employee:'Busser '+cp,kind:'busser',field:cp,base:a??null,local:b,remote:c});}}return {values,conflicts};}
   function rebase(s,raw,host){
-    if(!current(s))return;for(const data of [raw,host])if(data?.date&&data.date!==s.date)throw new Error('Saved team date does not match this sheet. Your draft is kept.');raw=newer(raw,s.latestRaw,['todayTeamRevision','employeeSheetRevision']);host=newer(host,s.latestHost,['todayTeamRevision','sheetRevision']);s.latestRaw=copy(raw);s.latestHost=copy(host);
+    if(!current(s))return;for(const data of [raw,host])if(data?.date&&data.date!==s.date)throw new Error('Saved team date does not match this sheet. Your draft is kept.');raw=newer(raw,s.latestRaw,['todayTeamRevision','employeeSheetRevision']);host=newer(host,s.latestHost,['todayTeamRevision','sheetRevision']);s.lastServerAt=Date.now();
+    // Rechecking an unchanged verified team must not rebuild every phone input.
+    if(s.verified&&!s.dirty&&!s.busserDirty&&!s.mergeContext&&!s.pendingHydrate&&tt15Same(raw,s.latestRaw)&&tt15Same(host,s.latestHost))return;
+    s.latestRaw=copy(raw);s.latestHost=copy(host);
     const remote=teamRows(raw,host),remoteBusser=defaults(s.date,raw),blanks=copy(s.rows.filter(r=>!String(r.name||'').trim()));
     const ctx=s.mergeContext||{base:copy(s.base===null?s.previewRows||[]:s.base||[]),edited:copy(s.dirty?es64NamedAssignments(s.rows):remote),busserBase:copy(s.baseBusser),busserEdited:copy(s.busser),touched:copy(s.busserTouched||{}),resolutions:{}};
     const plan=tt15TeamMergePlan81(ctx.base,ctx.edited,remote,ctx.resolutions),bp=busserPlan(ctx.busserBase,ctx.busserEdited,remoteBusser,ctx.touched,ctx.resolutions);
@@ -14914,13 +15008,37 @@ function es36StoredPhone(raw){
     if(hostSession&&hc15Session===hostSession&&hostSession.uid===s.uid&&hostSession.date===s.date){hostSession.loaded=true;hostSession.hadCloud ||= Object.keys(pending.host).length>0;hostSession.deviceRestored=false;hostSession.error='';hc15Accept(hostSession,pending.host,true);}
     if(!current(s))return;s.pendingHydrate=null;window.es41PaintRows?.();paint();
   }
-  async function readBoth(s){const seq=++s.readSeq,results=await Promise.all([readDoc('hourlyV1Batches',s.date,s),readDoc('hostCashierTipReports',s.date,s)]);if(!current(s)||seq!==s.readSeq)return false;rebase(s,...results);return true;}
+  async function readBoth(s){const seq=++s.readSeq;try{const results=await Promise.all([readDoc('hourlyV1Batches',s.date,s),readDoc('hostCashierTipReports',s.date,s)]);if(!current(s)||seq!==s.readSeq)return false;rebase(s,...results);return true;}catch(e){e.teamReadSeq=seq;throw e;}}
   function lock(s){if(!current(s)||s.busy||s.session.busy||hc15Session?.uid===s.uid&&hc15Session?.date===s.date&&hc15Session.busy)return false;s.busy=true;s.lockHost=hc15Session?.uid===s.uid&&hc15Session?.date===s.date?hc15Session:null;s.lockHostBusy=s.lockHost?.busy||false;if(s.lockHost)s.lockHost.busy=true;esSetBusy(true);paint();return true;}
   async function unlock(s){s.busy=false;if(s.lockHost)s.lockHost.busy=s.lockHostBusy;s.lockHost=null;if(!current(s))return;esSetBusy(false);if(s.pendingRemote){const pair=s.pendingRemote;s.pendingRemote=null;if(pair.epoch===s.sourceEpoch){++s.readSeq;rebase(s,pair.raw,pair.host);}}await hydrate(s);if(current(s))paint();}
-  function watch(s){s.live={};for(const [part,col]of [['raw','hourlyV1Batches'],['host','hostCashierTipReports']])s.unsubs.push(onSnapshot(doc(db,col,s.date),{includeMetadataChanges:true},snap=>{if(!current(s))return;if(snap.metadata?.fromCache!==false||snap.metadata?.hasPendingWrites!==false){delete s.live[part];++s.sourceEpoch;s.pendingRemote=null;s.pendingHydrate=null;clearTimeout(s.hydrateTimer);return;}s.live[part]=snap.exists()?snap.data():{};if(!Object.hasOwn(s.live,'raw')||!Object.hasOwn(s.live,'host'))return;const pair={raw:s.live.raw,host:s.live.host,epoch:s.sourceEpoch};if(s.busy){s.pendingRemote=pair;return;}++s.readSeq;try{rebase(s,pair.raw,pair.host);}catch(e){s.verified=false;message(e.message,true);return;}message(s.conflicts.length?'Review only the changed assignment fields below. Other employee drafts are kept.':s.dirty?'Latest saved assignments received. Your device draft is kept.':'Team live · latest saved assignments loaded.');},e=>{if(!current(s))return;delete s.live[part];++s.readSeq;++s.sourceEpoch;s.pendingRemote=null;s.pendingHydrate=null;clearTimeout(s.hydrateTimer);s.verified=false;message('Assignment connection unavailable: '+(e.message||e)+'. Your device draft is kept. Tap Reload assignments.',true);}));}
-  async function load(s,lockedRead=false){if(!current(s)||s.busy)return false;if(lockedRead&&!lock(s))return false;message('Checking the latest saved assignments. Your device draft is kept.');try{const okay=await readBoth(s);if(current(s)&&okay)message(s.conflicts.length?'Choose only the changed fields below, then Apply changes.':s.dirty?'Latest saved team merged. Your device changes are kept.':'Team loaded. Edit here, then Apply changes.');return okay;}catch(e){if(current(s)){s.verified=false;message('Team connection unavailable: '+(e.name==='AbortError'?'request timed out':e.message)+'. Your draft is kept; Reload assignments retries without discarding it.',true);}return false;}finally{if(lockedRead)await unlock(s);}}
+  function foreground(s){return current(s)&&document.visibilityState!=='hidden'&&document.body.classList.contains('es-active');}
+  function queueSync(s,delay=25000){clearTimeout(s.syncTimer);if(!foreground(s))return;s.syncTimer=setTimeout(()=>{s.syncTimer=0;if(!foreground(s))return;if(s.busy||s.session.busy||hc15Session?.busy){s.resumePending=true;queueSync(s,1000);return;}void recover(s,false);},delay);}
+  function watch(s){
+    (s.unsubs||[]).forEach(u=>u());s.unsubs=[];const generation=++s.watchEpoch;s.live={};s.watchFailed=false;
+    const live=()=>current(s)&&generation===s.watchEpoch;
+    for(const [part,col]of [['raw','hourlyV1Batches'],['host','hostCashierTipReports']]){
+      const fail=e=>{if(!live())return;delete s.live[part];++s.readSeq;++s.sourceEpoch;s.pendingRemote=null;s.pendingHydrate=null;clearTimeout(s.hydrateTimer);s.verified=false;s.watchFailed=true;message('Assignment connection unavailable: '+(e.message||e)+'. Your device draft is kept; reconnecting automatically.',true);queueSync(s,1500);};
+      try{const unsub=onSnapshot(doc(db,col,s.date),{includeMetadataChanges:true},snap=>{if(!live())return;if(snap.metadata?.fromCache!==false||snap.metadata?.hasPendingWrites!==false){delete s.live[part];++s.sourceEpoch;s.verified=false;s.pendingRemote=null;s.pendingHydrate=null;clearTimeout(s.hydrateTimer);return;}s.live[part]=snap.exists()?snap.data():{};if(!Object.hasOwn(s.live,'raw')||!Object.hasOwn(s.live,'host'))return;const pair={raw:s.live.raw,host:s.live.host,epoch:s.sourceEpoch};if(s.busy){s.pendingRemote=pair;return;}++s.readSeq;try{rebase(s,pair.raw,pair.host);}catch(e){s.verified=false;message(e.message,true);return;}message(s.conflicts.length?'Review only the changed assignment fields below. Other employee drafts are kept.':s.dirty?'Latest saved assignments received. Your device draft is kept.':'Team live · latest saved assignments loaded.');},fail);if(typeof unsub==='function')s.unsubs.push(unsub);}catch(e){fail(e);}
+    }
+  }
+  async function load(s,lockedRead=false,quiet=false){
+    if(!current(s)||s.busy)return false;if(s.loadingPromise)return s.loadingPromise;if(lockedRead&&!lock(s))return false;
+    if(!quiet)message('Checking the latest saved assignments. Your device draft is kept.');
+    s.loadingPromise=(async()=>{try{const okay=await readBoth(s);if(current(s)&&okay&&(!quiet||s.conflicts.length))message(s.conflicts.length?'Choose only the changed fields below, then Apply changes.':s.dirty?'Latest saved team merged. Your device changes are kept.':'Team loaded. Edit here, then Apply changes.');return okay;}catch(e){if(current(s)&&(e.teamReadSeq===undefined||e.teamReadSeq===s.readSeq)){s.verified=false;message('Team connection unavailable: '+(e.name==='AbortError'?'request timed out':e.message)+'. Your draft is kept; reconnecting automatically. Reload assignments also retries.',true);}return false;}finally{s.loadingPromise=null;if(lockedRead)await unlock(s);if(current(s)){const pending=s.resumePending;s.resumePending=false;queueSync(s,pending?1000:25000);}}})();
+    return s.loadingPromise;
+  }
+  async function recover(s,restart=true){
+    if(!foreground(s))return false;if(s.busy||s.session.busy||hc15Session?.busy){s.resumePending=true;queueSync(s,1000);return false;}
+    if(s.loadingPromise)return s.loadingPromise;
+    const now=Date.now();if(restart&&now-(s.lastResumeAt||0)<800){queueSync(s,800-(now-s.lastResumeAt));return false;}if(restart)s.lastResumeAt=now;
+    s.resumePending=false;if(restart||s.watchFailed)watch(s);
+    return load(s,false,true);
+  }
+  function resume(){if(state)void recover(state,true);}
+  window.addEventListener('online',resume);window.addEventListener('pageshow',resume);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden'){if(state)clearTimeout(state.syncTimer);}else resume();});
   function start(){const session=esSession;if(!session||!esAllowed()||!$('es38Team'))return;if(state?.session===session&&current(state)){paint();return;}stop(state);
-    const s={uid:session.uid,date:session.date,session,rows:[],base:null,busser:defaults(session.date,session.rawBase),baseBusser:null,busserTouched:{},dirty:false,busserDirty:false,busy:false,verified:false,id:++serial,readSeq:0,sourceEpoch:0,controllers:new Set(),unsubs:[],conflicts:[],mergeContext:null};state=s;s.rows=copy(teamRows(session.rawBase||{},hc15Session?.date===session.date?hc15Session.data||{}:{}));s.previewRows=copy(s.rows);
+    const s={uid:session.uid,date:session.date,session,rows:[],base:null,busser:defaults(session.date,session.rawBase),baseBusser:null,busserTouched:{},dirty:false,busserDirty:false,busy:false,verified:false,id:++serial,readSeq:0,sourceEpoch:0,watchEpoch:0,controllers:new Set(),unsubs:[],conflicts:[],mergeContext:null};state=s;s.rows=copy(teamRows(session.rawBase||{},hc15Session?.date===session.date?hc15Session.data||{}:{}));s.previewRows=copy(s.rows);
     try{const saved=JSON.parse(localStorage.getItem(key(s))||'null');if(saved?.dirty){for(const f of ['rows','base','busser','baseBusser','dirty','busserDirty','busserTouched','mergeContext','conflicts','previewRows'])if(Object.hasOwn(saved,f))s[f]=saved[f];if(s.busserDirty&&!Object.keys(s.busserTouched||{}).length)s.busserTouched={AM:true,PM:true};message('Restored your team device draft.');}}catch(e){}
     paint();void load(s);watch(s);
   }
