@@ -4018,7 +4018,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18890",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18900",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10615,7 +10615,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.89';
+const ES_BUILD='ES1.8.90';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10698,7 +10698,7 @@ function esBarMask(row,route){
   return {barAM:['AM','DOUBLE',SHIFT_EARLY].includes(row.shift),bar24:['LONG','DOUBLE',SHIFT_MIDDLE].includes(row.shift)||(row.shift==='AM'&&!!route['2PM_4PM']),barPM:['PM','DOUBLE','LONG'].includes(row.shift)};
 }
 function esLinkSales(row,field,route){
-  // ES1.8.89: BAR checkpoints, Busser cutoff and final sales are independent
+  // ES1.8.90: BAR checkpoints, Busser cutoff and final sales are independent
   // inputs. Editing a checkpoint must never replace another input.
   return;
 }
@@ -10789,7 +10789,7 @@ s.date=date;s.team=rows.map(r=>r.name);s.drafts ||= {};hv1EnsureBarState(s);
   }
   // These are the same, unchanged BAR functions as the existing Team Board.
   hv1ApplyBarAutomation(s);
-  // ES1.8.89: legacy BAR automation still prepares its own checkpoints, but
+  // ES1.8.90: legacy BAR automation still prepares its own checkpoints, but
   // Grand Total belongs to the explicit sheet input on every Server shift.
   for(const row of rows)if(row.role==='Server'){
     const d=s.drafts[row.name];d.values.hGrandTotal=String(row.grand??'');
@@ -13032,7 +13032,7 @@ async function hc15Flush(s=hc15Session){
       // A total saved by THIS transaction also writes its default account list.
       // A newer ledger edit on this phone may still use the pre-write base.
       // Advance only that known own-write base; never a truly changed remote one.
-      for(const key of result.applied){const [name,field]=JSON.parse(key);if(name||!['creditAM','creditPM'].includes(field))continue;const ledger=hc15Field('','creditAccounts'+field.slice(-2)),edit=s.edits[ledger];if(edit&&!result.applied.includes(ledger)&&!result.conflicts.includes(ledger)&&hc15Equal(ledger,edit.base,hc15Get(result.before,ledger)))edit.base=tt15Copy(hc15Get(result.next,ledger));}
+      for(const key of result.applied){const [name,field]=JSON.parse(key);if(name||!['creditAM','credit24','creditPM'].includes(field))continue;const ledger=hc15Field('','creditAccounts'+field.slice(-2)),edit=s.edits[ledger];if(edit&&!result.applied.includes(ledger)&&!result.conflicts.includes(ledger)&&hc15Equal(ledger,edit.base,hc15Get(result.before,ledger)))edit.base=tt15Copy(hc15Get(result.next,ledger));}
       s.conflicts=[...new Set([...s.conflicts,...result.conflicts])];s.error=result.conflicts.length?'Another device changed the same field. Review changes below.':'';
       hc15Accept(s,result.next,true);
     }return true;
@@ -13083,10 +13083,10 @@ function hc15Init(){
   if($('hc15Section')||!$('esGrid'))return;
   const section=document.createElement('section');section.id='hc15Section';section.className='hc15-section';
   section.innerHTML=`<div class="hc15-heading"><h3>Host / Cashier</h3><div class="hc184-toolbar"><button type="button" id="hc184Refresh">Refresh from server</button><button type="button" id="hc15EditTeam">Edit Team</button></div></div><div id="hc15Status" class="hc15-status" role="status"></div>
-    <div id="hc15Pools" class="hc15-pools"><table><thead><tr><th>Shift</th><th>Cash</th><th>Credit</th><th>Pool / Staff</th></tr></thead><tbody>${['AM','PM'].map(cp=>`<tr><th>${cp}</th><td><input data-hc15-pool="cash${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Cash ${cp}" placeholder="0.00"></td><td><input data-hc15-pool="credit${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Credit ${cp}" placeholder="0.00"><button class="hc15-accounts" data-hc15-credit="${cp}" type="button">Accounts +</button></td><td id="hc15Pool${cp}">—</td></tr>`).join('')}</tbody></table></div>
-    <div id="hc15Conflict" class="hidden"><p>Another device changed the same field. Choose which values to keep.</p><button type="button" id="hc15UseCloud">Use latest</button><button type="button" id="hc15KeepMine">Keep this device</button></div>
-    <table class="es-table hc15-table"><colgroup><col class="es-name-col"><col style="width:145px"><col style="width:170px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:200px"></colgroup><thead><tr><th class="es-name">Host / Cashier<span>Save · Sign · Print</span></th>${['Shift','Position','Clock In 1','Clock Out 1','Clock In 2','Clock Out 2','Tip AM','Tip PM','Paid Tip Out'].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody id="hc15Rows"></tbody></table>
-    <p class="hc15-footnote">Cash + Credit is split equally within each shift, using the existing cent-rounding rule. Double receives AM + PM. Clock In/Out syncs to Team Performance; tip shares remain unchanged. Download uses saved reports from the server on both phone and laptop.</p>`;
+    <div id="hc15Pools" class="hc15-pools"><table><thead><tr><th>Shift</th><th>Cash</th><th>Credit</th><th>Pool / Staff</th></tr></thead><tbody>${['AM','24','PM'].map(cp=>`<tr><th>${cp==='24'?'2–4':cp}</th><td><input data-hc15-pool="cash${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Cash ${cp}" placeholder="0.00"></td><td><input data-hc15-pool="credit${cp}" data-es182-money="1" inputmode="numeric" type="text" aria-label="Host Cashier Credit ${cp}" placeholder="0.00"><button class="hc15-accounts" data-hc15-credit="${cp}" type="button">Accounts +</button></td><td id="hc15Pool${cp}">—</td></tr>`).join('')}</tbody></table></div>
+    <p id="hc90Policy" class="hc90-policy"></p><div id="hc15Conflict" class="hidden"><p>Another device changed the same field. Choose which values to keep.</p><button type="button" id="hc15UseCloud">Use latest</button><button type="button" id="hc15KeepMine">Keep this device</button></div>
+    <table class="es-table hc15-table"><colgroup><col class="es-name-col"><col style="width:145px"><col style="width:170px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:150px"><col style="width:200px"></colgroup><thead><tr><th class="es-name">Host / Cashier<span>Save · Sign · Print</span></th>${['Shift','Position','Clock In 1','Clock Out 1','Clock In 2','Clock Out 2','Tip AM','Tip 2–4','Tip PM','Paid Tip Out'].map(x=>`<th>${x}</th>`).join('')}</tr></thead><tbody id="hc15Rows"></tbody></table>
+    <p class="hc15-footnote">Cash + Credit is split equally within each eligible period, using the existing cent-rounding rule. AM receives AM + 2–4; Long receives 2–4 + PM; PM receives PM; Double receives all three. Clock In/Out syncs to Team Performance. Download uses saved reports.</p>`;
   $('esGrid').appendChild(section);
   $('hc184Refresh').onclick=()=>hc184Refresh(hc15Session,true);
   $('hc15EditTeam').onclick=()=>window.fzOpenTodayTeam(hc15Session?.date||esSession?.date);
@@ -13108,7 +13108,7 @@ function hc15Render(){
   if($('hc15Rows').contains(document.activeElement)&&(esPan||performance.now()<esTouchUntil)){clearTimeout(s.renderTimer);s.renderTimer=setTimeout(hc15Render,180);return;}
   const data=hc15View(s),members=tt15TeamRows({},data),key=JSON.stringify(members);
   if(s.rowsKey!==key||!$('hc15Rows').children.length){
-    s.rowsKey=key;$('hc15Rows').innerHTML=members.map(r=>`<tr data-hc15-row="${tt15Key(r.name)}"><th class="es-name"><b>${esc(tt15Label(r.name))}</b><span class="es-state" data-hc15-state></span><div class="es-row-actions">${['Save','Sign','Print'].map(a=>`<button type="button" data-hc15-action="${a.toLowerCase()}" data-hc15-name="${esc(r.name)}">${a}</button>`).join('')}</div></th><td data-es82-host-field="shift">${esc(r.shift)}</td><td data-es82-host-field="role">${esc(r.role)}</td>${["clockIn","clockOut","clockIn2","clockOut2"].map(field=>`<td><input type="text" inputmode="numeric" placeholder="HH:MM" aria-label="${field} ${esc(r.name)}" data-hc15-clock="${field}" data-hc15-name="${esc(r.name)}"></td>`).join("")}<td data-hc15-out="am"></td><td data-hc15-out="pm"></td><td class="es-payout" data-hc15-out="total"></td></tr>`).join('')||'<tr><td colspan="10">No Host / Cashier on this date. Tap + Add row above, choose Cashier/Host and shift, then Apply changes.</td></tr>';
+    s.rowsKey=key;$('hc15Rows').innerHTML=members.map(r=>`<tr data-hc15-row="${tt15Key(r.name)}"><th class="es-name"><b>${esc(tt15Label(r.name))}</b><span class="es-state" data-hc15-state></span><div class="es-row-actions">${['Save','Sign','Print'].map(a=>`<button type="button" data-hc15-action="${a.toLowerCase()}" data-hc15-name="${esc(r.name)}">${a}</button>`).join('')}</div></th><td data-es82-host-field="shift">${esc(r.shift)}</td><td data-es82-host-field="role">${esc(r.role)}</td>${["clockIn","clockOut","clockIn2","clockOut2"].map(field=>`<td><input type="text" inputmode="numeric" placeholder="HH:MM" aria-label="${field} ${esc(r.name)}" data-hc15-clock="${field}" data-hc15-name="${esc(r.name)}"></td>`).join("")}<td data-hc15-out="am"></td><td data-hc15-out="middle"></td><td data-hc15-out="pm"></td><td class="es-payout" data-hc15-out="total"></td></tr>`).join('')||'<tr><td colspan="10">No Host / Cashier on this date. Tap + Add row above, choose Cashier/Host and shift, then Apply changes.</td></tr>';
   }
   for(const input of $('hc15Pools').querySelectorAll('input')){if(input!==document.activeElement)input.value=String(data[input.dataset.hc15Pool]??0);input.disabled=!s.verified||s.busy;}
   for(const input of $('hc15Rows').querySelectorAll('input[data-hc15-clock]')){const r=hc15Member(data,input.dataset.hc15Name);input.disabled=!s.verified||s.busy||(input.dataset.hc15Clock.endsWith('2')&&r?.shift!=='DOUBLE');if(input!==document.activeElement)input.value=data.staffDetails?.[input.dataset.hc15Name]?.[input.dataset.hc15Clock]||'';}
@@ -13136,7 +13136,7 @@ async function hc188RebaseExplicitHostSave(s){
   if(!es14IsOnline())throw new Error('This device has conflicting Host / Cashier edits and is offline. Reconnect, then tap Save again.');
   const ref=doc(db,'hostCashierTipReports',s.date),snap=await getDocFromServer(ref);tt15Require(s.uid);
   if(!snap.exists())throw new Error('This Host / Cashier date was removed. Your device values are kept.');
-  const remote=snap.data(),allowed=new Set([...TT15_POOLS,'creditAccountsAM','creditAccountsPM']);
+  const remote=snap.data(),allowed=new Set([...TT15_POOLS,'creditAccountsAM','creditAccounts24','creditAccountsPM','hostCashierPoolVersion']);
   for(const key of s.conflicts){
     const [name,field]=JSON.parse(key);
     if(name||!allowed.has(field))throw new Error('Review conflicting Host / Cashier edits before saving this pool.');
@@ -13179,12 +13179,12 @@ async function hc15Commit(name,signature=null,expected=''){
     const same=hc184SameFingerprint(before?.hostCashierFingerprint,fp),sig=signature||(same?before?.pickupSignature:null);
     const report={...r,hostCashierFingerprint:fp,pickupSignature:sig||null,signatureStatus:sig?'SIGNED':'PENDING',status:'money_ready',employeeSheetBuild:ES_BUILD,employeeKey:fzEmployeeIdentityKey(employeeWorkProfile(name)?.personName||name),reportIdentityVersion:'13.8.28',updatedAt:serverTimestamp(),updatedBy:currentProfile?.displayName||currentProfile?.username||''};
     const next=tt15Copy(hc73PoolData(hc74AssignmentData(data)));next.sheetFinalized ||= {};next.sheetFinalized[tt15Key(name)]={id:reportRef.id,fingerprint:fp,signed:!!sig};next.signatures ||= {AM:{},PM:{}};
-    for(const cp of ['AM','PM']){
+    for(const cp of (hc90Three(data)?['AM','24','PM']:['AM','PM'])){
       next.signatures[cp] ||= {};const amount=r['hostCashierTip'+cp],active=(next['employees'+cp]||[]).includes(name);
       if(signature&&active)next.signatures[cp][name]={...signature,amount,date:s.date,signedAt:signature.signedAtLocal};
       else if(!same&&next.signatures[cp][name]&&Number(next.signatures[cp][name].amount)!==amount)delete next.signatures[cp][name];
     }
-    next.sheetRevision=Number(data.sheetRevision||0)+1;next.metrics=hc15Math(data);next.combinedPayout=tt15TeamRows({},data).map(e=>{const x=hc15Report(data,e.name);return {name:e.name,am:x.hostCashierTipAM,pm:x.hostCashierTipPM,total:x.totalPaidOut};});next.savedBy=currentProfile?.displayName||currentProfile?.username||'';next.savedByUid=s.uid;
+    next.sheetRevision=Number(data.sheetRevision||0)+1;next.metrics=hc15Math(data);next.combinedPayout=tt15TeamRows({},data).map(e=>{const x=hc15Report(data,e.name);return {name:e.name,am:x.hostCashierTipAM,...(hc90Three(x)?{middle:x.hostCashierTip24}:{}),pm:x.hostCashierTipPM,total:x.totalPaidOut};});next.savedBy=currentProfile?.displayName||currentProfile?.username||'';next.savedByUid=s.uid;
     if(before)tx.update(reportRef,report);else tx.set(reportRef,{...report,createdAt:serverTimestamp(),createdByUid:s.uid});
     tx.set(ref,{...next,...tt15Stamp()});return {data:next,report:{...(before||{}),...report,id:reportRef.id}};
   });
@@ -15687,7 +15687,7 @@ function fz72PdfStreams(streams){
   };
 })();
 
-/* ES1.8.89 — Independent BAR checkpoints and required Busser cutoff.
+/* ES1.8.90 — Independent BAR checkpoints and required Busser cutoff.
  * Busser uses only its cumulative cutoff and the explicit Grand Total.
  * Blank is an unfinished draft, never an inferred BAR checkpoint.
  * The underlying BAR, Paid Tip and payout formulas remain unchanged.
@@ -15826,7 +15826,7 @@ function es88BusserPercentText(value){return Number(Number(value||0).toFixed(3))
   };
 })();
 
-/* ES1.8.89 — Preserve the four sheet inputs through the legacy draft bridge.
+/* ES1.8.90 — Preserve the four sheet inputs through the legacy draft bridge.
  * This metadata records inputs only. Saved historical amounts are never
  * recalculated until their row is explicitly completed and saved again.
  */
@@ -15891,3 +15891,317 @@ function es89RequireBusserCutoff(row){
     return sign.call(this,name,...args);
   };
 })();
+
+/* ES1.8.90 — Host/Cashier AM, 2–4, PM pools.
+ * Original Server/Bartender/Busser and the original two-pool allocator stay
+ * unchanged. Each new pool delegates to that same whole-cent allocator.
+ */
+function hc90Three(data){return Number(data?.hostCashierPoolVersion)===3;}
+function hc90Periods(shift){
+  return shift==='AM'?['AM','24']:shift==='LONG'?['24','PM']:shift==='DOUBLE'?['AM','24','PM']
+    :shift==='PM'?['PM']:shift===SHIFT_EARLY?['AM']:shift===SHIFT_MIDDLE?['24']:[];
+}
+function hc90Membership(data){
+  const out={am:[],middle:[],pm:[]},keys={AM:'am','24':'middle',PM:'pm'};
+  const rows=Array.isArray(data?.todayTeamAssignments)?data.todayTeamAssignments:
+    Object.entries(data?.team||{}).filter(([,r])=>r?.working!==false).map(([name,r])=>({name,role:r.position||r.role||'Host / Cashier',shift:r.shift}));
+  for(const row of rows){
+    if(!tt15Host(row.role))continue;const name=tt15CanonicalName(row.name);if(!name)continue;
+    for(const cp of hc90Periods(row.shift))if(!out[keys[cp]].includes(name))out[keys[cp]].push(name);
+  }
+  // Older mirrors can retain membership arrays without a team map.
+  if(!rows.length&&!Array.isArray(data?.todayTeamAssignments))for(const [cp,key]of Object.entries(keys))out[key]=[...new Set((data?.['employees'+cp]||[]).filter(Boolean).map(tt15CanonicalName))];
+  if(Object.values(out).some(names=>names.length>7))throw new Error('Host / Cashier supports at most 7 employees per period.');
+  return out;
+}
+function hc90Activate(data){
+  data.hostCashierPoolVersion=3;data.cash24??=0;data.credit24??=0;data.creditAccounts24??=[];
+  const m=hc90Membership(data);data.employeesAM=m.am;data.employees24=m.middle;data.employeesPM=m.pm;
+  return data;
+}
+(function installHostThreePools90(){
+  TT15_POOLS.splice(2,0,'cash24','credit24');
+  const membership=hc73PoolMembership;
+  hc73PoolMembership=function(data={}){return hc90Three(data)?hc90Membership(data):membership(data);};
+  const poolData=hc73PoolData;
+  hc73PoolData=function(data){return hc90Three(data)?hc90Activate({...data}):poolData(data);};
+  const teamRows=tt15TeamRows;
+  tt15TeamRows=function(batch={},host={}){
+    if(!hc90Three(host)||Array.isArray(batch.todayTeamAssignments)&&(batch.todayTeamAssignments.length||batch.todayTeamManaged===true))return teamRows(batch,host);
+    const members=hc90Membership(host),names=[...new Set([...members.am,...members.middle,...members.pm])];
+    const explicit=Array.isArray(host.todayTeamAssignments)?host.todayTeamAssignments.filter(r=>tt15Host(r.role)):[];
+    return [...teamRows(batch,{}),...names.map(name=>{
+      const owned=explicit.filter(r=>tt15CanonicalName(r.name)===name),first=owned[0];
+      const active=[members.am.includes(name),members.middle.includes(name),members.pm.includes(name)];
+      const original=first?.shift||host.team?.[name]?.shift;
+      const matches=hc90Periods(original).join('|')===['AM','24','PM'].filter((_,i)=>active[i]).join('|');
+      const shift=matches?original:active.every(Boolean)?'DOUBLE':active[0]&&active[1]?'AM':active[1]&&active[2]?'LONG':active[0]?SHIFT_EARLY:active[1]?SHIFT_MIDDLE:'PM';
+      const roles=[...new Set(owned.map(r=>r.role))];
+      const role=roles.length>1?'Host / Cashier':first?.role||host.staffDetails?.[name]?.role||host.team?.[name]?.position||'Host / Cashier';
+      return {name,role:tt15Host(role)?role:'Host / Cashier',shift};
+    })];
+  };
+  const math=hc15Math;
+  hc15Math=function(source){
+    const data=hc74AssignmentData(source);
+    if(!hc90Three(data))return {...math(data),pool24:0,count24:0,each24:0,amounts24:{},middle:[]};
+    const allocator=window.FZHostCashierMath;if(!allocator)throw new Error('Host / Cashier calculator is still loading. Please retry shortly.');
+    const members=hc90Membership(data),out={...members};
+    for(const [cp,key]of [['AM','am'],['24','middle'],['PM','pm']]){
+      const cash=hc185MoneyCents(data['cash'+cp]??0),credit=hc185MoneyCents(data['credit'+cp]??0);
+      if(cash===null||credit===null)throw new Error('Enter valid Host / Cashier '+(cp==='24'?'2–4':cp)+' cash and credit.');
+      const pool=(cash+credit)/100,names=members[key];
+      out['pool'+cp]=pool;out['count'+cp]=names.length;out['amounts'+cp]=allocator.allocate(pool,names);out['each'+cp]=names.length?pool/names.length:0;
+    }
+    return out;
+  };
+  const build=tt15BuildTeam;
+  tt15BuildTeam=function(raw,host,rows,date){
+    const result=build(raw,host,rows,date);
+    const existing=['cashAM','creditAM','cashPM','creditPM','employeesAM','employeesPM','team','sheetRevision','todayTeamAssignments','sheetFinalized','signatures'].some(key=>Object.prototype.hasOwnProperty.call(host||{},key));
+    if(hc90Three(host)||!existing)hc90Activate(result.host);
+    return result;
+  };
+  const put=hc15Put;
+  hc15Put=function(data,key,value){
+    const [name,field]=JSON.parse(key);
+    if(!name&&field==='hostCashierPoolVersion'){if(Number(value)!==3)throw new Error('Invalid Host / Cashier pool version.');hc90Activate(data);return;}
+    put(data,key,value);
+    if(!name&&field==='credit24')data.creditAccounts24=[{label:'Sheet total',amount:Number(value)||0}];
+    if(!name&&['cash24','credit24','creditAccounts24'].includes(field)&&hc15Valid(key,value))hc90Activate(data);
+  };
+  const view=hc15View;
+  hc15View=function(...args){const data=view.apply(this,args);return {...data,cash24:data.cash24??0,credit24:data.credit24??0,creditAccounts24:data.creditAccounts24||[]};};
+  const set=hc15Set;
+  hc15Set=function(name,field,value){
+    const s=hc15Session;if(!s||s.busy)return;
+    if(!name&&['cash24','credit24','creditAccounts24'].includes(field)&&hc15Valid(hc15Field('',field),value)&&!hc90Three(hc15View(s)))set.call(this,'','hostCashierPoolVersion','3');
+    return set.call(this,name,field,value);
+  };
+  const summary=hc185PoolSummaryFromData;
+  hc185PoolSummaryFromData=function(data,metrics=hc15Math(data)){
+    if(!hc90Three(data))return summary(data,metrics);
+    const snapshot={version:3,date:String(data.date||'')};
+    for(const cp of ['AM','24','PM'])snapshot[cp]={cash:hc185MoneyCents(data['cash'+cp]??0)/100,credit:hc185MoneyCents(data['credit'+cp]??0)/100,total:metrics['pool'+cp],employeeCount:metrics['count'+cp],source:'saved'};
+    return snapshot;
+  };
+  const saved=hc185SavedPoolPeriod;
+  hc185SavedPoolPeriod=function(report,cp){
+    if(!hc90Three(report))return saved(report,cp);
+    const p=report.hostCashierPoolSummary?.version===3&&report.hostCashierPoolSummary.date===report.date?report.hostCashierPoolSummary[cp]:null;
+    if(p){
+      const cash=hc185MoneyCents(p.cash),credit=hc185MoneyCents(p.credit),total=hc185MoneyCents(p.total),count=hc185Count(p.employeeCount);
+      if(cash!==null&&credit!==null&&total!==null&&count!==null&&cash+credit===total&&total===hc185MoneyCents(report['hostCashierPool'+cp])&&count===hc185Count(report['hostCashierCount'+cp]))return {cash:cash/100,credit:credit/100,total:total/100,employeeCount:count,complete:true,source:p.source==='matched-date'?'matched-date':'saved'};
+    }
+    return {cash:null,credit:null,total:hc185MoneyCents(report['hostCashierPool'+cp])===null?null:Number(report['hostCashierPool'+cp]),employeeCount:hc185Count(report['hostCashierCount'+cp]),complete:false};
+  };
+  const enrich=hc185WithPoolSummary;
+  hc185WithPoolSummary=function(report,data){
+    if(hc90Three(report)!==hc90Three(data))return report;
+    if(!hc90Three(report))return enrich(report,data);
+    if(!data||data.date!==report.date||['AM','24','PM'].every(cp=>hc185SavedPoolPeriod(report,cp).complete))return report;
+    let metrics,fresh;try{metrics=hc15Math(data);fresh=hc185PoolSummaryFromData(data,metrics);}catch(e){return report;}
+    const snapshot={version:3,date:report.date};let changed=false;
+    for(const cp of ['AM','24','PM']){
+      const period=hc185SavedPoolPeriod(report,cp);
+      if(period.complete){snapshot[cp]={...period,source:period.source};continue;}
+      if(hc185MoneyCents(period.total)===hc185MoneyCents(metrics['pool'+cp])&&period.employeeCount===metrics['count'+cp]&&hc185MoneyCents(report['hostCashierTip'+cp])===hc185MoneyCents(metrics['amounts'+cp][report.employee]??0)){snapshot[cp]={...fresh[cp],source:'matched-date'};changed=true;}
+    }
+    return changed?{...report,hostCashierPoolSummary:snapshot}:report;
+  };
+  const report=hc15Report;
+  hc15Report=function(source,name){
+    const data=hc74AssignmentData(source),r=report(data,name);if(!hc90Three(data))return r;
+    const m=hc15Math(data),middle=m.amounts24[name]||0,total=(Math.round((m.amountsAM[name]||0)*100)+Math.round(middle*100)+Math.round((m.amountsPM[name]||0)*100))/100;
+    for(const field of ['paidTip','paidTips','totalTips','totalBeforeMeal','grandTotalTip','grandTotalAfterAdjustment','totalPaidOutBeforeAdjustment','totalPaidOut'])r[field]=total;
+    return {...r,hostCashierPoolVersion:3,hostCashierTip24:middle,hostCashierPool24:m.pool24,hostCashierCount24:m.count24,hostCashierPoolSummary:hc185PoolSummaryFromData(data,m)};
+  };
+  const fingerprint=hc15Fingerprint;
+  hc15Fingerprint=function(r){return hc90Three(r)?es182StableJson([r.date,r.employee,r.position,r.shift,r.hostCashierTipAM,r.hostCashierTip24,r.hostCashierTipPM,r.totalPaidOut,'HC3',r.hostCashierPoolSummary]):fingerprint(r);};
+  const update=hc15UpdateValues;
+  hc15UpdateValues=function(...args){
+    const out=update.apply(this,args),s=hc15Session;if(!s||!$('hc15Pool24'))return out;
+    const data=hc15View(s);try{
+      const m=hc15Math(data);$('hc15Pool24').innerHTML='<b>'+esc(esMoney(m.pool24))+'</b><small>'+m.count24+' staff</small>';
+      for(const row of tt15TeamRows({},data)){
+        const cell=$('hc15Rows')?.querySelector('[data-hc15-row="'+tt15Key(row.name)+'"] [data-hc15-out="middle"]');if(cell)cell.textContent=esMoney(hc15Report(data,row.name).hostCashierTip24||0);
+      }
+      const note=$('hc90Policy');if(note)note.textContent=hc90Three(data)?'AM: AM + 2–4 · Long: 2–4 + PM · PM: PM · Double: all three.':'Historical two-pool date. Enter the 2–4 cash/credit amounts (0 if none) to use three pools; then Save each affected row.';
+    }catch(e){s.error=e.message;$('hc15Status').textContent=e.message;$('hc15Status').dataset.error='1';}
+    return out;
+  };
+  // The old standalone editor replaces the whole document and cannot retain
+  // three-period snapshots. Route its entry points to the current sheet.
+  function installEntry(){window.hostCashierOpenWorkspace=()=>{if(esAllowed())return window.fzOpenHostCashier();};}
+  installEntry();window.addEventListener('fz-host-math-ready',installEntry);
+  document.addEventListener('click',event=>{const old=event.target.closest?.('#hostCashierTip');if(!old)return;event.preventDefault();event.stopImmediatePropagation();if(esAllowed())window.fzOpenHostCashier();},true);
+})();
+
+/* ES1.8.90 — Host/Cashier three-period saved-report presentation only.
+ * Append after the90 model wrappers. Legacy Host reports and every
+ * Server/Bartender path keep their original rendering and export functions.
+ */
+function hc90ReportThreePools(report){
+  return !!report&&es16ExportIsHost(report)&&report.hostCashierPoolVersion===3;
+}
+function hc90PeriodLabel(period){return period==='24'?'2-4':period;}
+(function installHC90SavedReportPresentation(){
+  const employeePool=fzEmployeeHostPoolHtml78;
+  fzEmployeeHostPoolHtml78=function(report){
+    if(!hc90ReportThreePools(report))return employeePool.apply(this,arguments);
+    let missing=false,rounded=false;
+    const metric=(label,value)=>`<div class="fz-report-metric"><span>${esc(label)}</span><b>${esc(value)}</b></div>`;
+    const money=value=>value===null?'Not recorded':fmtMoney(value);
+    const periods=['AM','24','PM'].map(period=>{
+      const label=hc90PeriodLabel(period),pool=hc185SavedPoolPeriod(report,period),share=hc185PoolPerEmployee(pool);
+      missing ||= !pool.complete;rounded ||= share.rounding;
+      const own=hc184TipAmount(report,period);
+      return `<div class="fz-report-section" data-hc90-pool="${period}"><div class="fz-report-section-title">${label} Tip Pool</div><div class="fz-report-metrics">${[
+        metric('Cash '+label,money(pool.cash)),metric('Credit '+label,money(pool.credit)),metric('Total '+label,money(pool.total)),
+        metric('Total Employee '+label,pool.employeeCount===null?'Not recorded':String(pool.employeeCount)),
+        metric('Total Tip per employee '+label,share.text),metric('Your Tip '+label,own===null?'Not available':fmtMoney(own))
+      ].join('')}</div></div>`;
+    }).join('');
+    return periods+(missing?'<div class="small">Not recorded means saved pool detail is unavailable; it is not a zero amount.</div>':rounded?'<div class="small">Whole-cent rounding: some shares differ by $0.01. Your exact share is shown above.</div>':'');
+  };
+
+  // This old export projection copies a fixed set of fields. Carry the new
+  // immutable metadata from the same source record without recomputation.
+  const exportRows=reportRowsForExport;
+  reportRowsForExport=function(){
+    const rows=exportRows.apply(this,arguments),sources=latestHourlyReports.map(reportForWorkPosition);
+    const byId=new Map(sources.filter(row=>row.id).map(row=>[String(row.id),row]));
+    return rows.map((row,index)=>{
+      const source=byId.get(String(row.id||''))||sources[index];
+      if(!hc90ReportThreePools(source))return row;
+      return {...row,hostCashierPoolVersion:3,hostCashierTip24:source.hostCashierTip24??null,
+        hostCashierPool24:source.hostCashierPool24??null,hostCashierCount24:source.hostCashierCount24??null,
+        hostCashierPoolSummary:source.hostCashierPoolSummary??null};
+    });
+  };
+
+  const thermal=buildSmallReportThermalHtml;
+  buildSmallReportThermalHtml=function(report){
+    let html=thermal.apply(this,arguments);if(!hc90ReportThreePools(report))return html;
+    const row=(label,value)=>`<div class="row"><span>${thermalReceiptSafe(label)}</span><b>${thermalReceiptSafe(value)}</b></div>`;
+    const money=value=>value===null?'Not recorded':thermalReceiptMoney(value);
+    const detail=['AM','24','PM'].map(period=>{
+      const label=hc90PeriodLabel(period),pool=hc185SavedPoolPeriod(report,period),share=hc185PoolPerEmployee(pool),own=hc184TipAmount(report,period);
+      return `<div class="rule"></div><div class="signature-title">${label} TIP POOL</div>`+
+        row('Cash '+label,money(pool.cash))+row('Credit '+label,money(pool.credit))+row('Total '+label,money(pool.total))+
+        row('Employees '+label,pool.employeeCount===null?'Not recorded':String(pool.employeeCount))+
+        row('Tip per employee',share.text)+row('YOUR TIP '+label,own===null?'Not available':thermalReceiptMoney(own));
+    }).join('');
+    html=html.replace('<div class="total"><span>TOTAL PAID OUT</span>',detail+'<div class="rule"></div><div class="total"><span>TOTAL PAID OUT</span>');
+    html=html.replace('Total Tip Before Meal + Cash Tip<br>Before meal deduction; not an extra payout.','Combined Host / Cashier pool shares.');
+    return html.replace('Cash Tip is NOT included in Total Paid Out.','Includes Cash + Credit shares from AM, 2-4 and PM.');
+  };
+
+  const openDetail=window.openSmallReportDetail;
+  window.openSmallReportDetail=function(reportId){
+    const out=openDetail.apply(this,arguments),report=latestHourlyReports.find(row=>row.id===reportId);
+    if(!hc90ReportThreePools(report))return out;
+    const grid=$('smallReportDetailBody')?.querySelector('.sr-detail-grid');if(!grid||grid.querySelector('[data-hc90-detail]'))return out;
+    const anchor=grid.querySelector('.accent');
+    for(const period of ['AM','24','PM']){
+      const cell=document.createElement('div');cell.dataset.hc90Detail=period;
+      const amount=hc184TipAmount(report,period);cell.innerHTML='<span>Tip '+hc90PeriodLabel(period)+'</span><b>'+esc(amount===null?'Not available':fmtMoney(amount))+'</b>';
+      grid.insertBefore(cell,anchor);
+    }
+    return out;
+  };
+
+  // All three pool snapshots remain above the employee's own shares. Keep
+  // the established receipt/signature area below270pt, including wage lines
+  // inserted by the existing Manager/Owner Daily-PDF wrapper at60/47pt.
+  const pdf=hc184PdfReportContent;
+  hc184PdfReportContent=function(report,index,total){
+    if(!hc90ReportThreePools(report))return pdf.apply(this,arguments);
+    const text=hc185PdfText;
+    const box=(x,y,width,height,color)=>`${color} rg ${x} ${y} ${width} ${height} re f\n0 0 0 rg\n`;
+    const money=value=>value===null?'Not recorded':pdfMoney(value);
+    let content=box(0,704,612,88,'0.06 0.20 0.17')+'1 1 1 rg\n';
+    content+=text('F2',20,32,757,'FRED ZHANG TIP CALCULATOR');
+    content+=text('F1',11,32,734,'HOST / CASHIER - DAILY TIP REPORT');
+    content+=text('F1',10,32,716,'Work date: '+String(report.date||'-'));
+    content+=text('F1',10,580,716,`REPORT ${index+1} / ${total}`,130,true)+'0 0 0 rg\n';
+    let missing=false,rounded=false;
+    ['AM','24','PM'].forEach((period,periodIndex)=>{
+      const label=hc90PeriodLabel(period),pool=hc185SavedPoolPeriod(report,period),share=hc185PoolPerEmployee(pool),top=682-periodIndex*71;
+      missing ||= !pool.complete;rounded ||= share.rounding;
+      content+=box(32,top-66,548,66,'0.95 0.98 0.97');
+      content+=box(32,top-20,548,20,'0.10 0.34 0.27')+'1 1 1 rg\n';
+      content+=text('F2',12,44,top-14,label+' TIP POOL',520)+'0 0 0 rg\n';
+      const fields=[['Cash',money(pool.cash)],['Credit',money(pool.credit)],['Total',money(pool.total)],['Employees',pool.employeeCount===null?'Not recorded':String(pool.employeeCount)],['Tip / employee',share.text]];
+      fields.forEach(([field,value],fieldIndex)=>{
+        const x=44+fieldIndex*105;
+        content+=text('F1',9.5,x,top-35,field,100);
+        // A one-cent remainder is a range, not one long currency value.
+        // Stack its two endpoints if needed so large amounts remain complete.
+        const range=field==='Tip / employee'&&hc185PdfWidth('F2',12.5,value)>100?String(value).split(' - '):[];
+        if(range.length===2){content+=text('F2',11,x,top-46,range[0],100);content+=text('F2',11,x,top-60,range[1],100);}
+        else content+=text('F2',12.5,x,top-53,value,100);
+      });
+    });
+    content+=text('F1',9,32,459,missing?'Not recorded = unavailable saved pool detail; it is not a zero amount.':rounded?'Whole-cent rounding: some shares differ by $0.01. Your exact share is below.':'Pool values saved with this report. Your individual payout is shown below.');
+    content+='0.80 0.86 0.85 RG 0.65 w 32 450 m 580 450 l S\n0 0 0 RG\n';
+    content+=text('F2',10,32,432,'EMPLOYEE REPORT');
+    content+=text('F2',23,32,407,report.employeeDisplayName||report.employee||'Employee');
+    content+=text('F1',12,32,384,String(report.position||'Host / Cashier')+'  |  Shift: '+String(report.shift||'-'));
+    ['AM','24','PM'].forEach((period,i)=>{
+      const x=32+i*187,amount=hc184TipAmount(report,period);
+      content+=box(x,334,174,38,'0.96 0.97 0.98');
+      content+=text('F1',10.5,x+9,349,'Tip '+hc90PeriodLabel(period),55);
+      content+=text('F2',16,x+165,347,amount===null?'Not available':pdfMoney(amount),96,true);
+    });
+    content+=box(32,270,548,53,'0.88 0.95 0.92');
+    content+=text('F2',18,46,289,'TOTAL PAID OUT',285);
+    content+=text('F2',23,565,287,pdfMoney(smallReportPaidOut(report)),215,true);
+    content+=text('F1',9.5,32,253,'Tip AM + Tip 2-4 + Tip PM = Total Paid Out. Each share includes Cash + Credit.');
+    const work=fz72ReportWork(report);
+    work.sessions.forEach((session,i)=>{content+=text('F1',10,32,234-i*15,(session.label?session.label+' | ':'')+'Clock In: '+(session.start||'Not recorded')+' | Clock Out: '+(session.end||'Not recorded'));});
+    content+=text('F2',11,32,201,'TOTAL HOURS: '+work.hoursText);
+    content+=text('F2',12,32,181,'EMPLOYEE SIGNATURE');
+    content+='0.80 0.86 0.85 RG 0.65 w 32 91 548 77 re S\n0 0 0 RG\n';
+    content+=pdfSignatureCommands(report.pickupSignature,43,101,526,57);
+    if(!smallReportHasPickupSignature(report))content+=text('F1',12,242,127,'PENDING SIGNATURE',190);
+    content+=text('F2',10,32,74,smallReportHasPickupSignature(report)?'SIGNED':'NOT SIGNED');
+    content+=text('F1',8,32,38,'Generated '+new Date().toLocaleString()+' | '+ES_BUILD+' | Page '+(index+1));
+    return content;
+  };
+
+  const xls=es16DailyXlsBlob;
+  es16DailyXlsBlob=function(rows,group,date){
+    if(group!=='host-cashier'||!rows.some(hc90ReportThreePools))return xls.apply(this,arguments);
+    const safe=value=>String(value??'').replace(/[&<>\"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[char]));
+    const string=value=>{const text=String(value??'');return safe(/^[\s\u0000-\u001f]*[=+\-@]/.test(text)?"'"+text:text);};
+    const amount=value=>value===null?'<td class="text" x:str>Not available</td>':`<td class="money" x:num="${Number(value).toFixed(2)}">${Number(value).toFixed(2)}</td>`;
+    const signature=report=>{const svg=smallReportSignatureSvg(report.pickupSignature,240,86);return svg?'<td class="signature" x:str><img alt="Employee signature" width="240" height="86" src="data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg)))+'"><br>SIGNED</td>':'<td class="signature pending" x:str>PENDING SIGNATURE</td>';};
+    const columns=['Date','Employee','Shift','Tip AM','Tip 2-4','Tip PM','Total Paid Out','Signature'];
+    const body=rows.map((report,index)=>`<tr style="background:${index%2?'#edf4f8':'#ffffff'}"><td class="text" x:str>${string(report.date)}</td><td class="text" x:str><b>${string(report.employeeDisplayName||report.employee)}</b><br>${string(report.position)}</td><td class="text" x:str>${string(report.shift)}</td>`+
+      ['AM','24','PM'].map(period=>amount(period==='24'&&!hc90ReportThreePools(report)?null:hc184TipAmount(report,period))).join('')+amount(smallReportPaidOut(report))+signature(report)+'</tr>').join('');
+    const periodTotal=period=>rows.some(report=>period==='24'&&!hc90ReportThreePools(report)||hc184TipAmount(report,period)===null)?null:rows.reduce((sum,report)=>sum+Math.round(hc184TipAmount(report,period)*100),0)/100;
+    const paidTotal=rows.reduce((sum,report)=>sum+Math.round(smallReportPaidOut(report)*100),0)/100,signed=rows.filter(smallReportHasPickupSignature).length;
+    const totals=`<tr class="totals"><td x:str>TOTAL</td><td x:str>${rows.length} reports</td><td></td>`+['AM','24','PM'].map(period=>amount(periodTotal(period))).join('')+amount(paidTotal)+`<td x:str>${signed} of ${rows.length} signed</td></tr>`;
+    const html=`<!DOCTYPE html><html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"><title>Host Cashier Daily Report</title><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Host Cashier</x:Name><x:WorksheetOptions><x:PageSetup><x:Layout x:Orientation="Landscape"/></x:PageSetup><x:FreezePanes/><x:FrozenNoSplit/><x:SplitHorizontal>4</x:SplitHorizontal><x:TopRowBottomPane>4</x:TopRowBottomPane><x:ActivePane>2</x:ActivePane></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--><style>body,table,th,td{font-family:Arial,sans-serif;font-size:14pt}table{border-collapse:collapse}th,td{border:1px solid #bfd0dc;padding:12px 10px;vertical-align:middle}th{background:#175643;color:white;height:62px}.text{mso-number-format:"\\@";white-space:nowrap}.money{mso-number-format:"\\$#,##0.00;[Red]\\-\\$#,##0.00";text-align:right}.signature{text-align:center;min-width:260px;height:104px}.signature img{display:block}.pending{background:#fff8e4;color:#876323}.title{background:#175643;color:white;font-weight:bold}.subtitle{background:#dcebf2;font-weight:bold}.note{white-space:normal;background:#f4f8fb}.totals td{background:#dcece6;font-weight:bold;border-top:3px solid #23705c}</style></head><body><table><colgroup>${[115,250,125,150,150,150,185,280].map(width=>`<col width="${width}">`).join('')}</colgroup><thead><tr><td class="title" colspan="8" x:str>FRED ZHANG TIP CALCULATOR - DAILY REPORT</td></tr><tr><td class="subtitle" colspan="8" x:str>Host / Cashier - Work date: ${safe(date)} - ${rows.length} saved reports</td></tr><tr><td class="note" colspan="8" x:str>Saved AM, 2-4 and PM pool shares. Historical unrecorded splits remain Not available.</td></tr><tr>${columns.map(label=>'<th scope="col" x:str>'+label+'</th>').join('')}</tr></thead><tbody>${body}${totals}</tbody></table></body></html>`;
+    return new Blob(['\ufeff',html],{type:'application/vnd.ms-excel;charset=utf-8'});
+  };
+
+  // The previous review renderer runs in requestAnimationFrame. Queue after
+  // it so the new middle-period value cannot be erased by that prior callback.
+  const sign=hc15Sign;
+  hc15Sign=function(name){
+    const out=sign.apply(this,arguments);
+    requestAnimationFrame(()=>{
+      if(hc15Sig?.name!==name||!hc15Session)return;
+      let report;try{report=hc15Report(hc15View(hc15Session),name);}catch(error){return;}
+      if(!hc90ReportThreePools(report))return;
+      const review=$('hc1815Review');if(!review||review.querySelector('[data-hc90-review]'))return;
+      const cell=document.createElement('div');cell.className='es1815-review-item';cell.dataset.hc90Review='24';
+      cell.innerHTML='<span>Tip 2-4</span><b>'+esc(esMoney(report.hostCashierTip24))+'</b>';
+      const pm=[...review.children].find(child=>child.querySelector('span')?.textContent==='Tip PM');review.insertBefore(cell,pm||review.querySelector('.es1815-total'));
+    });
+    return out;
+  };
+})();
+
