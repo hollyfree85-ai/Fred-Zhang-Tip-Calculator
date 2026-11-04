@@ -4018,7 +4018,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18900",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18910",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -8716,6 +8716,12 @@ async function writeHourlyFinalForAccount(r,candidateId,submissionId){
       const draft=batchSnap.exists()?batchSnap.data().drafts?.[r.employee]:null;
       if(String(draft?.employeeSheetBusserCutoff88??'').trim()!==''||draft?.employeeSheetSalesInputs89?.version===1)throw new Error('This work account has separate Busser sales. Save it in Employee Sheet so the adjusted split is preserved.');
     }
+    // A legacy single-recipient editor cannot replace a pooled Bartender share.
+    if(String(r.position||'').toLowerCase()==='bartender'){
+      if(wasEditing&&before.bartenderPoolVersion91===1)throw new Error('This report uses a shared BAR pool. Save it in Employee Sheet.');
+      const barBatch=await transaction.get(doc(db,'hourlyV1Batches',r.date));
+      if(barBatch.exists()&&ES_PERIODS.some(cp=>barBatch.data().bar?.[cp]?.poolSplitVersion91===1))throw new Error('This work date uses shared BAR pools. Save the Bartender in Employee Sheet.');
+    }
     // Verify both links before any write. A stale report/submission ID must
     // never rename another work account's record or share its Money Ready row.
     const sourceId=submissionId||(wasEditing?before.sourceSubmissionId:'')||'';
@@ -10615,7 +10621,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.90';
+const ES_BUILD='ES1.8.91';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10698,7 +10704,7 @@ function esBarMask(row,route){
   return {barAM:['AM','DOUBLE',SHIFT_EARLY].includes(row.shift),bar24:['LONG','DOUBLE',SHIFT_MIDDLE].includes(row.shift)||(row.shift==='AM'&&!!route['2PM_4PM']),barPM:['PM','DOUBLE','LONG'].includes(row.shift)};
 }
 function esLinkSales(row,field,route){
-  // ES1.8.90: BAR checkpoints, Busser cutoff and final sales are independent
+  // ES1.8.91: BAR checkpoints, Busser cutoff and final sales are independent
   // inputs. Editing a checkpoint must never replace another input.
   return;
 }
@@ -10789,7 +10795,7 @@ s.date=date;s.team=rows.map(r=>r.name);s.drafts ||= {};hv1EnsureBarState(s);
   }
   // These are the same, unchanged BAR functions as the existing Team Board.
   hv1ApplyBarAutomation(s);
-  // ES1.8.90: legacy BAR automation still prepares its own checkpoints, but
+  // ES1.8.91: legacy BAR automation still prepares its own checkpoints, but
   // Grand Total belongs to the explicit sheet input on every Server shift.
   for(const row of rows)if(row.role==='Server'){
     const d=s.drafts[row.name];d.values.hGrandTotal=String(row.grand??'');
@@ -12130,7 +12136,7 @@ esCommit=async function(name,signature=null,expectedSignatureFingerprint=''){
     // Only sales are dependencies of BAR Received, never another worker's tips,
     // fees, meals or unfinished clocks. A server's own fees are row-isolated.
     if(row.role==='Bartender')for(const server of merge.rows)if(server.role==='Server'){
-      const affected=ES_PERIODS.some(cp=>route[cp]===name&&!hv1BarExcluded(cp,batch,server.name));if(!affected)continue;
+      const affected=ES_PERIODS.some(cp=>es91Receives(batch,cp,name)&&!hv1BarExcluded(cp,batch,server.name));if(!affected)continue;
       const p=esValidateSales({...server,busserTotalAM:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);if(p.length)throw new Error(server.name+' sales need review before calculating this bartender: '+p.join(' '));
     }
     const calculated=esCalculate(row,batch,before);
@@ -14991,7 +14997,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   const commit=esCommit;
   esCommit=async function(name,signature=null,expected=''){
     if(!(signature&&esSignature?.fzIncomplete&&esSignature.name===name))return commit.apply(this,arguments);
-    const s=esSession,row=s?.rows?.find(r=>r.name===name);if(!s||!row)throw new Error('Employee row not found.');const issues=esSignature.fzProblems||problems(name);const draft=await es16SaveDraft(name);es89RequireBusserCutoff(s.rows.find(current=>current.name===name));const calc={...(s.results[name]||esCalculate(row,s.working||esBuildBatch(s.baseBatch,s.rows,s.date,s.routing),esFindReport(s.reports,name))),date:s.date,employee:name,position:row.role,shift:row.shift,pickupSignature:signature,signatureStatus:'SIGNED',status:'incomplete_draft',fzIncompleteDraft:true,incompleteProblems:issues};
+    const s=esSession,row=s?.rows?.find(r=>r.name===name);if(!s||!row)throw new Error('Employee row not found.');const issues=esSignature.fzProblems||problems(name);const draft=await es16SaveDraft(name);es89RequireBusserCutoff(s.rows.find(current=>current.name===name));es91ReviewIncompleteSignature(s,name,signature,expected);const calc={...(s.results[name]||esCalculate(row,s.working||esBuildBatch(s.baseBatch,s.rows,s.date,s.routing),esFindReport(s.reports,name))),date:s.date,employee:name,position:row.role,shift:row.shift,pickupSignature:signature,signatureStatus:'SIGNED',status:'incomplete_draft',fzIncompleteDraft:true,incompleteProblems:issues};
     s.draftSaves ||= {};s.draftSaves[name]={...(s.draftSaves[name]||{}),row:esClone(row),pendingSignature:signature,pendingSignatureFingerprint:esFingerprint(calc),incompleteProblems:issues,savedAt:Date.now()};esPersistLocal();
     if(draft?.shared&&s.cloudReady&&es14IsOnline())try{const ref=doc(db,'hourlyV1Batches',s.date);await runTransaction(db,async tx=>{const snap=await tx.get(ref);if(!snap.exists())return;const raw=snap.data(),next=esClone(raw);next.drafts ||= {};next.drafts[name] ||= {};Object.assign(next.drafts[name],{employeeSheetPendingSignature:signature,employeeSheetPendingSignatureFingerprint:esFingerprint(calc),employeeSheetIncompleteProblems:issues,employeeSheetIncompleteProcessedAt:Date.now()});tx.set(ref,{...next,updatedAt:serverTimestamp(),updatedByUid:s.uid,updatedBy:currentProfile.displayName||currentProfile.username||''});});}catch(e){console.warn('Incomplete signed draft cloud signature:',e);}
     return {report:calc,incompleteDraft:true,draft};
@@ -15687,7 +15693,7 @@ function fz72PdfStreams(streams){
   };
 })();
 
-/* ES1.8.90 — Independent BAR checkpoints and required Busser cutoff.
+/* ES1.8.91 — Independent BAR checkpoints and required Busser cutoff.
  * Busser uses only its cumulative cutoff and the explicit Grand Total.
  * Blank is an unfinished draft, never an inferred BAR checkpoint.
  * The underlying BAR, Paid Tip and payout formulas remain unchanged.
@@ -15826,7 +15832,7 @@ function es88BusserPercentText(value){return Number(Number(value||0).toFixed(3))
   };
 })();
 
-/* ES1.8.90 — Preserve the four sheet inputs through the legacy draft bridge.
+/* ES1.8.91 — Preserve the four sheet inputs through the legacy draft bridge.
  * This metadata records inputs only. Saved historical amounts are never
  * recalculated until their row is explicitly completed and saved again.
  */
@@ -15892,7 +15898,7 @@ function es89RequireBusserCutoff(row){
   };
 })();
 
-/* ES1.8.90 — Host/Cashier AM, 2–4, PM pools.
+/* ES1.8.91 — Host/Cashier AM, 2–4, PM pools.
  * Original Server/Bartender/Busser and the original two-pool allocator stay
  * unchanged. Each new pool delegates to that same whole-cent allocator.
  */
@@ -16037,7 +16043,7 @@ function hc90Activate(data){
   document.addEventListener('click',event=>{const old=event.target.closest?.('#hostCashierTip');if(!old)return;event.preventDefault();event.stopImmediatePropagation();if(esAllowed())window.fzOpenHostCashier();},true);
 })();
 
-/* ES1.8.90 — Host/Cashier three-period saved-report presentation only.
+/* ES1.8.91 — Host/Cashier three-period saved-report presentation only.
  * Append after the90 model wrappers. Legacy Host reports and every
  * Server/Bartender path keep their original rendering and export functions.
  */
@@ -16202,6 +16208,162 @@ function hc90PeriodLabel(period){return period==='24'?'2-4':period;}
       const pm=[...review.children].find(child=>child.querySelector('span')?.textContent==='Tip PM');review.insertBefore(cell,pm||review.querySelector('.es1815-total'));
     });
     return out;
+  };
+})();
+
+/* ES1.8.91 — Divide each existing BAR Received pool among its Bartenders.
+ * Scalar routing and all Server fee/checkpoint rules stay unchanged. Pool
+ * membership is independent metadata inside the already persisted bar map.
+ */
+function es91Groups(rows){
+  const groups=Object.fromEntries(ES_PERIODS.map(cp=>[cp,esPeriodCandidates(rows,cp).map(row=>row.name)]));
+  if(!groups['2PM_4PM'].length)groups['2PM_4PM']=esPeriodCandidates(rows,'AM').filter(row=>row.shift!==SHIFT_EARLY).map(row=>row.name);
+  for(const cp of ES_PERIODS){
+    groups[cp]=[...new Set(groups[cp])].sort((a,b)=>a.localeCompare(b));
+    const people=new Map();
+    for(const name of groups[cp]){
+      const key=tt15Key(tt15CanonicalName(name));
+      if(people.has(key)&&people.get(key)!==name)throw new Error(tt15Label(name)+' has overlapping Bartender assignments in '+bartenderPeriodLabel(cp)+'. Use one Bartender assignment for that period.');
+      people.set(key,name);
+    }
+  }
+  return groups;
+}
+function es91Members(batch,cp){
+  const period=batch?.bar?.[cp];
+  return period?.poolSplitVersion91===1&&Array.isArray(period.recipients91)?period.recipients91:[];
+}
+function es91Receives(batch,cp,name){
+  return batch?.bar?.[cp]?.poolSplitVersion91===1?es91Members(batch,cp).includes(name):hv1BarRecipient(cp,batch)===name;
+}
+function es91Allocate(pool,names){
+  const sorted=[...new Set(names)].sort((a,b)=>a.localeCompare(b)),cents=Math.round((Number(pool)||0)*100+1e-7),n=sorted.length,base=n?Math.floor(cents/n):0,extra=n?cents%n:0;
+  return Object.fromEntries(sorted.map((name,i)=>[name,(base+(i<extra?1:0))/100]));
+}
+function es91Snapshot(row,batch){
+  const periods=[];
+  for(const checkpoint of ES_PERIODS){
+    const bartenders=[...es91Members(batch,checkpoint)].sort((a,b)=>a.localeCompare(b));
+    if(!bartenders.includes(row.name))continue;
+    // Preserve per-Server cent rounding, exclusions and cumulative deductions.
+    const poolAmount=hv1BarCheckpointTotals(checkpoint,batch).finalReceived;
+    periods.push({checkpoint,poolAmount,bartenderCount:bartenders.length,bartenders,amount:es91Allocate(poolAmount,bartenders)[row.name]||0});
+  }
+  return {version:1,periods};
+}
+(function installBartenderPools91(){
+  const build=esBuildBatch;
+  esBuildBatch=function(source,rows,...args){
+    const groups=es91Groups(rows),batch=build.call(this,source,rows,...args);
+    for(const cp of ES_PERIODS){batch.bar[cp].poolSplitVersion91=1;batch.bar[cp].recipients91=groups[cp];}
+    return batch;
+  };
+  const validateTeam=tt15TeamValidate;
+  tt15TeamValidate=function(rows,...args){
+    const result=validateTeam.call(this,rows,...args);
+    const work=tt15AssignmentWorkRows(rows).map(row=>({...row,name:row.workName}));es91Groups(work);return result;
+  };
+  // Different people in the same shift are a normal pooled team, not a
+  // duplicate assignment requiring an extra confirmation dialog.
+  tt15ConfirmDuplicateBartenders=async function(){return true;};
+  const calculate=esCalculate;
+  esCalculate=function(row,batch,oldReport=null){
+    const pooled=row.role==='Bartender'&&ES_PERIODS.some(cp=>batch?.bar?.[cp]?.poolSplitVersion91===1);
+    if(!pooled){const r=calculate.call(this,row,batch,oldReport);r.bartenderPoolVersion91=null;r.bartenderPoolSplit91=null;return r;}
+    const snapshot=es91Snapshot(row,batch),byPeriod=new Map(snapshot.periods.map(period=>[period.checkpoint,period]));
+    const recipient=hv1BarRecipient,received=hv1BarReceived;
+    // The frozen calculator gets this worker's share at its original input
+    // boundary. It then runs the unchanged Before Meal, Hourly Adjustment,
+    // Grand Total Tip and Paid Out formulas in their normal order.
+    hv1BarRecipient=function(cp,source){return source===batch?(byPeriod.has(cp)?row.name:''):recipient(cp,source);};
+    hv1BarReceived=function(cp,source){return source===batch?(byPeriod.get(cp)?.amount||0):received(cp,source);};
+    let report;
+    try{report=calculate.call(this,row,batch,oldReport);}
+    finally{hv1BarRecipient=recipient;hv1BarReceived=received;}
+    report.bartenderPoolVersion91=1;report.bartenderPoolSplit91=snapshot;
+    return report;
+  };
+  const fingerprint=esFingerprint;
+  esFingerprint=function(report){
+    const base=fingerprint(report),snapshot=report?.bartenderPoolSplit91;
+    if(String(report?.position||report?.role||'').toLowerCase()!=='bartender'||report?.bartenderPoolVersion91!==1||snapshot?.version!==1)return base;
+    const periods=(snapshot.periods||[]).map(p=>({checkpoint:String(p.checkpoint),poolAmount:es14MoneyText(p.poolAmount),amount:es14MoneyText(p.amount),bartenderCount:Number(p.bartenderCount),bartenders:[...(p.bartenders||[])].sort((a,b)=>a.localeCompare(b))})).sort((a,b)=>ES_PERIODS.indexOf(a.checkpoint)-ES_PERIODS.indexOf(b.checkpoint));
+    return base+'|barPool91:'+es182StableJson({version:1,periods});
+  };
+  const forPosition=reportForWorkPosition;
+  reportForWorkPosition=function(report,...args){
+    const row=forPosition.call(this,report,...args);
+    if(String(row?.position||row?.role||'').toLowerCase()!=='bartender'&&(row?.bartenderPoolVersion91!=null||row?.bartenderPoolSplit91!=null))return {...row,bartenderPoolVersion91:null,bartenderPoolSplit91:null};
+    return row;
+  };
+  const exportRows=reportRowsForExport;
+  reportRowsForExport=function(...args){
+    const rows=exportRows.apply(this,args),sources=latestHourlyReports.map(reportForWorkPosition),byId=new Map(sources.filter(r=>r.id).map(r=>[String(r.id),r]));
+    return rows.map((row,index)=>{
+      const source=byId.get(String(row.id||''))||sources[index];
+      return source?.bartenderPoolVersion91===1?{...row,bartenderPoolVersion91:1,bartenderPoolSplit91:esClone(source.bartenderPoolSplit91)}:row;
+    });
+  };
+  const input=esInput;
+  esInput=function(row,field,...args){
+    if(row.role==='Bartender'&&['barAM','bar24','barPM'].includes(field)){
+      const cp=field==='barAM'?'AM':field==='bar24'?'2PM_4PM':'PM',period=esSession?.results?.[row.name]?.bartenderPoolSplit91?.periods?.find(p=>p.checkpoint===cp);
+      if(esSession?.working?.bar?.[cp]?.poolSplitVersion91===1)return '<span class="es-auto">'+(period?'✓ Receives · '+period.bartenderCount+' bartender'+(period.bartenderCount===1?'':'s'):'—')+'</span>';
+    }
+    return input.call(this,row,field,...args);
+  };
+  const output=esOutput;
+  esOutput=function(row,field,...args){
+    const report=esSession?.results?.[row.name];
+    if(field==='received'&&row.role==='Bartender'&&report?.bartenderPoolVersion91===1){
+      const parts=report.bartenderPoolSplit91.periods.map(p=>'BAR '+esc(bartenderPeriodLabel(p.checkpoint))+': '+esc(esMoney(p.amount))+'<small>Pool '+esc(esMoney(p.poolAmount))+' ÷ '+p.bartenderCount+' bartender'+(p.bartenderCount===1?'':'s')+'</small>');
+      return '<strong>'+esMoney(report.bartenderBarTipReceived)+'</strong><span class="es-received-parts es91-shares">'+(parts.join('<br>')||'No eligible BAR period')+'</span>';
+    }
+    return output.call(this,row,field,...args);
+  };
+  const routing=esRenderRouting;
+  esRenderRouting=function(...args){const out=routing.apply(this,args);es91RenderPools();return out;};
+  const update=esUpdateComputed;
+  esUpdateComputed=function(...args){const out=update.apply(this,args);es91PaintPools();return out;};
+})();
+function es91RenderPools(){
+  const s=esSession,host=$('esBarRoutes');if(!s?.ready||!host)return;
+  const candidates=esPeriodCandidates(s.rows,'2PM_4PM'),selected=s.routing['2PM_4PM']||'',choice=selected||candidates[0]?.name||'';
+  host.innerHTML=ES_PERIODS.map(cp=>'<div class="es91-pool" data-es91-pool="'+cp+'"><b>BAR '+esc(bartenderPeriodLabel(cp))+' · <span data-es91-count></span></b><strong data-es91-total></strong><div data-es91-members></div></div>').join('')
+    +(candidates.length?'<label class="es91-checkpoint">BAR 2–4 sales<select data-es-route="2PM_4PM">'+esOption('','Included in AM checkpoint',selected)+esOption(choice,'Separate 2–4 checkpoint',selected)+'</select></label>':'');
+  es91PaintPools();
+}
+function es91PaintPools(){
+  const s=esSession;if(!s?.ready||!$('esBarRoutes'))return;
+  const batch=s.working;if(!batch)return;
+  for(const cp of ES_PERIODS){
+    const card=$('esBarRoutes').querySelector('[data-es91-pool="'+cp+'"]');if(!card)continue;
+    const names=es91Members(batch,cp),pool=hv1BarCheckpointTotals(cp,batch).finalReceived,shares=es91Allocate(pool,names);
+    const count=card.querySelector('[data-es91-count]'),total=card.querySelector('[data-es91-total]'),members=card.querySelector('[data-es91-members]');
+    if(count)count.textContent=names.length+' bartender'+(names.length===1?'':'s');
+    if(total)total.textContent=esMoney(pool);
+    if(members)members.textContent=names.map(name=>tt15Label(name)+' '+esMoney(shares[name])).join(' · ')||'No bartender assigned';
+  }
+}
+
+function es91ReviewIncompleteSignature(session,name,signature,expected){
+  const report=session?.results?.[name];
+  if(signature&&expected&&report?.bartenderPoolVersion91===1&&esFingerprint(report)!==expected){
+    const error=new Error('BAR pool or amounts changed while signing. Review the updated Bartender share and sign again.');error.esAmountsChanged=true;throw error;
+  }
+}
+
+/* ES1.8.91 — Fit the signature title between the existing payout and signature
+ * boxes on new pooled Bartender reports only. All figures, box coordinates,
+ * legacy reports and the protected original renderer remain unchanged.
+ */
+(function installBartenderPoolPdfFit91(){
+  const render=pdfReportContent;
+  pdfReportContent=function(report,...args){
+    const content=render.call(this,report,...args);
+    if(!isBartenderReport(report)||report?.bartenderPoolVersion91!==1||report?.bartenderPoolSplit91?.version!==1)return content;
+    return content.replace('BT /F2 9 Tf 380 108 Td (EMPLOYEE SIGNATURE) Tj ET',
+      'BT /F2 9 Tf 380 103 Td (EMPLOYEE SIGNATURE) Tj ET');
   };
 })();
 
