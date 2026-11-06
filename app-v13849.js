@@ -4018,7 +4018,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18910",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18920",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10621,7 +10621,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.91';
+const ES_BUILD='ES1.8.92';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10704,7 +10704,7 @@ function esBarMask(row,route){
   return {barAM:['AM','DOUBLE',SHIFT_EARLY].includes(row.shift),bar24:['LONG','DOUBLE',SHIFT_MIDDLE].includes(row.shift)||(row.shift==='AM'&&!!route['2PM_4PM']),barPM:['PM','DOUBLE','LONG'].includes(row.shift)};
 }
 function esLinkSales(row,field,route){
-  // ES1.8.91: BAR checkpoints, Busser cutoff and final sales are independent
+  // ES1.8.92: BAR checkpoints, Busser cutoff and final sales are independent
   // inputs. Editing a checkpoint must never replace another input.
   return;
 }
@@ -10795,7 +10795,7 @@ s.date=date;s.team=rows.map(r=>r.name);s.drafts ||= {};hv1EnsureBarState(s);
   }
   // These are the same, unchanged BAR functions as the existing Team Board.
   hv1ApplyBarAutomation(s);
-  // ES1.8.91: legacy BAR automation still prepares its own checkpoints, but
+  // ES1.8.92: legacy BAR automation still prepares its own checkpoints, but
   // Grand Total belongs to the explicit sheet input on every Server shift.
   for(const row of rows)if(row.role==='Server'){
     const d=s.drafts[row.name];d.values.hGrandTotal=String(row.grand??'');
@@ -15693,7 +15693,7 @@ function fz72PdfStreams(streams){
   };
 })();
 
-/* ES1.8.91 — Independent BAR checkpoints and required Busser cutoff.
+/* ES1.8.92 — Independent BAR checkpoints and required Busser cutoff.
  * Busser uses only its cumulative cutoff and the explicit Grand Total.
  * Blank is an unfinished draft, never an inferred BAR checkpoint.
  * The underlying BAR, Paid Tip and payout formulas remain unchanged.
@@ -15832,7 +15832,7 @@ function es88BusserPercentText(value){return Number(Number(value||0).toFixed(3))
   };
 })();
 
-/* ES1.8.91 — Preserve the four sheet inputs through the legacy draft bridge.
+/* ES1.8.92 — Preserve the four sheet inputs through the legacy draft bridge.
  * This metadata records inputs only. Saved historical amounts are never
  * recalculated until their row is explicitly completed and saved again.
  */
@@ -15898,7 +15898,7 @@ function es89RequireBusserCutoff(row){
   };
 })();
 
-/* ES1.8.91 — Host/Cashier AM, 2–4, PM pools.
+/* ES1.8.92 — Host/Cashier AM, 2–4, PM pools.
  * Original Server/Bartender/Busser and the original two-pool allocator stay
  * unchanged. Each new pool delegates to that same whole-cent allocator.
  */
@@ -16043,7 +16043,7 @@ function hc90Activate(data){
   document.addEventListener('click',event=>{const old=event.target.closest?.('#hostCashierTip');if(!old)return;event.preventDefault();event.stopImmediatePropagation();if(esAllowed())window.fzOpenHostCashier();},true);
 })();
 
-/* ES1.8.91 — Host/Cashier three-period saved-report presentation only.
+/* ES1.8.92 — Host/Cashier three-period saved-report presentation only.
  * Append after the90 model wrappers. Legacy Host reports and every
  * Server/Bartender path keep their original rendering and export functions.
  */
@@ -16211,7 +16211,7 @@ function hc90PeriodLabel(period){return period==='24'?'2-4':period;}
   };
 })();
 
-/* ES1.8.91 — Divide each existing BAR Received pool among its Bartenders.
+/* ES1.8.92 — Divide each existing BAR Received pool among its Bartenders.
  * Scalar routing and all Server fee/checkpoint rules stay unchanged. Pool
  * membership is independent metadata inside the already persisted bar map.
  */
@@ -16353,7 +16353,7 @@ function es91ReviewIncompleteSignature(session,name,signature,expected){
   }
 }
 
-/* ES1.8.91 — Fit the signature title between the existing payout and signature
+/* ES1.8.92 — Fit the signature title between the existing payout and signature
  * boxes on new pooled Bartender reports only. All figures, box coordinates,
  * legacy reports and the protected original renderer remain unchanged.
  */
@@ -16364,6 +16364,53 @@ function es91ReviewIncompleteSignature(session,name,signature,expected){
     if(!isBartenderReport(report)||report?.bartenderPoolVersion91!==1||report?.bartenderPoolSplit91?.version!==1)return content;
     return content.replace('BT /F2 9 Tf 380 108 Td (EMPLOYEE SIGNATURE) Tj ET',
       'BT /F2 9 Tf 380 103 Td (EMPLOYEE SIGNATURE) Tj ET');
+  };
+})();
+
+/* ES1.8.92 — Live Host/Cashier membership always follows three periods.
+ * Staff eligibility does not depend on a money input or an old policy flag.
+ * Viewing is read-only; the policy is persisted with the next explicit edit,
+ * draft Save or final Save/Sign. Archived reports keep their saved figures.
+ */
+function hc92EnsurePolicy(session=hc15Session){
+  if(!session||session!==hc15Session||!esAllowed()||session.uid!==currentUser?.uid)return false;
+  if(hc90Three(session.data))return false;
+  const key=hc15Field('','hostCashierPoolVersion');session.edits ||= {};
+  if(hc15Equal(key,session.edits[key]?.local,'3'))return false;
+  session.edits[key]={base:tt15Copy(session.edits[key]?.base??hc15Get(session.data,key)),local:'3'};
+  hc15KeepLocal(session);return true;
+}
+(function installHostLivePeriods92(){
+  const strictMembership=hc90Membership;
+  hc90Membership=function(data){
+    const rows=data?.todayTeamAssignments;
+    if(!data?.__hc74Preview||!Array.isArray(rows)||rows.length<=7)return strictMembership(data);
+    // An unfinished eighth row must stay editable. Validate each assignment's
+    // eligibility for display; Apply/final committed reads keep the strict cap.
+    const members={am:[],middle:[],pm:[]};
+    for(const row of rows){
+      const part=strictMembership({...data,todayTeamAssignments:[row]});
+      for(const key of Object.keys(members))for(const name of part[key])if(!members[key].includes(name))members[key].push(name);
+    }
+    return members;
+  };
+  const view=hc15View;
+  hc15View=function(...args){return hc90Activate(hc74AssignmentData(view.apply(this,args),true));};
+  const set=hc15Set;
+  hc15Set=function(name,field,value){
+    const session=hc15Session;
+    if(session&&!session.busy&&!name&&(TT15_POOLS.includes(field)||field.startsWith('creditAccounts')))hc92EnsurePolicy(session);
+    return set.call(this,name,field,value);
+  };
+  const commit=hc15Commit;
+  hc15Commit=async function(...args){hc92EnsurePolicy();return commit.apply(this,args);};
+  const saveDraft=hc16SaveDraft;
+  hc16SaveDraft=async function(...args){hc92EnsurePolicy();return saveDraft.apply(this,args);};
+  const update=hc15UpdateValues;
+  hc15UpdateValues=function(...args){
+    const result=update.apply(this,args),note=$('hc90Policy');
+    if(note)note.textContent='AM: AM + 2–4 · Long: 2–4 + PM · PM: PM · Double: all three. Staff counts follow shifts, including $0 pools.';
+    return result;
   };
 })();
 
