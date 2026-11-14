@@ -4018,7 +4018,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18920",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18930",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -7474,7 +7474,7 @@ function smallReportHtmlXlsBlob(rows){
         <th>Date</th><th>Employee</th><th>Shift</th>
         <th>Clock In 1</th><th>Clock Out 1</th><th>Clock In 2</th><th>Clock Out 2</th>
         <th>Total Hours</th><th>Paid Tips</th><th>Tip Card Fee</th>
-        <th>Busser AM</th><th>Busser PM</th><th>Busser Total</th><th>Bar Tip Out / Received</th>
+        <th>Busser AM</th><th>${rows.some(r=>es93Snapshot(r))?'Busser after AM':'Busser PM'}</th><th>Busser Total</th><th>Bar Tip Out / Received</th>
         <th>Total Tip Before Meal</th><th>Cash Tip</th><th>Meal</th><th>Accepted Hourly Adjustment</th><th>Total Paid Out</th><th>Grand Total (Total Before Meal + Cash Tip)</th><th>Signature</th>
       </tr></thead>
       <tbody>${body}</tbody>
@@ -10346,7 +10346,7 @@ initMonthlyReportUi();
 
   monthlyReportHeaderHtml=function(){
     return `<tr><th>Name</th><th>Shift</th><th>Position</th><th>Total Hours</th><th>Paid Tip</th><th>Cash Tip</th><th>Paid Tip Before Meal</th>
-      <th>Busser Tip Out AM</th><th>Busser Tip Out PM</th><th>Bar Tip Out</th><th>Bar Tip Out Received</th><th>Sales</th><th>Hourly Adjustment</th></tr>`;
+      <th>Busser Tip Out AM</th><th>${monthlyReportFilteredReports().some(r=>es93Snapshot(r))?'Busser after AM':'Busser Tip Out PM'}</th><th>Bar Tip Out</th><th>Bar Tip Out Received</th><th>Sales</th><th>Hourly Adjustment</th></tr>`;
   };
 
   monthlyReportTableRowsHtml=function(rows){
@@ -10471,7 +10471,7 @@ initMonthlyReportUi();
     ];
     const right=[
       ["Busser Tip Out AM",pdfMoney(summary.busserAM).replace("$ ","$"),false],
-      ["Busser Tip Out PM",pdfMoney(summary.busserPM).replace("$ ","$"),false],
+      [monthlyReportFilteredReports().some(r=>es93Snapshot(r))?'Busser after AM':'Busser Tip Out PM',pdfMoney(summary.busserPM).replace("$ ","$"),false],
       ["Bar Tip Out",pdfMoney(summary.barOut).replace("$ ","$"),false],
       ["Bar Tip Out Received",pdfMoney(summary.barReceived).replace("$ ","$"),false],
       ["Hourly Adjustment",pdfMoney(summary.adjustment).replace("$ ","$"),false]
@@ -10621,7 +10621,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.92';
+const ES_BUILD='ES1.8.93';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -10704,7 +10704,7 @@ function esBarMask(row,route){
   return {barAM:['AM','DOUBLE',SHIFT_EARLY].includes(row.shift),bar24:['LONG','DOUBLE',SHIFT_MIDDLE].includes(row.shift)||(row.shift==='AM'&&!!route['2PM_4PM']),barPM:['PM','DOUBLE','LONG'].includes(row.shift)};
 }
 function esLinkSales(row,field,route){
-  // ES1.8.92: BAR checkpoints, Busser cutoff and final sales are independent
+  // ES1.8.93: BAR checkpoints, Busser cutoff and final sales are independent
   // inputs. Editing a checkpoint must never replace another input.
   return;
 }
@@ -10795,7 +10795,7 @@ s.date=date;s.team=rows.map(r=>r.name);s.drafts ||= {};hv1EnsureBarState(s);
   }
   // These are the same, unchanged BAR functions as the existing Team Board.
   hv1ApplyBarAutomation(s);
-  // ES1.8.92: legacy BAR automation still prepares its own checkpoints, but
+  // ES1.8.93: legacy BAR automation still prepares its own checkpoints, but
   // Grand Total belongs to the explicit sheet input on every Server shift.
   for(const row of rows)if(row.role==='Server'){
     const d=s.drafts[row.name];d.values.hGrandTotal=String(row.grand??'');
@@ -11928,11 +11928,12 @@ function es14Patch(baseRows,editedRows,remoteRows,dirty,route,skipInvalid=true){
       if(changes.__new){target=esDefaults(edited.name,'');rows.push(target);applied[edited.name]={__new:true};}
       else{conflicts.push(es14Conflict(edited.name,'__removed','present','keep row','removed'));continue;}
     }
-    const salesErrors=esValidateSales({...edited,busserTotalAM:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);
+    const salesErrors=esValidateSales({...edited,busserTotalAM:'',busserTotal24:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);
     for(const field of ES_FIELDS){
       if(!changes[field]&&!changes.__new)continue;
       const value=ES_MONEY.includes(field)&&es14MoneyValid(edited[field],field)?es14MoneyText(edited[field]):edited[field];
       if(skipInvalid&&field==='busserTotalAM'&&es88BusserErrors(edited).length){skipped.push({name:edited.name,field});continue;}
+      if(skipInvalid&&['busserTotalAM','busserTotal24'].includes(field)&&es93BusserErrors(edited).length){skipped.push({name:edited.name,field});continue;}
       if(skipInvalid&&((ES_MONEY.includes(field)&&!es14MoneyValid(value,field))||(['totalAM','total24','grand'].includes(field)&&salesErrors.length))){skipped.push({name:edited.name,field});continue;}
       const original=base?.[field]??esDefaults(edited.name,'')[field];
       if(base&&es14Same(field,value,original))continue; // No remaining local edit.
@@ -11943,6 +11944,18 @@ function es14Patch(baseRows,editedRows,remoteRows,dirty,route,skipInvalid=true){
       }
       if(!es14Same(field,target[field],value)){target[field]=value;(applied[edited.name] ||= {})[field]=true;}
     }
+  }
+  // Two individually valid edits can form an invalid pair against fresh data.
+  // Keep only the affected Busser/Grand edits local; clocks and BAR checkpoints
+  // can still sync. Final Save validates the complete merged row separately.
+  if(skipInvalid)for(const row of rows){
+    const fields=applied[row.name],remote=remoteRows.find(r=>r.name===row.name);
+    if(!fields||!es93BusserErrors(row).length)continue;
+    for(const field of ['busserTotalAM','busserTotal24','grand']){
+      if(!fields[field]||!es93BusserErrors(row).length)continue;
+      row[field]=remote?.[field]??'';delete fields[field];skipped.push({name:row.name,field});
+    }
+    if(!Object.keys(fields).length)delete applied[row.name];
   }
   return {rows,applied,conflicts,skipped};
 }
@@ -12047,8 +12060,8 @@ function es14HasPublishable(s){
   const conflicts=s.conflicts||[];
   for(const row of s.rows){const changes=s.dirty[row.name];if(!changes)continue;
     if(changes.__new&&!s.baseRows.some(r=>r.name===row.name))return true;
-    const salesErrors=esValidateSales({...row,busserTotalAM:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},s.routing,false);
-    for(const f of ES_FIELDS)if(changes[f]&&!conflicts.some(c=>c.name===row.name&&c.field===f)&&(!ES_MONEY.includes(f)||es14MoneyValid(row[f],f))&&(!['grand','totalAM','total24'].includes(f)||!salesErrors.length)&&(f!=='busserTotalAM'||!es88BusserErrors(row).length))return true;
+    const salesErrors=esValidateSales({...row,busserTotalAM:'',busserTotal24:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},s.routing,false);
+    for(const f of ES_FIELDS)if(changes[f]&&!conflicts.some(c=>c.name===row.name&&c.field===f)&&(!ES_MONEY.includes(f)||es14MoneyValid(row[f],f))&&(!['grand','totalAM','total24'].includes(f)||!salesErrors.length)&&(f!=='busserTotalAM'||!es88BusserErrors(row).length)&&(!['busserTotalAM','busserTotal24','grand'].includes(f)||!es93BusserErrors(row).length))return true;
   }
   return ES_PERIODS.some(cp=>(s.routing[cp]||'')!==(s.baseRouting[cp]||'')&&!conflicts.some(c=>c.name==='BAR routing'&&c.field===cp));
 }
@@ -12137,7 +12150,7 @@ esCommit=async function(name,signature=null,expectedSignatureFingerprint=''){
     // fees, meals or unfinished clocks. A server's own fees are row-isolated.
     if(row.role==='Bartender')for(const server of merge.rows)if(server.role==='Server'){
       const affected=ES_PERIODS.some(cp=>es91Receives(batch,cp,name)&&!hv1BarExcluded(cp,batch,server.name));if(!affected)continue;
-      const p=esValidateSales({...server,busserTotalAM:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);if(p.length)throw new Error(server.name+' sales need review before calculating this bartender: '+p.join(' '));
+      const p=esValidateSales({...server,busserTotalAM:'',busserTotal24:'',paid:'0',cardFee:'0',cash:'0',meal:'0'},route,false);if(p.length)throw new Error(server.name+' sales need review before calculating this bartender: '+p.join(' '));
     }
     const calculated=esCalculate(row,batch,before);
     if(signature&&expectedSignatureFingerprint!==esFingerprint(calculated)){
@@ -13436,7 +13449,7 @@ function es16DailyXlsBlob(rows,group,date){
     ['Clock In 2','text',r=>smallReportClockFields(r).in2,130],['Clock Out 2','text',r=>smallReportClockFields(r).out2,130],
     ['Total Hours','number',r=>r.totalHoursWork??r.totalHours??0,130],['Paid Tips','money',r=>r.paidTip,155],
     ['Tip Card Fee','money',r=>r.payCardTipFee??r.cardFee,155],['Busser AM','money',r=>r.busserTipOutAM,150],
-    ['Busser PM','money',r=>r.busserTipOutPM,150],['Busser Total','money',r=>r.busserTipOut,155],
+    [rows.some(r=>es93Snapshot(r))?'Busser after AM':'Busser PM','money',r=>r.busserTipOutPM,150],['Busser Total','money',r=>r.busserTipOut,155],
     ['Bar Tip Out / Received','money',r=>smallReportBarAmount(r),195],
     ['Total Tip Before Meal','money',r=>r.totalBeforeMeal,205],['Cash Tip','money',r=>r.cashTip,150],['Meal','money',r=>r.meal,150],
     ['Accepted Hourly Adjustment','money',r=>acceptedHourlyAdjustment(r),205],
@@ -13585,6 +13598,7 @@ function es87PdfTableBlob(savedRows,date){
     stream+=text('F1',12,14,pageHeight-46,'PDF TABLE | Server / Bartender | Work date: '+date+' | '+rows.length+' saved reports | All amounts USD','1 1 1');
     stream+=rect(14,tableTop-headerHeight,tableWidth,headerHeight,'0.10 0.27 0.35');
     ES87_TABLE_HEADERS.forEach((label,i)=>{
+      if(i===6&&savedRows.some(r=>es93Snapshot(r)))label='Busser after AM';
       const lines=wrap(label,widths[i]-10,'F2',12);
       lines.forEach((s,j)=>{stream+=text('F2',12,xs[i]+5,tableTop-17-j*14,s,'1 1 1');});
     });
@@ -14703,7 +14717,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
       }
     }
   }
-  function table(rows){const t=totals(rows),row=r=>`<tr><td>${escHtml(r.date)}</td><td>${escHtml(r.shift)}</td><td>${escHtml(r.position)}</td>${keys.map(k=>`<td>${money(r[k])}</td>`).join('')}</tr>`;return `<div class="fz186-scroll"><table class="fz186-table"><thead><tr><th>Date</th><th>Shift</th><th>Position</th><th>Sales</th><th>Paid Tip</th><th>Card Fee</th><th>Busser AM</th><th>Busser PM</th><th>Bar Out</th><th>Bar Received</th><th>Cash Tip</th><th>Meal</th><th>Adjustment</th><th>Before Meal</th><th>Paid Out</th><th>Grand Tip</th></tr></thead><tbody>${rows.map(row).join('')}</tbody><tfoot>${row(t)}</tfoot></table></div>`;}
+  function table(rows){const t=totals(rows),row=r=>`<tr><td>${escHtml(r.date)}</td><td>${escHtml(r.shift)}</td><td>${escHtml(r.position)}</td>${keys.map(k=>`<td>${money(r[k])}</td>`).join('')}</tr>`;return `<div class="fz186-scroll"><table class="fz186-table"><thead><tr><th>Date</th><th>Shift</th><th>Position</th><th>Sales</th><th>Paid Tip</th><th>Card Fee</th><th>Busser AM</th><th>${(latestHourlyReports||[]).some(r=>es93Snapshot(r))?'Busser after AM':'Busser PM'}</th><th>Bar Out</th><th>Bar Received</th><th>Cash Tip</th><th>Meal</th><th>Adjustment</th><th>Before Meal</th><th>Paid Out</th><th>Grand Tip</th></tr></thead><tbody>${rows.map(row).join('')}</tbody><tfoot>${row(t)}</tfoot></table></div>`;}
   async function render(){const host=document.getElementById('fz186DailyDetail');if(!host)return;const {from,to,employee}=monthlyReportRange();if(!employee){detailRows=[];host.innerHTML='<div class="notice">Choose one Employee to see the daily breakdown.</div>';return;}if(!validDate(from)||!validDate(to)||from>to){detailRows=[];host.innerHTML='<div class="notice danger">Choose a valid Start Date and End Date.</div>';return;}const token=++detailToken;host.innerHTML='<div class="notice">Loading finalized daily reports from server…</div>';try{const all=await fetchRange(from,to);if(token!==detailToken)return;const rows=aggregate(all.filter(r=>monthlyReportCanonicalPerson(r)===canonicalEmployeeName(employee).split(' · ')[0].trim()));detailRows=rows;if(!rows.length){host.innerHTML='<div class="notice">No finalized Daily Reports found for '+escHtml(employee)+' in this period.</div>';return;}const t=totals(rows);host.innerHTML=`<div class="fz186-detail-head"><div><b>${escHtml(employee)}</b><span>${escHtml(from)} to ${escHtml(to)} · ${rows.length} work day${rows.length===1?'':'s'}</span></div><button class="btn dark" type="button" id="fz186PdfBtn">DOWNLOAD DAILY TABLE PDF</button></div>${table(rows)}<div class="small fz186-note"><b>Paid Out</b> = saved payout after Meal and accepted Hourly Adjustment. <b>Grand Tip</b> = Before Meal + Cash Tip. Cash Tip is already received and is not added to Paid Out.</div>`;document.getElementById('fz186PdfBtn').onclick=()=>window.downloadEmployeeDailyDetailPdf();if(document.getElementById('monthlyReportStatus'))document.getElementById('monthlyReportStatus').innerHTML=`<div class="notice good"><b>${escHtml(employee)}</b> · ${rows.length} daily row${rows.length===1?'':'s'} · Paid Out ${money(t.paidOut)} · Cash Tip ${money(t.cashTip)} · Grand Tip ${money(t.grandTip)}</div>`;}catch(e){if(token!==detailToken)return;detailRows=[];host.innerHTML='<div class="notice danger"><b>Daily detail could not load from server.</b><br>'+escHtml(e?.message||e)+'</div>';}}
   function thisWeek(){const now=new Date(),diff=(now.getDay()+6)%7,a=new Date(now);a.setDate(now.getDate()-diff);const b=new Date(a);b.setDate(a.getDate()+6);const f=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;$('monthlyReportFrom').value=f(a);$('monthlyReportTo').value=f(b);window.renderMonthlyReport?.();render();}
   function pEsc(s){return String(s??'').replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').normalize('NFKD').replace(/[^\x20-\x7E]/g,' ');}
@@ -14794,7 +14808,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
     const fields=[
       ['Employee',label(name)],['Work date',esSession.date],['Shift',row.shift||'—'],['Position',row.role||'—'],['Clock',clockText(row)],
       ['Sales / Grand Total',money(r.grandTotal)],['Paid Tip',money(r.paidTip)],['Card Fee',money(r.payCardTipFee??r.cardFee)],
-      ['Busser AM',money(r.busserTipOutAM)],['Busser PM',money(r.busserTipOutPM)],
+      ...(es93Snapshot(r)?es93ReportFields(r):[['Busser AM',money(r.busserTipOutAM)],['Busser PM',money(r.busserTipOutPM)]]),
       [bartender?'BAR Tip Out Received':'BAR Tip Out',money(bartender?r.bartenderBarTipReceived:r.barTipOut)],
       ['Cash Tip',money(r.cashTip)],['Meal',money(r.meal)],['Total Before Meal',money(r.totalBeforeMeal)],
       ['TOTAL PAID OUT',money(r.totalPaidOut)],['Grand Total Tip',money(r.grandTotalTip)]
@@ -15693,7 +15707,7 @@ function fz72PdfStreams(streams){
   };
 })();
 
-/* ES1.8.92 — Independent BAR checkpoints and required Busser cutoff.
+/* ES1.8.93 — Independent BAR checkpoints and required Busser cutoff.
  * Busser uses only its cumulative cutoff and the explicit Grand Total.
  * Blank is an unfinished draft, never an inferred BAR checkpoint.
  * The underlying BAR, Paid Tip and payout formulas remain unchanged.
@@ -15832,7 +15846,7 @@ function es88BusserPercentText(value){return Number(Number(value||0).toFixed(3))
   };
 })();
 
-/* ES1.8.92 — Preserve the four sheet inputs through the legacy draft bridge.
+/* ES1.8.93 — Preserve the four sheet inputs through the legacy draft bridge.
  * This metadata records inputs only. Saved historical amounts are never
  * recalculated until their row is explicitly completed and saved again.
  */
@@ -15898,7 +15912,7 @@ function es89RequireBusserCutoff(row){
   };
 })();
 
-/* ES1.8.92 — Host/Cashier AM, 2–4, PM pools.
+/* ES1.8.93 — Host/Cashier AM, 2–4, PM pools.
  * Original Server/Bartender/Busser and the original two-pool allocator stay
  * unchanged. Each new pool delegates to that same whole-cent allocator.
  */
@@ -16043,7 +16057,7 @@ function hc90Activate(data){
   document.addEventListener('click',event=>{const old=event.target.closest?.('#hostCashierTip');if(!old)return;event.preventDefault();event.stopImmediatePropagation();if(esAllowed())window.fzOpenHostCashier();},true);
 })();
 
-/* ES1.8.92 — Host/Cashier three-period saved-report presentation only.
+/* ES1.8.93 — Host/Cashier three-period saved-report presentation only.
  * Append after the90 model wrappers. Legacy Host reports and every
  * Server/Bartender path keep their original rendering and export functions.
  */
@@ -16211,7 +16225,7 @@ function hc90PeriodLabel(period){return period==='24'?'2-4':period;}
   };
 })();
 
-/* ES1.8.92 — Divide each existing BAR Received pool among its Bartenders.
+/* ES1.8.93 — Divide each existing BAR Received pool among its Bartenders.
  * Scalar routing and all Server fee/checkpoint rules stay unchanged. Pool
  * membership is independent metadata inside the already persisted bar map.
  */
@@ -16353,7 +16367,7 @@ function es91ReviewIncompleteSignature(session,name,signature,expected){
   }
 }
 
-/* ES1.8.92 — Fit the signature title between the existing payout and signature
+/* ES1.8.93 — Fit the signature title between the existing payout and signature
  * boxes on new pooled Bartender reports only. All figures, box coordinates,
  * legacy reports and the protected original renderer remain unchanged.
  */
@@ -16367,7 +16381,7 @@ function es91ReviewIncompleteSignature(session,name,signature,expected){
   };
 })();
 
-/* ES1.8.92 — Live Host/Cashier membership always follows three periods.
+/* ES1.8.93 — Live Host/Cashier membership always follows three periods.
  * Staff eligibility does not depend on a money input or an old policy flag.
  * Viewing is read-only; the policy is persisted with the next explicit edit,
  * draft Save or final Save/Sign. Archived reports keep their saved figures.
@@ -16414,3 +16428,186 @@ function hc92EnsurePolicy(session=hc15Session){
   };
 })();
 
+/* ES1.8.93 — Optional, independent cumulative Busser handoffs per Server.
+ * No second cutoff = the existing two-bucket calculation and saved format.
+ * All amounts are based on recorded POS sales, never on time proration.
+ */
+function es93Text(value){return String(value??'').trim();}
+function es93Active(row){return row?.role==='Server'&&es93Text(row.busserTotal24)!=='';}
+function es93BusserErrors(row,complete=false){
+  if(!es93Active(row))return [];
+  const a=es93Text(row.busserTotalAM),b=es93Text(row.busserTotal24),g=es93Text(row.grand);
+  const valid=(v,f)=>v!==''&&es14MoneyValid(v,f)&&Number.isSafeInteger(Math.round(Number(v)*100));
+  if(!valid(b,'busserTotal24'))return ['Busser 2 must be 0 or more, with at most 2 decimals.'];
+  if(a!==''&&!valid(a,'busserTotalAM'))return ['Enter valid cumulative sales at the first Busser handoff.'];
+  if(g!==''&&!valid(g,'grand'))return ['Enter a valid Grand Total for Busser tip out.'];
+  if(a!==''&&Math.round(Number(a)*100)>Math.round(Number(b)*100))return ['Busser 2 cannot be below Busser 1.'];
+  if(g!==''&&Math.round(Number(b)*100)>Math.round(Number(g)*100))return ['Busser 2 cannot exceed Grand Total.'];
+  if(complete&&a==='')return ['Enter Busser 1 at the first handoff (0 if none).'];
+  if(complete&&g==='')return ['Enter Grand Total to finish the Busser split.'];
+  return [];
+}
+function es93Snapshot(r){
+  const s=r?.busserHandoffs93;
+  return /^server$/i.test(r?.position||r?.role||'')&&s?.version===1&&Array.isArray(s.segments)&&s.segments.length===3&&s.segments.every((p,i)=>p?.key===['AM','24','PM'][i]&&Number.isFinite(p.sales)&&Number.isFinite(p.tipOut))?s:null;
+}
+function es93SavedCutoff2(r){
+  if(!/^server$/i.test(r?.position||r?.role||''))return '';
+  return String(es93Snapshot(r)?.cutoff24??r?.busserCutoff2Draft93??r?.employeeSheetRow?.busserTotal24??'');
+}
+function es93Label(key){return key==='AM'?'1':key==='24'?'2':'PM';}
+function es93ReportFields(r){return es93Snapshot(r)?.segments.map(p=>['Busser Tip Out '+es93Label(p.key),fmtMoney(p.tipOut)])||[];}
+(function installBusserHandoffs93(){
+  ES_MONEY.push('busserTotal24');ES_FIELDS.push('busserTotal24');
+  ES_COLUMNS.find(c=>c[0]==='busserTotalAM')[1]='Busser 1';
+  ES_COLUMNS.splice(ES_COLUMNS.findIndex(c=>c[0]==='grand'),0,['busserTotal24','Busser 2',205,'sales']);
+  ES_COLUMNS.find(c=>c[0]==='busserAM')[1]='Busser Tip Out 1';
+  ES_COLUMNS.find(c=>c[0]==='busserPM')[1]='Busser Tip Out PM';
+  ES_COLUMNS.splice(ES_COLUMNS.findIndex(c=>c[0]==='busserPM'),0,['busser24','Busser Tip Out 2',190,'busser']);
+  const draft=hv1DraftFromFinalizedReport;
+  hv1DraftFromFinalizedReport=function(r,...args){
+    const d=draft.call(this,r,...args),value=es93SavedCutoff2(r);if(value!=='')d.employeeSheetBusserCutoff93=value;
+    return d;
+  };
+  const rows=esRowsFromBatch;
+  esRowsFromBatch=function(batch,reports=[],...args){return rows.call(this,batch,reports,...args).map(row=>{
+    const d=batch.drafts?.[row.name]||{},value=es93SavedCutoff2(esFindReport(reports,row.name));
+    row.busserTotal24=row.role!=='Server'?'':Object.prototype.hasOwnProperty.call(d,'employeeSheetBusserCutoff93')?String(d.employeeSheetBusserCutoff93??''):value;return row;
+  });};
+  const defaults=esDefaults;esDefaults=function(...args){return {...defaults.apply(this,args),busserTotal24:''};};
+  const batch=esBuildBatch;
+  esBuildBatch=function(source,rows,...args){const b=batch.call(this,source,rows,...args);for(const row of rows)if(b.drafts?.[row.name]){
+    const hasOld=Object.prototype.hasOwnProperty.call(source?.drafts?.[row.name]||{},'employeeSheetBusserCutoff93');
+    if(row.role==='Server'&&(es93Active(row)||hasOld))b.drafts[row.name].employeeSheetBusserCutoff93=es93Text(row.busserTotal24);
+    else delete b.drafts[row.name].employeeSheetBusserCutoff93;
+  }return b;};
+  const reportRow=es14ReportRow;es14ReportRow=function(r,...args){const row=reportRow.call(this,r,...args);row.busserTotal24=es93SavedCutoff2(r);return row;};
+  const validate=esValidateSales;esValidateSales=function(row,route,complete=false){return [...new Set([...validate.call(this,row,route,complete),...es93BusserErrors(row,complete)])];};
+  const requireCutoff=es89RequireBusserCutoff;
+  es89RequireBusserCutoff=function(row){requireCutoff(row);const issues=es93BusserErrors(row,true);if(issues.length)throw new Error(issues.join(' '));};
+  const calc=esCalculate;
+  esCalculate=function(row,batch,old){
+    const r=calc.call(this,row,batch,old);
+    const entered=es93Active(row);
+    if(!entered||r.busserPresence?.AM!==true){
+      // AM off keeps the exact prior weekday calculation: PM is G minus 1.
+      // Keep a typed second cutoff for later reactivation without charging it.
+      if(entered)r.busserCutoff2Draft93=es93Text(row.busserTotal24);
+      else if(old?.busserCutoff2Draft93!=null)r.busserCutoff2Draft93=null;
+      // Explicitly clear versioned fields when updating a previously split report.
+      if(old?.busserHandoffs93){r.busserHandoffs93=null;r.busserTipOut24=null;r.busserTipOutLate93=null;r.total24Busser=null;}
+      return r;
+    }
+    if(old?.busserCutoff2Draft93!=null)r.busserCutoff2Draft93=null;
+    const errors=es93BusserErrors(row,true);
+    r.busserHandoffs93=null;r.busserTipOut24=null;r.busserTipOutLate93=null;r.total24Busser=null;
+    if(errors.length||r.busserCalculationPending88){
+      r.busserCalculationPending88=true;
+      for(const field of ['busserTipOutAM','busserTipOutPM','busserTipOut','totalShared','totalTips','busserRate','busserSalesBasis','salesWithoutBusser','busserEffectiveRateAM','busserEffectiveRatePM','busserEffectiveRateTotal','totalPMBusser'])r[field]=null;
+      return r;
+    }
+    const L=window.FredTipCalculatorLogic,cents=v=>Math.round(Number(v)*100);
+    const a=cents(row.busserTotalAM),b=cents(row.busserTotal24),g=cents(row.grand);
+    const presence=r.busserSalesAdjustment88.presence;
+    const segments=[['AM',a,presence.AM],['24',b-a,presence.AM],['PM',g-b,presence.PM]].map(([key,basis,staffed])=>({key,sales:basis/100,staffed,tipOut:staffed?L.roundCent(basis*0.00015):0}));
+    const [am,mid,pm]=segments;
+    r.busserHandoffs93={version:1,cutoffAM:a/100,cutoff24:b/100,grandTotal:g/100,baseRate:1.5,segments};
+    r.busserPolicyVersion='BUSSER_CUMULATIVE_HANDOFFS_V1';
+    r.totalAMBusser=am.sales;r.total24Busser=mid.sales;r.totalPMBusser=pm.sales;r.busserSalesThrough4PM=b/100;
+    r.busserTipOutAM=am.tipOut;r.busserTipOut24=mid.tipOut;r.busserTipOutLate93=pm.tipOut;
+    // Existing two-column exports stay exhaustive. Individual views use the
+    // three saved segments; compatibility PM is all tips after the first cut.
+    r.busserTipOutPM=L.roundCent(mid.tipOut+pm.tipOut);
+    r.busserTipOut=L.roundCent(am.tipOut+r.busserTipOutPM);r.totalShared=r.busserTipOut;
+    r.totalTips=L.roundCent(Number(r.paidTip||0)+Number(r.payCardTipFee??r.cardFee??0)+r.busserTipOut);
+    r.busserSalesBasis=segments.reduce((sum,p)=>sum+(p.staffed?cents(p.sales):0),0)/100;
+    r.salesWithoutBusser=(g-cents(r.busserSalesBasis))/100;
+    r.busserRate=r.busserEffectiveRateTotal=es88BusserPercent(r.busserTipOut,g/100);
+    r.busserEffectiveRateAM=es88BusserPercent(am.tipOut,g/100);r.busserEffectiveRatePM=es88BusserPercent(pm.tipOut,g/100);
+    return r;
+  };
+  const fp=esFingerprint;
+  esFingerprint=function(r){const p=es93Snapshot(r),base=fp.call(this,r);return p?base+'|busserHandoffs93:'+es182StableJson(p):r?.busserCutoff2Draft93!=null?base+'|busserCutoff2Draft93:'+es14MoneyText(r.busserCutoff2Draft93):base;};
+  const incomplete=es91ReviewIncompleteSignature;
+  es91ReviewIncompleteSignature=function(s,name,signature,expected){
+    incomplete(s,name,signature,expected);const r=s?.results?.[name];
+    if(signature&&expected&&(es93Snapshot(r)||String(expected).includes('|busserHandoffs93:'))&&esFingerprint(r)!==expected){
+      const error=new Error('Busser handoff amounts changed while signing. Review the new split and sign again.');error.esAmountsChanged=true;throw error;
+    }
+  };
+  const input=esInput;
+  esInput=function(row,field,label){
+    const html=input.call(this,row,field,label);
+    if(field==='busserTotalAM')return html.replace('Total AM Busser, cumulative sales until PM Busser arrives','Busser 1, cumulative POS sales at the first Busser handoff');
+    if(field!=='busserTotal24')return html;
+    if(row.role!=='Server')return '—';
+    const identity=` data-es93-uid="${esc(esSession.uid)}" data-es93-date="${esc(esSession.date)}" data-es93-name="${esc(row.name)}"`;
+    return html.replace('<input ','<input '+identity+' ').replace('placeholder="0.00"','placeholder="Optional"')+'<small>Cumulative at second handoff. Used only with Busser AM on.</small>';
+  };
+  const change=esChange;
+  esChange=function(input,...args){
+    if(input.dataset?.esField==='busserTotal24'){
+      const s=esSession,row=s?.rows?.[Number(input.dataset.esRow)];
+      if(!esAllowed()||!s?.ready||s.busy||s.uid!==currentUser?.uid||row?.role!=='Server'||$('esDate')?.value!==s.date||input.dataset.es93Uid!==s.uid||input.dataset.es93Date!==s.date||input.dataset.es93Name!==row?.name)return;
+    }
+    return change.call(this,input,...args);
+  };
+  const output=esOutput;
+  esOutput=function(row,field){
+    const r=esSession.results[row.name]||{};
+    if(es93Active(row)&&r.busserCalculationPending88&&['busser24','busserPM','busserAM','busserRate','busserTotal','busserTotalPM','busserEffectiveRateAM','busserEffectiveRatePM'].includes(field))return 'Check Busser sales';
+    if(field==='busser24')return es93Snapshot(r)?esMoney(r.busserTipOut24):'—';
+    if(field==='busserPM'&&es93Snapshot(r))return esMoney(r.busserTipOutLate93);
+    return output.call(this,row,field);
+  };
+  function notes(){for(const el of document.querySelectorAll('#esRows [data-es88-note]')){
+    const row=esSession?.rows?.[Number(el.closest('td')?.querySelector('input')?.dataset.esRow)];
+    if(row?.role==='Server'&&es93Text(row.busserTotalAM)!=='')el.textContent=es93BusserErrors(row).length?'Check Busser cumulative sales':'Cumulative POS sales when the first Busser hands off';
+  }}
+  const update=esUpdateComputed;esUpdateComputed=function(...args){const out=update.apply(this,args);notes();return out;};
+  const render=esRenderRows;esRenderRows=function(...args){const out=render.apply(this,args);notes();return out;};
+  const init=esInit;esInit=function(...args){
+    const out=init.apply(this,args),guide=$('es88BusserGuide');if(guide)guide.innerHTML='<summary>Busser handoffs · read POS sales at each handoff</summary><p>Busser 1 = cumulative POS sales when the first Busser finishes, even at noon. Leave Busser 2 blank for a single handoff: the PM/relief Busser gets Grand Total minus the first cutoff if PM is on. If a third Busser takes over, enter the cumulative POS total at that second handoff in Busser 2. The middle amount is second cutoff minus first cutoff; the PM amount is Grand Total minus second cutoff. If Busser 2 works through close with no third Busser, use Grand Total for Busser 2. Busser AM on: the first two segments each use 1.5%. Busser AM off: the first two tips are $0 and the old PM calculation stays Grand Total minus Busser 1; Busser 2 is not used. PM uses 1.5% only when Busser PM is on. Bar sales are separate.</p>';
+    return out;
+  };
+})();
+
+/* ES1.8.93 — Render immutable Busser handoff amounts without changing payouts. */
+(function installBusserHandoffReports93(){
+  const exact=employeeReportExactHtml;
+  employeeReportExactHtml=function(report,...args){
+    const html=exact.call(this,report,...args),p=es93Snapshot(report);if(!p)return html;
+    const metrics=p.segments.map(s=>'<div class="fz-report-metric"><span>Busser Tip Out '+esc(es93Label(s.key))+'</span><b>'+esc(fmtMoney(s.tipOut))+'</b><small>Sales '+esc(fmtMoney(s.sales))+(s.staffed?'':' · Not staffed')+'</small></div>').join('');
+    const section='<div class="fz-report-section"><div class="fz-report-section-title">Busser handoffs</div><div class="fz-report-metrics">'+metrics+'</div></div>';
+    return html.replace('<span>Busser PM</span>','<span>Busser after AM</span>').replace(/(<div class="fz-report-section">\s*<div class="fz-report-section-title">Payout Summary<\/div>)/,section+'$1');
+  };
+  const thermal=buildSmallReportThermalHtml;
+  buildSmallReportThermalHtml=function(report,...args){
+    const html=thermal.call(this,report,...args),fields=es93ReportFields(report);if(!fields.length)return html;
+    const rows=fields.map(([k,v])=>'<div class="row"><span>'+thermalReceiptSafe(k)+'</span><b>'+thermalReceiptSafe(v)+'</b></div>').join('');
+    return html.replace(/(<div class="row"><span>Busser Tip Out \(\$\)<\/span><b>[^<]*<\/b><\/div>)/,'$1'+rows);
+  };
+  const detail=window.openSmallReportDetail;
+  window.openSmallReportDetail=function(id,...args){
+    const out=detail.call(this,id,...args);if(!['manager','owner'].includes(currentProfile?.role||''))return out;
+    const r=latestHourlyReports.find(x=>x.id===id),p=es93Snapshot(r);if(!p)return out;
+    const grid=$('smallReportDetailBody')?.querySelector('.sr-detail-grid');if(!grid||grid.querySelector('[data-es93-detail]'))return out;
+    const labels=[...grid.querySelectorAll('span')],bucket=labels.find(el=>el.textContent==='Busser PM');if(bucket)bucket.textContent='Busser after AM';
+    const anchor=grid.querySelector('.accent');
+    for(const [label,value]of es93ReportFields(r)){
+      const cell=document.createElement('div');cell.dataset.es93Detail='1';cell.innerHTML='<span>'+esc(label)+'</span><b>'+esc(value)+'</b>';grid.insertBefore(cell,anchor);
+    }
+    return out;
+  };
+  const exportRows=reportRowsForExport;
+  reportRowsForExport=function(...args){
+    const byId=new Map(latestHourlyReports.filter(r=>r.id).map(r=>[String(r.id),r]));
+    return exportRows.apply(this,args).map(row=>{const p=es93Snapshot(byId.get(String(row.id)));return p?{...row,busserHandoffs93:p}:row;});
+  };
+  const pdf=pdfReportContent;
+  pdfReportContent=function(report,...args){
+    const content=pdf.call(this,report,...args),p=es93Snapshot(report);if(!p)return content;
+    const line='Busser Tip Out - 1 '+fmtMoney(p.segments[0].tipOut)+' | 2 '+fmtMoney(p.segments[1].tipOut)+' | PM '+fmtMoney(p.segments[2].tipOut);
+    return content.replace('(Busser PM) Tj','(Busser after AM) Tj')+'0.08 0.18 0.24 rg\n'+hc185PdfText('F1',9,28,212,line,556);
+  };
+})();
