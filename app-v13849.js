@@ -4018,7 +4018,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18950",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18960",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10621,7 +10621,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.95';
+const ES_BUILD='ES1.8.96';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -16488,5 +16488,110 @@ function es93ReportFields(r){return es93Snapshot(r)?.segments.map(p=>['Busser Ti
     const content=pdf.call(this,report,...args),p=es93Snapshot(report);if(!p)return content;
     const line='Busser Tip Out - 1 '+fmtMoney(p.segments[0].tipOut)+' | 2 '+fmtMoney(p.segments[1].tipOut)+' | PM '+fmtMoney(p.segments[2].tipOut);
     return content.replace('(Busser PM) Tj','(Busser after AM) Tj')+'0.08 0.18 0.24 rg\n'+hc185PdfText('F1',9,28,212,line,556);
+  };
+})();
+
+
+/* ES1.8.96 — a second output destination for the unchanged thermal receipt.
+ * Render the existing 576px HTML, including its signature and disclaimer.
+ * No calculator, Save/Sign, report data, auth persistence or Star callback changes.
+ */
+let es96RendererPromise=null;
+function es96LoadRenderer(){
+  if(typeof window.html2canvas==='function')return Promise.resolve(window.html2canvas);
+  if(es96RendererPromise)return es96RendererPromise;
+  es96RendererPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');script.src='./html2canvas-1.4.1.min.js?v=es18960';script.dataset.rawbtRenderer96='';
+    const timer=setTimeout(()=>finish(new Error('Receipt renderer timed out. Close this preview and try again.')),15000);
+    function finish(error){clearTimeout(timer);script.onload=script.onerror=null;if(error){script.remove();es96RendererPromise=null;reject(error);}else resolve(window.html2canvas);}
+    script.onload=()=>finish(typeof window.html2canvas==='function'?null:new Error('Receipt renderer is unavailable. Update the app and reopen the receipt.'));
+    script.onerror=()=>finish(new Error('Receipt renderer could not load. Connect to the internet, update the app and reopen the receipt.'));
+    document.head.appendChild(script);
+  });
+  return es96RendererPromise;
+}
+function es96RasterBytes(width,height,rgba){
+  if(width!==576||!Number.isInteger(height)||height<1||height>4600||!rgba||rgba.length!==width*height*4)throw new Error('Receipt image is incomplete or too long for direct Bluetooth printing.');
+  const stride=width/8,bands=Math.ceil(height/128),out=new Uint8Array(6+stride*height+8*bands+7);let at=0;
+  const put=(...values)=>{for(const value of values)out[at++]=value;};
+  put(27,64,27,97,0,10); // Initialize, left align, feed one line.
+  for(let top=0;top<height;top+=128){
+    const rows=Math.min(128,height-top);put(29,118,48,0,stride&255,stride>>8,rows&255,rows>>8);
+    for(let y=top;y<top+rows;y++)for(let x=0;x<width;x+=8){
+      let bits=0;
+      for(let bit=0;bit<8;bit++){
+        const i=(y*width+x+bit)*4,alpha=rgba[i+3]/255;
+        const grey=(rgba[i]*.299+rgba[i+1]*.587+rgba[i+2]*.114)*alpha+255*(1-alpha);
+        if(grey<180)bits|=128>>bit;
+      }
+      out[at++]=bits;
+    }
+  }
+  put(10,10,10,29,86,66,0); // Feed then partial cut, once per explicit print tap.
+  return out;
+}
+function es96RawbtUri(bytes,native){
+  if(!(bytes instanceof Uint8Array)||!bytes.length)throw new Error('Receipt print data is missing.');
+  let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
+  const data='base64,'+btoa(binary);
+  const uri=native?'rawbt:'+data:'intent:'+data+'#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;';
+  if(uri.length>450000)throw new Error('Receipt is too long for one Bluetooth handoff. Use the existing PDF option for this report.');
+  return uri;
+}
+function es96WithTimeout(task,ms){
+  let timer;return Promise.race([task,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Receipt rendering timed out. Close and reopen the preview.')),ms);})]).finally(()=>clearTimeout(timer));
+}
+async function es96PrepareReceipt(html){
+  const render=await es96LoadRenderer(),frame=document.createElement('iframe');
+  frame.setAttribute('aria-hidden','true');frame.setAttribute('sandbox','allow-same-origin');
+  frame.style.cssText='position:fixed;left:-10000px;top:0;width:576px;height:1px;border:0;pointer-events:none';
+  try{
+    await new Promise((resolve,reject)=>{
+      const timer=setTimeout(()=>{frame.onload=frame.onerror=null;reject(new Error('Receipt preview timed out. Close and reopen it.'));},10000);
+      frame.onload=()=>{clearTimeout(timer);frame.onload=frame.onerror=null;resolve();};
+      frame.onerror=()=>{clearTimeout(timer);reject(new Error('Receipt preview could not load.'));};
+      frame.srcdoc=html;document.body.appendChild(frame);
+    });
+    const doc=frame.contentDocument;if(!doc?.body)throw new Error('Receipt preview is unavailable.');
+    if(doc.fonts?.ready)await es96WithTimeout(doc.fonts.ready,10000);
+    const width=576,height=Math.ceil(Math.max(doc.body.scrollHeight,doc.body.getBoundingClientRect().height));
+    if(!height||height>4600)throw new Error('Receipt is too long for one Bluetooth handoff. Use the existing PDF option for this report.');
+    frame.style.height=height+'px';
+    const canvas=await es96WithTimeout(render(doc.body,{width,height,windowWidth:width,windowHeight:height,scale:1,x:0,y:0,scrollX:0,scrollY:0,backgroundColor:'#ffffff',allowTaint:false,useCORS:false,logging:false,imageTimeout:10000,removeContainer:true}),20000);
+    if(canvas.width!==width||canvas.height!==height)throw new Error('Receipt image size does not match the original.');
+    const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Receipt image could not be prepared.');
+    return es96RasterBytes(width,height,ctx.getImageData(0,0,width,height).data);
+  }finally{frame.remove();}
+}
+(function installRawbtReceipt96(){
+  const output=es35ReceiptOutput;
+  es35ReceiptOutput=function(report,popup,sheet){
+    const view=output.apply(this,arguments);
+    if(!/Android/i.test(navigator.userAgent||'')||view.closed)return view;
+    const actions=view.dialog.querySelector('.fz18-actions'),star=view.dialog.querySelector('[data-print]'),status=view.dialog.querySelector('[role="status"]');
+    if(!actions||!star||view.dialog.querySelector('[data-rawbt96]'))return view;
+    star.textContent='Print Star / PassPRNT';
+    const button=document.createElement('button');button.type='button';button.dataset.rawbt96='';button.textContent='Preparing CB810…';button.disabled=true;
+    actions.insertBefore(button,star);
+    const note=document.createElement('div');note.className='fz18-status';note.textContent='CB810 / RawBT uses your default RawBT printer. Same 80 mm receipt size and layout. No PDF download needed.';actions.after(note);
+    let bytes=null,inFlight=false;
+    // Prepare before the tap: Android receives its URI synchronously in the
+    // user's click, never from an async callback or an automatic retry.
+    Promise.resolve().then(()=>es96PrepareReceipt(esThermalHtml(report))).then(data=>{
+      if(view.closed)return;bytes=data;button.disabled=false;button.textContent='Print CB810 / RawBT';
+    }).catch(error=>{if(view.closed)return;button.textContent='CB810 unavailable';note.textContent='CB810 print could not prepare: '+(error.message||error)+'. Close and reopen the preview to retry. Star and PDF options are still available.';});
+    button.onclick=()=>{
+      if(view.closed||!bytes||inFlight)return;
+      inFlight=true;button.disabled=true;
+      try{
+        const uri=es96RawbtUri(bytes,!!window.FZReceiptAndroid),link=document.createElement('a');link.href=uri;
+        document.body.appendChild(link);try{link.click();}finally{link.remove();}
+        status.textContent='Sent to RawBT. Select CB810 there if prompted, then return to the app. Check the paper before printing again.';
+      }catch(error){status.textContent='CB810 printer could not open: '+(error.message||error);}
+      // The handoff does not prove paper was printed. Do not retry on focus,
+      // timeout, cancel or return. A later deliberate tap may print again.
+      setTimeout(()=>{inFlight=false;if(!view.closed)button.disabled=false;},1500);
+    };
+    return view;
   };
 })();
