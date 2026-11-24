@@ -4018,7 +4018,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18960",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18970",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10621,7 +10621,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.96';
+const ES_BUILD='ES1.8.97';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -16501,7 +16501,7 @@ function es96LoadRenderer(){
   if(typeof window.html2canvas==='function')return Promise.resolve(window.html2canvas);
   if(es96RendererPromise)return es96RendererPromise;
   es96RendererPromise=new Promise((resolve,reject)=>{
-    const script=document.createElement('script');script.src='./html2canvas-1.4.1.min.js?v=es18960';script.dataset.rawbtRenderer96='';
+    const script=document.createElement('script');script.src='./html2canvas-1.4.1.min.js?v=es18970';script.dataset.rawbtRenderer96='';
     const timer=setTimeout(()=>finish(new Error('Receipt renderer timed out. Close this preview and try again.')),15000);
     function finish(error){clearTimeout(timer);script.onload=script.onerror=null;if(error){script.remove();es96RendererPromise=null;reject(error);}else resolve(window.html2canvas);}
     script.onload=()=>finish(typeof window.html2canvas==='function'?null:new Error('Receipt renderer is unavailable. Update the app and reopen the receipt.'));
@@ -16594,4 +16594,396 @@ async function es96PrepareReceipt(html){
     };
     return view;
   };
+})();
+
+
+/* ES1.8.97 — Owner presentation only. Keep native rows, inputs, Save/Sign,
+ * calculations, conflict handling and printer destinations as the authority. */
+function es97Owner(){
+  const s=esSession,t=window.es41Team?.get?.();
+  return !!currentUser?.uid&&currentProfile?.role==='owner'&&s?.uid===currentUser.uid&&(!t||(t.uid===s.uid&&t.date===s.date&&(!t.session||t.session===s)));
+}
+(function installOwnerView97(){
+  const state={session:null,context:'',serial:0,mode:'card',selected:'',running:false,cardKey:'',signatureHomes:new Map(),upperSignature:null,hostSignature:null,actionError:null};
+  const preference=()=> 'fz_owner_sheet_view97_'+currentUser.uid;
+  const active=()=>es97Owner()&&state.session===esSession&&state.context.startsWith(esSession.uid+'|'+esSession.date+'|');
+  const locked=()=>!!(esSession?.busy||hc15Session?.busy||window.es41Team?.get?.()?.busy||esSignature||hc15Sig);
+  const shift=value=>value==='DOUBLE'?'Double':value==='LONG'?'Long':String(value||'Choose shift');
+  function rowFor(entry){
+    if(!entry)return null;
+    if(entry.kind==='host')return [...($('hc15Rows')?.querySelectorAll('tr[data-hc15-row]')||[])].find(n=>n.dataset.hc15Row===tt15Key(entry.name))||null;
+    return [...($('esRows')?.querySelectorAll('tr[data-es-index]')||[])].find(n=>esSession.rows[Number(n.dataset.esIndex)]?.name===entry.name)||null;
+  }
+  function entries(){
+    if(!es97Owner())return [];
+    const out=[];
+    for(const row of esSession.rows||[]){
+      const entry={key:JSON.stringify(['upper',row.name]),kind:'upper',name:row.name,label:tt15Label(row.name),role:row.role,shift:row.shift},tr=rowFor(entry);
+      if(!tr||tr.dataset.es83Removed==='1')continue;
+      const status=esRowStatus(row);out.push({...entry,status:status.text,statusKind:status.kind});
+    }
+    const host=hc15Session;
+    if(host&&host.uid===esSession.uid&&host.date===esSession.date)for(const row of tt15TeamRows({},hc15View(host))){
+      const entry={key:JSON.stringify(['host',row.name]),kind:'host',name:row.name,label:tt15Label(row.name),role:row.role||'Host / Cashier',shift:row.shift};
+      if(!rowFor(entry))continue;
+      const status=hc15Summary(host,row.name);out.push({...entry,status:status.text,statusKind:status.kind});
+    }
+    return out;
+  }
+  function returnSignatures(){
+    for(const [node,home] of state.signatureHomes){const marker=home.marker;if(marker.isConnected&&node.parentNode!==marker.parentNode)marker.parentNode.insertBefore(node,marker);node.classList.remove('es97-inline-sign');node.setAttribute('aria-modal',home.aria);const save=$(home.saveId);if(save)save.textContent=home.label;if(home.clearCaptured){const clear=$(home.clearId);if(clear){clear.hidden=home.clearHidden;clear.textContent=home.clearText;}home.clearCaptured=false;}}
+    for(const n of $('employeeSheet')?.querySelectorAll('[data-es97-inert]')||[]){n.removeAttribute('inert');delete n.dataset.es97Inert;}
+  }
+  function retireInlineSignatures(){
+    if(state.upperSignature&&esSignature===state.upperSignature){esSignature=null;$('esSignatureModal')?.classList.add('hidden');}
+    if(state.hostSignature&&hc15Sig===state.hostSignature){hc15Sig=null;$('hc15SignModal')?.classList.add('hidden');}
+    state.upperSignature=state.hostSignature=null;
+  }
+  function restoreSearch(){
+    const q=String($('esSearch')?.value||'').trim().toLowerCase();
+    for(const tr of $('esRows')?.querySelectorAll('tr[data-es-index]')||[]){const row=esSession?.rows[Number(tr.dataset.esIndex)];if(row)tr.hidden=tr.dataset.es83Removed==='1'||!!q&&!(tt15Label(row.name)+' '+row.name).toLowerCase().includes(q);}
+    for(const tr of $('hc15Rows')?.querySelectorAll('tr[data-hc15-row]')||[]){const name=tr.querySelector('[data-hc15-name]')?.dataset.hc15Name;tr.hidden=!!q&&!(tt15Label(name||'')+' '+(name||'')).toLowerCase().includes(q);}
+  }
+  function clearPresentation(){
+    const area=$('employeeSheet');if(!area)return;
+    area.classList.remove('es97-owner','es97-card','es97-detail','es97-host-detail','es97-signing');
+    for(const id of ['es97View','es97Cards','es97Detail','es97Footer'])if($(id))$(id).hidden=true;
+    area.querySelectorAll('.es97-openrow').forEach(n=>n.classList.remove('es97-openrow'));
+    retireInlineSignatures();returnSignatures();state.selected='';state.session=null;state.context='';state.cardKey='';
+    state.actionError=null;window.es97Assignments?.close?.();
+  }
+  function init(){
+    const area=$('employeeSheet'),grid=$('esGrid'),actions=$('es41Actions');
+    if(!area?.ownerDocument||!grid||!actions)return false;
+    if(!$('es97View')){
+      const view=document.createElement('section');view.id='es97View';view.className='es97-view';
+      view.innerHTML='<b>Tampilan <span class="es97-owner-tag">OWNER</span></b><div class="es97-view-options" role="group" aria-label="Employee Sheet format"><button type="button" data-es97-mode="table" aria-pressed="false">▦ Table</button><button type="button" data-es97-mode="card" aria-pressed="false">▤ Card</button></div>';
+      actions.after(view);
+      const cards=document.createElement('section');cards.id='es97Cards';cards.className='es97-cards';cards.setAttribute('aria-label','Employee name cards');grid.before(cards);
+      const detail=document.createElement('section');detail.id='es97Detail';detail.className='es97-detail-heading';detail.innerHTML='<button type="button" data-es97-back>‹ Daftar nama</button><div><h3></h3><p></p></div><span class="es97-detail-state"></span>';grid.before(detail);
+      const footer=document.createElement('section');footer.id='es97Footer';footer.className='es97-form-footer';
+      footer.innerHTML='<h3>Employee Signature / Tanda Tangan</h3><div id="es97SignaturePreview" class="es97-signature-preview"></div><div id="es97SignMount"></div><p id="es97FormMessage" role="status"></p><div class="es97-form-actions"><button type="button" data-es97-action="save">Save / Simpan</button><button type="button" data-es97-action="sign">Sign / TTD</button><button type="button" data-es97-action="print">Print</button></div>';
+      grid.after(footer);
+      view.addEventListener('click',event=>{const b=event.target.closest?.('[data-es97-mode]');if(b)mode(b.dataset.es97Mode);});
+      cards.addEventListener('click',event=>{const b=event.target.closest?.('[data-es97-card]');if(b)select(b.dataset.es97Card,b.dataset.es97Context);const draft=event.target.closest?.('[data-es97-team]');if(draft&&active())window.es97Assignments?.open?.(false);});
+      detail.querySelector('[data-es97-back]').onclick=back;
+      footer.addEventListener('click',event=>{const b=event.target.closest?.('[data-es97-action]');if(b)action(b.dataset.es97Action);});
+      area.addEventListener('click',event=>{if(!active())return;if(area.classList.contains('es97-signing')&&!event.target.closest?.('#es97Footer')){event.preventDefault();event.stopImmediatePropagation();return;}const b=event.target.closest?.('#es38Add');if(!b)return;event.preventDefault();event.stopImmediatePropagation();if(!locked())window.es97Assignments?.open?.(true);},true);
+      area.addEventListener('input',event=>{if(!active())return;if(event.target.id==='esSearch')refresh();else if(event.target.closest?.('#esRows,#hc15Section'))Promise.resolve().then(refresh);});
+      area.addEventListener('change',()=>{if(active())Promise.resolve().then(refresh);});
+      area.addEventListener('focusout',()=>{if(active())setTimeout(refresh,0);});
+      grid.addEventListener('keydown',event=>{
+        if(!active()||state.mode!=='card'||!state.selected||event.key!=='Enter'||!event.target.matches?.('input,select'))return;
+        event.preventDefault();event.stopImmediatePropagation();const tr=rowFor(entries().find(e=>e.key===state.selected));if(!tr)return;
+        const controls=[...tr.querySelectorAll('input:not(:disabled),select:not(:disabled),textarea:not(:disabled)')],index=controls.indexOf(event.target);controls[index+1]?.focus?.();
+      },true);
+      grid.addEventListener('focusin',event=>{if(active()&&state.mode==='card'&&state.selected)requestAnimationFrame(()=>event.target.isConnected&&event.target.scrollIntoView?.({block:'nearest',inline:'nearest'}));});
+      area.addEventListener('click',()=>{if(active())Promise.resolve().then(refresh);});
+      area.addEventListener('keydown',()=>{if(active())Promise.resolve().then(refresh);});
+      area.addEventListener('pointerup',()=>{if(active())Promise.resolve().then(refresh);});
+    }
+    const view=$('es97View');if(actions.nextElementSibling!==view)actions.after(view);
+    return true;
+  }
+  function mode(next){
+    if(!active()||!['table','card'].includes(next)||locked())return false;
+    document.activeElement?.blur?.();state.mode=next;state.selected='';returnSignatures();restoreSearch();
+    try{localStorage.setItem(preference(),next);}catch(e){}
+    refresh();return true;
+  }
+  function select(key,context=state.context){
+    if(!active()||context!==state.context||locked())return false;
+    const entry=entries().find(e=>e.key===key);if(!entry)return false;
+    document.activeElement?.blur?.();state.mode='card';if(state.selected!==key)state.actionError=null;state.selected=key;refresh();
+    $('es97Detail')?.scrollIntoView?.({block:'start',behavior:'smooth'});return true;
+  }
+  function back(){
+    if(!active()||locked())return false;
+    document.activeElement?.blur?.();state.selected='';returnSignatures();restoreSearch();refresh();$('es97View')?.scrollIntoView?.({block:'start'});return true;
+  }
+  function nativeButton(entry,actionName){
+    const tr=rowFor(entry);return tr?.querySelector(entry?.kind==='host'?'[data-hc15-action="'+actionName+'"]':'[data-es-action="'+actionName+'"]');
+  }
+  function action(actionName){
+    if(!active()||locked()||!['save','sign','print'].includes(actionName))return false;
+    document.activeElement?.blur?.();const entry=entries().find(e=>e.key===state.selected),button=nativeButton(entry,actionName);
+    if(!button||button.disabled)return false;
+    state.actionError=null;button.click();refresh();return true;
+  }
+  const orders={shift:11,role:12,attendance54:13,clockIn:21,clockOut:22,clockIn2:23,clockOut2:24,paid:31,cardFee:32,cash:33,meal:34,totalAM:41,total24:42,busserTotalAM:43,grand:44,barAM:51,bar24:52,barPM:53,adjustmentDecision:61,busserTotalPM:71,busserEffectiveRateAM:72,busserEffectiveRatePM:73,busserAM:74,busserPM:75,busserTotal:76,busserRate:77,barTipAM:81,barTip24:82,barTipPM:83,received:84,hours:91,grandTotalTip:93,payout:99};
+  function labelCell(cell,label,order,editable=false,field=''){
+    cell.dataset.es97Label=label;cell.style.setProperty('--es97-order',String(order));cell.classList.add('es97-field');cell.classList.toggle('es97-editable',editable);cell.classList.toggle('es97-computed',!editable);
+    if(field)cell.dataset.es97Field=field;
+  }
+  function heading(tr,label,order){
+    let node=[...tr.querySelectorAll('[data-es97-heading]')].find(n=>n.dataset.es97Heading===String(order));
+    if(!node){node=document.createElement('td');node.dataset.es97Heading=String(order);node.className='es97-section-heading';node.textContent=label;tr.appendChild(node);}
+    node.style.setProperty('--es97-order',String(order));
+  }
+  function decorate(entry,tr){
+    tr.classList.add('es97-openrow');
+    if(entry.kind==='upper'){
+      for(const [field,label]of ES_COLUMNS){const cell=tr.querySelector('td[data-es-col="'+field+'"]');if(cell)labelCell(cell,field==='payout'?'TOTAL PAID OUT':field==='grand'?'Grand Total Sales':label,orders[field]||90,ES_FIELDS.includes(field)||field==='attendance54',field);}
+      let before=tr.querySelector('[data-es97-auto="totalBeforeMeal"]');if(!before){before=document.createElement('td');before.dataset.es97Auto='totalBeforeMeal';tr.appendChild(before);}labelCell(before,'Total Before Meal',92,false,'totalBeforeMeal');before.textContent=esMoney(esSession.results[entry.name]?.totalBeforeMeal);
+      let wages=tr.querySelector('[data-es97-auto="hourlyInfo"]');if(!wages){wages=document.createElement('td');wages.dataset.es97Auto='hourlyInfo';wages.innerHTML='<details><summary>Hourly Rate / Hourly Pay</summary><div class="es97-hourly-info"><span data-es97-rate></span><span data-es97-pay></span></div><small>Report only · terpisah dari tip Paid Out.</small></details>';tr.appendChild(wages);}labelCell(wages,'Hourly information',94,false,'hourlyInfo');const result=esSession.results[entry.name],rate=result&&window.fz1818HourlyRate?.(result),pay=result&&window.fz1818HourlyPay?.(result);wages.querySelector('[data-es97-rate]').textContent='Hourly Rate: '+(rate==null?'—':esMoney(rate)+'/hr');wages.querySelector('[data-es97-pay]').textContent='Hourly Pay: '+(pay==null?'—':esMoney(pay));
+      for(const [text,n]of [['Employee / Karyawan',10],['Clock in / Clock out',20],['Tips & Meal',30],['Sales',40],['BAR Sales',50],['Hourly Adjustment',60],['Busser · Otomatis',70],['Bar · Otomatis',80],['Payout · Otomatis',90]])heading(tr,text,n);
+    }else{
+      for(const cell of tr.querySelectorAll('td')){
+        if(cell.dataset.es97Heading)continue;
+        const input=cell.querySelector('[data-hc15-clock]'),output=cell.dataset.hc15Out,assignment=cell.dataset.es82HostField;
+        if(input){const key=input.dataset.hc15Clock;labelCell(cell,({clockIn:'Clock In 1',clockOut:'Clock Out 1',clockIn2:'Clock In 2',clockOut2:'Clock Out 2'})[key],orders[key],true,key);}
+        else if(assignment)labelCell(cell,assignment==='role'?'Position':'Shift',orders[assignment],true,assignment);
+        else if(cell.dataset.esCol==='attendance54')labelCell(cell,'Attendance',13,true,'attendance54');
+        else if(output)labelCell(cell,({am:'Tip AM',middle:'Tip 2–4',pm:'Tip PM',total:'TOTAL PAID OUT'})[output]||output,({am:71,middle:72,pm:73,total:99})[output]||90,false,output==='total'?'payout':output);
+      }
+      heading(tr,'Employee / Karyawan',10);heading(tr,'Clock in / Clock out',20);heading(tr,'Tip share · Otomatis',70);
+    }
+  }
+  function signature(entry,tr){
+    const placeholder=$('es97SignaturePreview'),mount=$('es97SignMount'),modal=$(entry.kind==='host'?'hc15SignModal':'esSignatureModal');if(!modal)return;
+    if(!state.signatureHomes.has(modal)){const marker=document.createComment('Owner97 signature home'),saveId=entry.kind==='host'?'hc15SignSave':'esSignSave',clearId=entry.kind==='host'?'hc15SignClear':'esSignClear';modal.parentNode.insertBefore(marker,modal.nextSibling);state.signatureHomes.set(modal,{marker,saveId,clearId,label:$(saveId)?.textContent||'Process',aria:modal.getAttribute('aria-modal')||'true'});}
+    const signing=entry.kind==='host'?hc15Sig?.name===entry.name:esSignature?.name===entry.name;
+    if(modal.parentNode!==mount)mount.appendChild(modal);
+    modal.classList.add('es97-inline-sign');modal.setAttribute('aria-modal','false');
+    placeholder.hidden=!!signing;
+    const signed=entry.statusKind==='signed';let report;
+    if(signed&&entry.kind==='upper')report=esFindReport(esSession.reports,entry.name);
+    if(signed&&entry.kind==='host'){const saved=hc15Session?.data?.sheetFinalized?.[tt15Key(entry.name)],id=saved?.id||saved?.reportId;report=(latestHourlyReports||[]).find(r=>r.id===id);}
+    const html=report?.pickupSignature?smallReportSignatureSvg(report.pickupSignature,500,160):'';
+    const content=html||'<span>'+(signed?'✓ Tanda tangan tersimpan':'Tekan Sign / TTD untuk mulai tanda tangan')+'</span>';
+    if(placeholder.innerHTML!==content)placeholder.innerHTML=content;
+    if(signing){
+      const home=state.signatureHomes.get(modal),save=$(home.saveId),clear=$(home.clearId),sig=entry.kind==='host'?hc15Sig:esSignature;
+      if(entry.kind==='host')state.hostSignature=sig;else state.upperSignature=sig;
+      if(!home.clearCaptured&&clear){home.clearHidden=clear.hidden;home.clearText=clear.textContent;home.clearCaptured=true;}if(clear){clear.hidden=false;clear.textContent='Clear / Hapus';}
+      if(save){save.textContent='Save TTD & Print';save.disabled=!!(esSession?.busy||hc15Session?.busy)||!sig?.strokes||sig.strokes.reduce((n,s)=>n+s.length,0)<4;}
+    }
+    $('employeeSheet').classList.toggle('es97-signing',!!signing);
+    for(const selector of ['.es-header','#esGrid','.es-toolbar','#es38Team','#es41Actions']){const n=$('employeeSheet').querySelector(selector);if(!n)continue;if(signing){n.dataset.es97Inert='1';n.setAttribute('inert','');}else if(n.dataset.es97Inert){n.removeAttribute('inert');delete n.dataset.es97Inert;}}
+    const error=(state.actionError?.key===entry.key&&state.actionError.context===state.context?state.actionError.text:'')||(entry.kind==='host'?hc15Session?.error:'');
+    $('es97FormMessage').textContent=error||(signing?'Periksa data, tanda tangan, lalu Save TTD & Print.':entry.status);$('es97FormMessage').dataset.error=error?'1':'0';
+    for(const button of $('es97Footer').querySelectorAll('[data-es97-action]'))button.disabled=locked()||!nativeButton(entry,button.dataset.es97Action)||!!nativeButton(entry,button.dataset.es97Action)?.disabled;
+  }
+  function refresh(){
+    if(state.running)return;state.running=true;
+    try{
+      const area=$('employeeSheet');
+      if(!es97Owner()||!area?.ownerDocument||area.classList.contains('hidden')){if(state.session)clearPresentation();return;}
+      if(!init())return;
+      if(state.session!==esSession||!state.context.startsWith(esSession.uid+'|'+esSession.date+'|')){retireInlineSignatures();returnSignatures();state.actionError=null;state.session=esSession;state.context=esSession.uid+'|'+esSession.date+'|'+(++state.serial);state.selected='';state.cardKey='';try{state.mode=localStorage.getItem(preference())==='table'?'table':'card';}catch(e){state.mode='card';}}
+      area.classList.add('es97-owner');$('es97View').hidden=false;
+      for(const b of $('es97View').querySelectorAll('[data-es97-mode]')){b.setAttribute('aria-pressed',String(b.dataset.es97Mode===state.mode));b.disabled=locked();}
+      const card=state.mode==='card',all=entries(),entry=all.find(e=>e.key===state.selected);
+      if(state.selected&&!entry){state.selected='';returnSignatures();}
+      area.classList.toggle('es97-card',card);area.classList.toggle('es97-detail',card&&!!entry);area.classList.toggle('es97-host-detail',card&&entry?.kind==='host');
+      $('es97Cards').hidden=!card||!!entry;$('es97Detail').hidden=!card||!entry;$('es97Footer').hidden=!card||!entry;
+      area.querySelectorAll('.es97-openrow').forEach(n=>{if(!entry||n!==rowFor(entry))n.classList.remove('es97-openrow');});
+      if(!card){returnSignatures();area.classList.remove('es97-signing');window.es97Assignments?.refresh?.();return;}
+      const q=String($('esSearch')?.value||'').trim().toLowerCase(),team=window.es41Team?.get?.(),list=all.filter(e=>(e.label+' '+e.name+' '+e.role+' '+e.shift).toLowerCase().includes(q));
+      const cardsHtml='<h3>Pilih karyawan</h3><p>Klik nama untuk membuka halaman isian.</p>'+(team?.dirty?'<div class="es97-pending">Assignment draft · Apply changes untuk menerapkan. <button type="button" data-es97-team>Review rows</button></div>':'')+'<div class="es97-name-grid">'+list.map(e=>'<button type="button" class="es97-name-card" data-es97-card="'+esc(e.key)+'" data-es97-context="'+esc(state.context)+'"><b>'+esc(e.label)+'</b><small>'+esc(shift(e.shift)+' · '+e.role)+'</small><span class="es97-card-status" data-kind="'+esc(e.statusKind)+'">'+esc(e.status)+'</span><i aria-hidden="true">›</i></button>').join('')+'</div>'+(!list.length?'<p class="es97-empty">'+(esSession.ready?(all.length?'Nama tidak ditemukan.':'Tambahkan karyawan dengan + Add row, lalu Apply changes.'):'Loading employees…')+'</p>':'');
+      if(!entry&&cardsHtml!==state.cardKey){$('es97Cards').innerHTML=cardsHtml;state.cardKey=cardsHtml;}
+      if(entry){
+        const tr=rowFor(entry);if(!tr){state.selected='';return;}
+        // Opening a card intentionally overrides only the old search visibility.
+        // Back restores the existing search input; native search is not edited.
+        tr.hidden=false;decorate(entry,tr);
+        $('es97Detail').querySelector('h3').textContent=entry.label;$('es97Detail').querySelector('p').textContent=esSession.date+' · '+entry.role+' · '+shift(entry.shift);
+        $('es97Detail').querySelector('.es97-detail-state').textContent=entry.status;
+        signature(entry,tr);
+      }else area.classList.remove('es97-signing');
+      window.es97Assignments?.refresh?.();
+    }finally{state.running=false;}
+  }
+  // The native viewport controller assumes the wide table is the scrollport.
+  // Retain that path for Table/other roles; Card scrolls the whole sheet and
+  // must keep its current offset when the software keyboard changes height.
+  function revealCardInput(area,input){
+    if(!area?.contains(input))return;
+    const box=area.getBoundingClientRect(),field=input.getBoundingClientRect(),viewport=window.visualViewport;
+    const viewTop=viewport?.offsetTop||0,viewBottom=viewTop+(viewport?.height||window.innerHeight||document.documentElement.clientHeight);
+    const header=area.querySelector('.es-header'),headHeight=header?.getBoundingClientRect().height||header?.offsetHeight||0;
+    const top=Math.max(box.top,viewTop)+headHeight+8,bottom=Math.min(box.bottom,viewBottom)-8;
+    if(bottom<=top)return;
+    if(field.top<top)area.scrollTop-=top-field.top;
+    else if(field.bottom>bottom)area.scrollTop+=field.bottom-bottom;
+  }
+  es17InstallMobileViewport=function(){
+    const area=$('employeeSheet'),grid=$('esGrid');if(!area||!grid||area.dataset.es17Viewport)return;
+    area.dataset.es17Viewport='1';
+    let frame=0,baseline=0,lastWidth=0;
+    const viewport=window.visualViewport;
+    const setClass=(name,value)=>{if(area.classList.contains(name)!==value)area.classList.toggle(name,value);};
+    const setSize=(name,value)=>{if(area.style.getPropertyValue(name)!==value)area.style.setProperty(name,value);};
+    function resize(){
+      frame=0;
+      const mobile=!area.classList.contains('hidden')&&!area.classList.contains('es-desktop-page');
+      if(!mobile){setClass('es-mobile-viewport',false);setClass('es-mobile-keyboard',false);return;}
+      const input=document.activeElement;
+      const editing=!!(grid.contains(input)&&input?.matches?.('input:not([type="checkbox"]):not([type="radio"]):not([type="button"]),textarea,[contenteditable="true"]'));
+      const width=document.documentElement.clientWidth||window.innerWidth||0;
+      if(lastWidth&&Math.abs(lastWidth-width)>80)baseline=0;
+      lastWidth=width;
+      const layout=Math.max(window.innerHeight||0,document.documentElement.clientHeight||0);
+      const geometry=es17MobileViewportGeometry(viewport,layout,baseline,editing);
+      if(!geometry.enabled){setClass('es-mobile-viewport',false);setClass('es-mobile-keyboard',false);return;}
+      baseline=geometry.baseline;
+      setSize('--es-visible-top',geometry.top+'px');setSize('--es-visible-height',geometry.height+'px');
+      setClass('es-mobile-viewport',true);setClass('es-mobile-keyboard',geometry.keyboard);
+      const card=active()&&state.mode==='card';
+      if(geometry.keyboard){
+        if(!card&&area.scrollTop)area.scrollTop=0;
+        const notice=$('esQuickNotice');if(notice)notice.classList.add('hidden');
+      }
+      if(editing){if(card)revealCardInput(area,input);else es17MobileRevealInput(grid,input);}
+    }
+    function schedule(){if(!frame)frame=window.requestAnimationFrame(resize);}
+    viewport?.addEventListener('resize',schedule,{passive:true});
+    viewport?.addEventListener('scroll',schedule,{passive:true});
+    window.addEventListener('resize',schedule,{passive:true});
+    window.addEventListener('pageshow',schedule,{passive:true});
+    area.addEventListener('focusin',schedule);area.addEventListener('focusout',schedule);
+    if(typeof MutationObserver==='function')new MutationObserver(schedule).observe(area,{attributes:true,attributeFilter:['class']});
+    schedule();
+  };
+  window.es97Refresh=refresh;
+  window.es97OwnerView={refresh,mode,select,back,entries,get:()=>({mode:state.mode,selected:state.selected,context:state.context,owner:active()})};
+  const initNative=esInit;esInit=function(...args){const out=initNative.apply(this,args);refresh();return out;};
+  const render=esRenderRows;esRenderRows=function(...args){const out=render.apply(this,args);refresh();return out;};
+  const update=esUpdateComputed;esUpdateComputed=function(...args){const out=update.apply(this,args);refresh();return out;};
+  const paintNative=es14Paint;es14Paint=function(...args){const out=paintNative.apply(this,args);refresh();return out;};
+  const busy=esSetBusy;esSetBusy=function(...args){const out=busy.apply(this,args);refresh();return out;};
+  const statusNative=esStatus;esStatus=function(text,error=false){const out=statusNative.call(this,text,error);if(active()&&state.selected){state.actionError=error?{key:state.selected,context:state.context,text:String(text)}:null;refresh();}return out;};
+  const host=hc15Render;hc15Render=function(...args){const out=host.apply(this,args);refresh();return out;};
+  const hostUpdate=hc15UpdateValues;hc15UpdateValues=function(...args){const out=hostUpdate.apply(this,args);refresh();return out;};
+  const sign=window.employeeSheetSign;window.employeeSheetSign=async function(...args){try{return await sign.apply(this,args);}finally{refresh();}};
+  const hostSign=hc15Sign;hc15Sign=function(...args){const out=hostSign.apply(this,args);refresh();return out;};
+  const paint=window.es41PaintRows;window.es41PaintRows=function(...args){const out=paint.apply(this,args);refresh();return out;};
+  const open=window.employeeSheetOpen;window.employeeSheetOpen=async function(...args){const out=await open.apply(this,args);refresh();return out;};
+  const home=window.fzOpenRoleHome;window.fzOpenRoleHome=function(...args){clearPresentation();return home?.apply(this,args);};
+  try{onAuthStateChanged(auth,()=>{if(!es97Owner())clearPresentation();});}catch(e){}
+})();
+
+
+/* ES1.8.97 — Owner assignment table. All mutations use the existing team API. */
+(function ownerAssignmentTable97(){
+  let view=null;
+  const api=()=>window.es41Team;
+  const owner=()=>typeof es97Owner==='function'&&es97Owner();
+  const valid=s=>!!s&&owner()&&api()?.get()===s&&esSession===s.session&&currentUser?.uid===s.uid&&esSession?.uid===s.uid&&esSession?.date===s.date;
+  const current=()=>!!view&&valid(view.team)&&view.uid===view.team.uid&&view.date===view.team.date;
+  const busy=()=>!!(view?.applying||view?.team?.busy||esSession?.busy||hc15Session?.busy);
+  const person=name=>tt15Key(tt15CanonicalName(name||''));
+  const locked=(s,r)=>!!r.name&&(s.conflicts||[]).some(c=>c.employeeKey===person(r.name));
+  function announce(message,error=false){if(!view)return;const status=view.modal.querySelector('[data-es97-assign-status]');status.textContent=message||'';status.dataset.error=error?'1':'0';}
+  function close(){
+    if(!view)return;const old=view;view=null;old.modal.remove();
+    if(old.focus?.isConnected&&owner())try{old.focus.focus({preventScroll:true});}catch(e){}
+  }
+  function check(){if(current())return true;close();return false;}
+  function shiftLabel(value){return value==='DOUBLE'?'Double':value==='LONG'?'Long':value===SHIFT_EARLY?'10:45–2 PM':value===SHIFT_MIDDLE?'2–4 PM':value;}
+  function options(row,key){
+    if(key==='name'){
+      const directory=tt15DirectoryEntries().filter(x=>x.active||x.name===row.name).map(x=>[x.name,x.displayName||x.name]);
+      if(row.name&&!directory.some(x=>x[0]===row.name))directory.push([row.name,tt15Label(row.name)]);
+      return [['','Pilih nama'],...directory];
+    }
+    if(key==='role')return [['','Pilih posisi'],...TT15_ROLES.map(x=>[x,x])];
+    return [['','Pilih shift'],...(tt15Host(row.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).map(x=>[x,shiftLabel(x)])];
+  }
+  function select(row,index,key){
+    const node=document.createElement('select');node.dataset.es97AssignIndex=String(index);node.dataset.es97AssignField=key;
+    node.setAttribute('aria-label',(key==='name'?'Nama karyawan':key==='role'?'Posisi':'Shift')+' '+(index+1));return node;
+  }
+  function syncSelect(node,row,index,key,active,disabled){
+    node.dataset.es97AssignIndex=String(index);
+    if(node!==active){const list=options(row,key),signature=JSON.stringify(list);if(node.dataset.es97Options!==signature){node.innerHTML=list.map(([value,label])=>esOption(value,label,row[key])).join('');node.dataset.es97Options=signature;}node.value=String(row[key]||'');}
+    node.disabled=disabled;
+  }
+  function conflictValue(value){if(value===null)return 'Removed / Dihapus';if(Array.isArray(value))return value.length?value.map(conflictValue).join(' / '):'No assignments';if(value&&typeof value==='object')return [value.role,value.shift].filter(Boolean).join(' · ');return String(value??'Not recorded');}
+  function paintConflicts(s){
+    const box=view.modal.querySelector('[data-es97-assign-conflicts]');box.hidden=!(s.conflicts||[]).length;
+    const signature=JSON.stringify([s.conflicts,!!busy()]);if(box.dataset.es97ConflictKey===signature)return;box.dataset.es97ConflictKey=signature;
+    box.innerHTML=(s.conflicts||[]).map(c=>'<article><strong>'+esc(c.employee||'Busser')+' · '+esc(c.field||'Assignment')+'</strong><p>This device / Perangkat ini: '+esc(conflictValue(c.local))+'<br>Latest saved / Data tersimpan: '+esc(conflictValue(c.remote))+'</p><div><button type="button" data-es97-assign-resolve="local" data-es97-assign-conflict="'+esc(c.id)+'"'+(busy()?' disabled':'')+'>Keep my change</button><button type="button" data-es97-assign-resolve="remote" data-es97-assign-conflict="'+esc(c.id)+'"'+(busy()?' disabled':'')+'>Use saved value</button></div></article>').join('');
+  }
+  function refresh(){
+    if(!view||!check())return;
+    const s=view.team,modal=view.modal,body=modal.querySelector('tbody'),active=document.activeElement,rows=[...body.children];
+    const activeRow=active?.matches?.('select[data-es97-assign-field]')?active.closest('[data-es97-assign-row]'):null;
+    // A fresh server rebase can replace/reorder rows while a native picker is
+    // open. Do not retarget that picker's index; reject its stale change and
+    // repaint after blur so it can never edit another employee's assignment.
+    if(activeRow&&body.contains(activeRow)&&s.rows[Number(activeRow.dataset.es97AssignRow)]!==activeRow.es97AssignmentRef){
+      announce('Assignments changed. Close the open picker to review the latest rows. Your team draft is kept.',true);return;
+    }
+    const disabled=busy();
+    s.rows.forEach((row,index)=>{
+      let tr=rows[index];if(!tr){tr=document.createElement('tr');tr.dataset.es97AssignRow=String(index);for(const key of ['name','role','shift']){const td=document.createElement('td');td.appendChild(select(row,index,key));tr.appendChild(td);}const td=document.createElement('td'),remove=document.createElement('button');remove.type='button';remove.dataset.es97AssignRemove=String(index);remove.textContent='✕';td.appendChild(remove);tr.appendChild(td);body.appendChild(tr);}
+      tr.es97AssignmentRef=row;tr.dataset.es97AssignRow=String(index);tr.classList.toggle('es97-assign-host',tt15Host(row.role));
+      for(const key of ['name','role','shift'])syncSelect(tr.querySelector('[data-es97-assign-field="'+key+'"]'),row,index,key,active,disabled||locked(s,row));
+      const remove=tr.querySelector('[data-es97-assign-remove]');remove.dataset.es97AssignRemove=String(index);remove.disabled=disabled||locked(s,row);remove.setAttribute('aria-label','Remove '+(tt15Label(row.name)||'row '+(index+1))+' '+(row.shift||''));
+    });
+    for(let i=s.rows.length;i<rows.length;i++)rows[i].remove();
+    modal.querySelector('[data-es97-assign-date]').textContent=s.date;
+    modal.querySelector('[data-es97-assign-count]').textContent=s.rows.filter(r=>r.name).length+' assignments / penugasan';
+    modal.querySelector('[data-es97-assign-draft]').textContent=disabled?'Applying / Memproses…':s.dirty?'Draft · belum diterapkan':'Team applied / Sudah diterapkan';
+    modal.setAttribute('aria-busy',String(disabled));
+    for(const button of modal.querySelectorAll('[data-es97-assign-close],[data-es97-assign-add],[data-es97-assign-apply],[data-es97-assign-reload]'))button.disabled=disabled;
+    paintConflicts(s);
+    if(!view.applying){const message=$('es38Status')?.textContent||'';if(message)announce(message,!!s.conflicts?.length||/not applied|could not|failed|resolve/i.test(message));}
+  }
+  async function mutate(action){
+    if(!check()||busy())return false;const old=view;
+    try{await action(old.team);if(view===old&&check()){refresh();window.es97Refresh?.();}return true;}
+    catch(error){if(view===old&&check()){announce(error.message||String(error),true);refresh();}return false;}
+  }
+  function sourceRow(target){
+    if(!check()||busy())return null;const tr=target.closest('[data-es97-assign-row]'),index=Number(tr?.dataset.es97AssignRow);
+    if(!tr||!Number.isInteger(index)||view.team.rows[index]!==tr.es97AssignmentRef){announce('This assignment changed. Close the picker and review the latest rows before editing.',true);return null;}
+    return {index,row:tr.es97AssignmentRef};
+  }
+  async function apply(){
+    if(!check()||busy())return false;const old=view;old.applying=true;announce('Applying assignments / Menerapkan penugasan…');refresh();
+    try{
+      const result=await api().apply();
+      if(view!==old||!check())return false;
+      if(result!==false&&!old.team.dirty&&!old.team.busy){close();window.es97Refresh?.();return true;}
+      announce($('es38Status')?.textContent||'Assignments were not applied. Review the highlighted fields; your draft is kept.',true);return false;
+    }catch(error){if(view===old&&check())announce(error.message||String(error),true);return false;}
+    finally{old.applying=false;if(view===old&&check())refresh();}
+  }
+  function open(addNew=true){
+    if(!owner()||!$('employeeSheet')||!api())return false;
+    if(view&&!current())close();
+    let team=api().get(),added=false;
+    if(!team&&addNew){api().add();team=api().get();added=true;}
+    if(!valid(team)||team.busy||esSession?.busy||hc15Session?.busy){if(typeof esStatus==='function')esStatus('Wait for Employee Sheet to finish loading or saving before adding assignments.',true);return false;}
+    if(view){if(addNew&&!added)api().add();refresh();return true;}
+    const modal=document.createElement('div');modal.id='es97AssignmentsModal';modal.className='es97-assign-modal';modal.setAttribute('role','dialog');modal.setAttribute('aria-modal','true');modal.setAttribute('aria-labelledby','es97AssignmentsTitle');
+    modal.innerHTML='<section class="es97-assign-panel"><header><div><small>OWNER · <span data-es97-assign-date></span></small><h3 id="es97AssignmentsTitle">Add Row · Tambah karyawan / shift</h3></div><button type="button" data-es97-assign-close aria-label="Close assignment table">✕ Close</button></header><p class="es97-assign-help">Pilih nama, posisi, dan shift. Server, Bartender, serta Host/Cashier ditambahkan di sini.</p><div class="es97-assign-scroll"><table><colgroup><col class="es97-assign-name"><col class="es97-assign-role"><col class="es97-assign-shift"><col class="es97-assign-delete"></colgroup><thead><tr><th scope="col">Nama karyawan</th><th scope="col">Posisi</th><th scope="col">Shift</th><th scope="col"><span class="es97-assign-sr">Hapus</span></th></tr></thead><tbody></tbody></table></div><p class="es97-assign-help">Nama yang sama dapat dipakai untuk posisi atau shift berbeda. Draf tetap ada saat ditutup; tekan Apply changes untuk menerapkan.</p><div data-es97-assign-conflicts class="es97-assign-conflicts" hidden></div><p data-es97-assign-status class="es97-assign-status" role="status" aria-live="polite"></p><footer><div class="es97-assign-meta"><span data-es97-assign-count></span><span data-es97-assign-draft></span></div><div class="es97-assign-tools"><button type="button" data-es97-assign-add>＋ Tambah baris</button><button type="button" data-es97-assign-reload>Reload assignments</button></div><div class="es97-assign-actions"><button type="button" data-es97-assign-close>Back / Kembali</button><button type="button" data-es97-assign-apply>Apply changes</button></div></footer></section>';
+    view={modal,team,uid:team.uid,date:team.date,focus:document.activeElement,applying:false};$('employeeSheet').appendChild(modal);
+    modal.addEventListener('change',event=>{
+      const target=event.target;if(target?.dataset?.es97AssignField===undefined)return;const source=sourceRow(target);if(!source)return;
+      const field=target.dataset.es97AssignField;if(!['name','role','shift'].includes(field))return;
+      void mutate(()=>api().edit(source.index,field,target.value));
+    });
+    modal.addEventListener('focusout',()=>setTimeout(()=>{if(view?.modal===modal)refresh();},0));
+    modal.addEventListener('click',event=>{
+      const target=event.target.closest?.('button');if(!target||!modal.contains(target)||!check()||busy())return;
+      if(target.hasAttribute('data-es97-assign-close')){close();return;}
+      if(target.hasAttribute('data-es97-assign-add')){void mutate(()=>api().add());return;}
+      if(target.hasAttribute('data-es97-assign-apply')){void apply();return;}
+      if(target.hasAttribute('data-es97-assign-reload')){void mutate(()=>api().reload());return;}
+      if(target.dataset.es97AssignRemove!==undefined){const source=sourceRow(target);if(source)void mutate(()=>api().remove(source.index));return;}
+      if(target.dataset.es97AssignResolve){const id=target.dataset.es97AssignConflict,choice=target.dataset.es97AssignResolve;if((view.team.conflicts||[]).some(c=>c.id===id)&&typeof api().resolve==='function')void mutate(()=>api().resolve(id,choice));}
+    });
+    modal.addEventListener('keydown',event=>{
+      if(event.key==='Escape'){event.preventDefault();event.stopPropagation();if(!busy())close();return;}
+      if(event.key!=='Tab')return;const enabled=[...modal.querySelectorAll('button:not(:disabled),select:not(:disabled)')].filter(n=>!n.closest('[hidden]'));if(!enabled.length)return;
+      if(event.shiftKey&&document.activeElement===enabled[0]){event.preventDefault();enabled.at(-1).focus();}else if(!event.shiftKey&&document.activeElement===enabled.at(-1)){event.preventDefault();enabled[0].focus();}
+    });
+    if(addNew&&!added)api().add();refresh();
+    const first=modal.querySelector(addNew?'tbody tr:last-child select':'tbody select');(first||modal.querySelector('[data-es97-assign-close]'))?.focus({preventScroll:true});
+    return true;
+  }
+  window.es97Assignments={open,close,refresh};
 })();
