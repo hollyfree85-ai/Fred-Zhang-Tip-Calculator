@@ -71,8 +71,8 @@ self.addEventListener("notificationclick",event=>{
   })());
 });
 
-const CACHE="fz-tip-v13849-es18970";
-const CORE=["./html2canvas-1.4.1.min.js?v=es18970", "./install-app-v13849.js?v=13849-es18970", "./", "./index.html", "./fresh-v13825.html", "./app-v13849.js?v=13849-es18970", "./employee-sheet-v1.css?v=es18970", "./hourly-logic-v13840.js?v=13849", "./host-cashier-tip-v13840.js?v=13849-es18970", "./simple-ui-v13824p1.js?v=138241a", "./board-hotfix-v13825.js?v=13825", "./firebase-config.js", "./push-config.js", "./manifest.webmanifest", "./money-ready-chime.wav", "./icon-192.png", "./caishen-intro.png"];
+const CACHE="fz-tip-v13849-es18980";
+const CORE=["./html2canvas-1.4.1.min.js?v=es18980", "./install-app-v13849.js?v=13849-es18980", "./", "./index.html", "./fresh-v13825.html", "./app-v13849.js?v=13849-es18980", "./employee-sheet-v1.css?v=es18980", "./hourly-logic-v13840.js?v=13849", "./host-cashier-tip-v13840.js?v=13849-es18980", "./simple-ui-v13824p1.js?v=138241a", "./board-hotfix-v13825.js?v=13825", "./firebase-config.js", "./push-config.js", "./manifest.webmanifest", "./money-ready-chime.wav", "./icon-192.png", "./caishen-intro.png"];
 
 self.addEventListener("install",event=>{
   self.skipWaiting();

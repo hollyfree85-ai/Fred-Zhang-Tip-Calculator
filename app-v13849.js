@@ -4018,7 +4018,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18970",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18980",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10621,7 +10621,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.97';
+const ES_BUILD='ES1.8.98';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -16501,7 +16501,7 @@ function es96LoadRenderer(){
   if(typeof window.html2canvas==='function')return Promise.resolve(window.html2canvas);
   if(es96RendererPromise)return es96RendererPromise;
   es96RendererPromise=new Promise((resolve,reject)=>{
-    const script=document.createElement('script');script.src='./html2canvas-1.4.1.min.js?v=es18970';script.dataset.rawbtRenderer96='';
+    const script=document.createElement('script');script.src='./html2canvas-1.4.1.min.js?v=es18980';script.dataset.rawbtRenderer96='';
     const timer=setTimeout(()=>finish(new Error('Receipt renderer timed out. Close this preview and try again.')),15000);
     function finish(error){clearTimeout(timer);script.onload=script.onerror=null;if(error){script.remove();es96RendererPromise=null;reject(error);}else resolve(window.html2canvas);}
     script.onload=()=>finish(typeof window.html2canvas==='function'?null:new Error('Receipt renderer is unavailable. Update the app and reopen the receipt.'));
@@ -16604,7 +16604,7 @@ function es97Owner(){
   return !!currentUser?.uid&&currentProfile?.role==='owner'&&s?.uid===currentUser.uid&&(!t||(t.uid===s.uid&&t.date===s.date&&(!t.session||t.session===s)));
 }
 (function installOwnerView97(){
-  const state={session:null,context:'',serial:0,mode:'card',selected:'',running:false,cardKey:'',signatureHomes:new Map(),upperSignature:null,hostSignature:null,actionError:null};
+  const state={session:null,context:'',serial:0,mode:'card',selected:'',running:false,cardKey:'',signatureHomes:new Map(),upperSignature:null,hostSignature:null,actionError:null,exportHome:null};
   const preference=()=> 'fz_owner_sheet_view97_'+currentUser.uid;
   const active=()=>es97Owner()&&state.session===esSession&&state.context.startsWith(esSession.uid+'|'+esSession.date+'|');
   const locked=()=>!!(esSession?.busy||hc15Session?.busy||window.es41Team?.get?.()?.busy||esSignature||hc15Sig);
@@ -16644,12 +16644,19 @@ function es97Owner(){
     for(const tr of $('esRows')?.querySelectorAll('tr[data-es-index]')||[]){const row=esSession?.rows[Number(tr.dataset.esIndex)];if(row)tr.hidden=tr.dataset.es83Removed==='1'||!!q&&!(tt15Label(row.name)+' '+row.name).toLowerCase().includes(q);}
     for(const tr of $('hc15Rows')?.querySelectorAll('tr[data-hc15-row]')||[]){const name=tr.querySelector('[data-hc15-name]')?.dataset.hc15Name;tr.hidden=!!q&&!(tt15Label(name||'')+' '+(name||'')).toLowerCase().includes(q);}
   }
+  function placeExports(card=false,detail=false){
+    const node=$('es16DailyExports'),grid=$('esGrid'),cards=$('es97Cards');if(!node||!grid)return;
+    if(state.exportHome?.node!==node){const marker=document.createComment('Owner98 export home');node.parentNode.insertBefore(marker,node.nextSibling);state.exportHome={node,marker,hidden:node.hidden};}
+    const home=state.exportHome;
+    if(card&&cards){if(node.parentNode!==cards.parentNode||cards.nextElementSibling!==node)cards.after(node);node.hidden=!!detail;}
+    else{if(home.marker.isConnected){if(node.parentNode!==home.marker.parentNode||node.nextSibling!==home.marker)home.marker.parentNode.insertBefore(node,home.marker);}else if(node.parentNode!==grid)grid.appendChild(node);node.hidden=home.hidden;}
+  }
   function clearPresentation(){
     const area=$('employeeSheet');if(!area)return;
     area.classList.remove('es97-owner','es97-card','es97-detail','es97-host-detail','es97-signing');
     for(const id of ['es97View','es97Cards','es97Detail','es97Footer'])if($(id))$(id).hidden=true;
     area.querySelectorAll('.es97-openrow').forEach(n=>n.classList.remove('es97-openrow'));
-    retireInlineSignatures();returnSignatures();state.selected='';state.session=null;state.context='';state.cardKey='';
+    retireInlineSignatures();returnSignatures();placeExports();state.selected='';state.session=null;state.context='';state.cardKey='';
     state.actionError=null;window.es97Assignments?.close?.();
   }
   function init(){
@@ -16777,6 +16784,7 @@ function es97Owner(){
       if(state.selected&&!entry){state.selected='';returnSignatures();}
       area.classList.toggle('es97-card',card);area.classList.toggle('es97-detail',card&&!!entry);area.classList.toggle('es97-host-detail',card&&entry?.kind==='host');
       $('es97Cards').hidden=!card||!!entry;$('es97Detail').hidden=!card||!entry;$('es97Footer').hidden=!card||!entry;
+      placeExports(card,!!entry);
       area.querySelectorAll('.es97-openrow').forEach(n=>{if(!entry||n!==rowFor(entry))n.classList.remove('es97-openrow');});
       if(!card){returnSignatures();area.classList.remove('es97-signing');window.es97Assignments?.refresh?.();return;}
       const q=String($('esSearch')?.value||'').trim().toLowerCase(),team=window.es41Team?.get?.(),list=all.filter(e=>(e.label+' '+e.name+' '+e.role+' '+e.shift).toLowerCase().includes(q));
@@ -16874,6 +16882,26 @@ function es97Owner(){
   const busy=()=>!!(view?.applying||view?.team?.busy||esSession?.busy||hc15Session?.busy);
   const person=name=>tt15Key(tt15CanonicalName(name||''));
   const locked=(s,r)=>!!r.name&&(s.conflicts||[]).some(c=>c.employeeKey===person(r.name));
+  const sameAssignment=(a,b)=>!!a&&!!b&&['name','role','shift'].every(k=>String(a[k]||'')===String(b[k]||''));
+  function bindRow(tr,s){
+    if(!tr?.parentNode||!view?.modal.contains(tr))return null;
+    let index=s.rows.indexOf(tr.es97AssignmentRef);
+    if(index<0){
+      const matches=s.rows.map((row,i)=>sameAssignment(row,tr.es97AssignmentRef)?i:-1).filter(i=>i>=0);
+      const peers=[...tr.parentNode.children].filter(row=>sameAssignment(row.es97AssignmentRef,tr.es97AssignmentRef));
+      // A verified snapshot clones/reorders the draft. Rebind the same logical
+      // assignment, never an unrelated employee now occupying its old index.
+      // Equal duplicate multiplicity can be paired by occurrence; a missing or
+      // ambiguous assignment must still be reviewed instead of guessed.
+      if(!matches.length||matches.length!==peers.length)return null;
+      index=matches[peers.indexOf(tr)];
+    }
+    if(!Number.isInteger(index)||index<0)return null;
+    tr.es97AssignmentRef=s.rows[index];tr.dataset.es97AssignRow=String(index);
+    for(const control of tr.querySelectorAll('[data-es97-assign-field]'))control.dataset.es97AssignIndex=String(index);
+    const remove=tr.querySelector('[data-es97-assign-remove]');if(remove)remove.dataset.es97AssignRemove=String(index);
+    return {index,row:tr.es97AssignmentRef};
+  }
   function announce(message,error=false){if(!view)return;const status=view.modal.querySelector('[data-es97-assign-status]');status.textContent=message||'';status.dataset.error=error?'1':'0';}
   function close(){
     if(!view)return;const old=view;view=null;old.modal.remove();
@@ -16912,17 +16940,23 @@ function es97Owner(){
     // A fresh server rebase can replace/reorder rows while a native picker is
     // open. Do not retarget that picker's index; reject its stale change and
     // repaint after blur so it can never edit another employee's assignment.
-    if(activeRow&&body.contains(activeRow)&&s.rows[Number(activeRow.dataset.es97AssignRow)]!==activeRow.es97AssignmentRef){
+    if(activeRow&&body.contains(activeRow)&&!bindRow(activeRow,s)){
       announce('Assignments changed. Close the open picker to review the latest rows. Your team draft is kept.',true);return;
     }
     const disabled=busy();
+    const remaining=new Set(rows);
     s.rows.forEach((row,index)=>{
-      let tr=rows[index];if(!tr){tr=document.createElement('tr');tr.dataset.es97AssignRow=String(index);for(const key of ['name','role','shift']){const td=document.createElement('td');td.appendChild(select(row,index,key));tr.appendChild(td);}const td=document.createElement('td'),remove=document.createElement('button');remove.type='button';remove.dataset.es97AssignRemove=String(index);remove.textContent='✕';td.appendChild(remove);tr.appendChild(td);body.appendChild(tr);}
+      let tr=[...remaining].find(n=>n.es97AssignmentRef===row)||[...remaining].find(n=>sameAssignment(n.es97AssignmentRef,row));
+      if(tr)remaining.delete(tr);
+      if(!tr){tr=document.createElement('tr');tr.dataset.es97AssignRow=String(index);for(const key of ['name','role','shift']){const td=document.createElement('td');td.appendChild(select(row,index,key));tr.appendChild(td);}const td=document.createElement('td'),remove=document.createElement('button');remove.type='button';remove.dataset.es97AssignRemove=String(index);remove.textContent='✕';td.appendChild(remove);tr.appendChild(td);body.appendChild(tr);}
       tr.es97AssignmentRef=row;tr.dataset.es97AssignRow=String(index);tr.classList.toggle('es97-assign-host',tt15Host(row.role));
       for(const key of ['name','role','shift'])syncSelect(tr.querySelector('[data-es97-assign-field="'+key+'"]'),row,index,key,active,disabled||locked(s,row));
       const remove=tr.querySelector('[data-es97-assign-remove]');remove.dataset.es97AssignRemove=String(index);remove.disabled=disabled||locked(s,row);remove.setAttribute('aria-label','Remove '+(tt15Label(row.name)||'row '+(index+1))+' '+(row.shift||''));
     });
-    for(let i=s.rows.length;i<rows.length;i++)rows[i].remove();
+    // Keep existing native SELECT elements in their visual order while the
+    // model regroups one person's work accounts. Moving a connected picker
+    // can dismiss it on Android; the binding carries its current model index.
+    for(const tr of remaining)tr.remove();
     modal.querySelector('[data-es97-assign-date]').textContent=s.date;
     modal.querySelector('[data-es97-assign-count]').textContent=s.rows.filter(r=>r.name).length+' assignments / penugasan';
     modal.querySelector('[data-es97-assign-draft]').textContent=disabled?'Applying / Memproses…':s.dirty?'Draft · belum diterapkan':'Team applied / Sudah diterapkan';
@@ -16937,9 +16971,9 @@ function es97Owner(){
     catch(error){if(view===old&&check()){announce(error.message||String(error),true);refresh();}return false;}
   }
   function sourceRow(target){
-    if(!check()||busy())return null;const tr=target.closest('[data-es97-assign-row]'),index=Number(tr?.dataset.es97AssignRow);
-    if(!tr||!Number.isInteger(index)||view.team.rows[index]!==tr.es97AssignmentRef){announce('This assignment changed. Close the picker and review the latest rows before editing.',true);return null;}
-    return {index,row:tr.es97AssignmentRef};
+    if(!check()||busy())return null;const tr=target.closest('[data-es97-assign-row]'),source=bindRow(tr,view.team);
+    if(!source){announce('This assignment changed. Close the picker and review the latest rows before editing.',true);return null;}
+    return source;
   }
   async function apply(){
     if(!check()||busy())return false;const old=view;old.applying=true;announce('Applying assignments / Menerapkan penugasan…');refresh();
@@ -16964,7 +16998,13 @@ function es97Owner(){
     modal.addEventListener('change',event=>{
       const target=event.target;if(target?.dataset?.es97AssignField===undefined)return;const source=sourceRow(target);if(!source)return;
       const field=target.dataset.es97AssignField;if(!['name','role','shift'].includes(field))return;
-      void mutate(()=>api().edit(source.index,field,target.value));
+      const tr=target.closest('[data-es97-assign-row]');
+      if(field==='role')tr.dataset.es98RoleChosen='1';
+      if(field==='shift')tr.dataset.es98ShiftChosen='1';
+      const role=source.row.role,shift=source.row.shift;
+      const keepRole=field==='name'&&(tr.dataset.es98RoleChosen==='1'||!source.row.name&&role!=='Server');
+      const keepShift=field==='name'&&tr.dataset.es98ShiftChosen==='1';
+      void mutate(()=>{api().edit(source.index,field,target.value);if(keepRole)api().edit(source.index,'role',role);if(keepShift&&(tt15Host(source.row.role)?TT15_HOST_SHIFTS:TIP_SHIFTS).includes(shift))api().edit(source.index,'shift',shift);});
     });
     modal.addEventListener('focusout',()=>setTimeout(()=>{if(view?.modal===modal)refresh();},0));
     modal.addEventListener('click',event=>{

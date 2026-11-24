@@ -685,6 +685,8 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 
 /* ES1.8.97 — new presentation is strictly scoped to Owner + Card mode. */
 #employeeSheet.es97-owner #es97FormMessage[data-error="1"]{background:#fff0eb;border:1px solid #e8b7a7;border-radius:10px;padding:12px;color:#a52b15;font-weight:700}
+#employeeSheet.es97-owner.es97-card>#es16DailyExports{position:static;width:100%!important;max-width:100%!important;margin:8px 0 24px;box-sizing:border-box}
+#employeeSheet.es97-owner.es97-card.es97-detail #es16DailyExports,#employeeSheet.es97-owner.es97-card #es16DailyExports[hidden]{display:none!important}
 #employeeSheet [data-es97-heading],#employeeSheet [data-es97-auto]{display:none}
 #employeeSheet #es97View[hidden],#employeeSheet #es97Cards[hidden],#employeeSheet #es97Detail[hidden],#employeeSheet #es97Footer[hidden],#employeeSheet #es97SignaturePreview[hidden]{display:none!important}
 #employeeSheet.es97-owner .es97-view{padding:12px 16px;border:1px solid #bfd3e3;border-radius:13px;background:#fff;display:flex;align-items:center;justify-content:space-between;gap:16px;margin:8px 0}
