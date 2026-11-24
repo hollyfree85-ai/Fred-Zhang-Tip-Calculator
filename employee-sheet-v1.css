@@ -881,3 +881,7 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
  #employeeSheet .es97-assign-meta{display:none}
  #employeeSheet .es97-assign-tools button,#employeeSheet .es97-assign-actions button{min-height:42px}
 }
+
+/* ES1.8.99 — Remove Attendance from Owner Card forms; English-only interface. */
+#employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow>td.es97-field[data-es97-field="attendance54"]{display:none!important}
+#a47Language{display:none!important}
