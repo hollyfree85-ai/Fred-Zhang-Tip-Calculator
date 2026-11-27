@@ -885,3 +885,37 @@ body.ot17-active #staffApp > .staff-menu-buttons,body.ot17-active #hourlyWorkspa
 /* ES1.8.99 — Remove Attendance from Owner Card forms; English-only interface. */
 #employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow>td.es97-field[data-es97-field="attendance54"]{display:none!important}
 #a47Language{display:none!important}
+
+/* ES1.8.100 — phone-only compact cards. Laptop/tablet styles stay unchanged. */
+@media(max-width:600px){
+ #employeeSheet.es97-owner.es97-card:not(.hidden){padding:6px;scroll-padding-top:60px}
+ #employeeSheet.es97-owner.es97-card>.es-header{padding:4px 6px!important;min-height:0!important;gap:6px!important;border-radius:12px;box-shadow:0 3px 0 #0b2234}
+ #employeeSheet.es97-owner.es97-card .es-header h2{font-size:18px!important;line-height:1.15!important;margin:0!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ #employeeSheet.es97-owner.es97-card .es-header .es-home{height:44px!important;min-height:44px!important;max-height:44px!important;min-width:0!important;padding:5px 8px!important;font-size:14px!important;box-sizing:border-box;border-radius:9px;white-space:nowrap}
+ #employeeSheet.es97-owner.es97-card .es97-cards{padding:8px 0 14px}
+ #employeeSheet.es97-owner.es97-card .es97-cards>h3{font-size:21px!important}
+ #employeeSheet.es97-owner.es97-card .es97-cards>p{font-size:14px;margin:4px 0 10px}
+ #employeeSheet.es97-owner.es97-card .es97-name-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+ #employeeSheet.es97-owner.es97-card .es97-name-card{min-height:120px;min-width:0;padding:10px 17px 10px 10px;gap:6px;border-radius:12px;box-sizing:border-box}
+ #employeeSheet.es97-owner.es97-card .es97-name-card>b{font-size:16px;line-height:1.25}
+ #employeeSheet.es97-owner.es97-card .es97-name-card>small{font-size:12px;line-height:1.3}
+ #employeeSheet.es97-owner.es97-card .es97-name-card>i{right:6px;font-size:22px}
+ #employeeSheet.es97-owner.es97-card .es97-card-status{font-size:11px;padding:3px 4px;line-height:1.25}
+ #employeeSheet.es97-owner.es97-card .es97-detail-heading{padding:9px;gap:8px;margin:8px 0}
+ #employeeSheet.es97-owner.es97-card .es97-detail-heading h3{font-size:21px!important}
+ #employeeSheet.es97-owner.es97-card .es97-detail-heading p{font-size:13px}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow{gap:8px!important}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow>td.es97-field{grid-column:span 6;min-height:82px!important;padding:9px!important;border-radius:11px;font-size:18px!important}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow>td.es97-field::before{font-size:12px;line-height:1.25;margin-bottom:6px}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-field input,#employeeSheet.es97-owner.es97-card.es97-detail .es97-field select{font-size:16px!important;min-height:44px;padding:7px!important}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-field input[data-es-field="paid"]{display:inline-block;width:calc(100% - 50px)!important;vertical-align:top}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-field [data-es-paid-sign]{display:inline-block;vertical-align:top;width:44px;min-width:44px;min-height:44px;margin-left:6px;padding:5px;box-sizing:border-box;font-size:18px!important}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow>td.es97-computed,#employeeSheet.es97-owner.es97-card.es97-detail .es97-field .es-computed{font-size:21px!important;line-height:1.25}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow>td.es97-section-heading{grid-column:1/-1;font-size:19px!important;padding-top:9px!important}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow>td:is([data-es97-field="payout"],[data-es97-field="hourlyInfo"],[data-es97-field="adjustmentDecision"]){grid-column:1/-1}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow>td:is([data-es97-field="barAM"],[data-es97-field="bar24"],[data-es97-field="barPM"]){grid-column:span 4}
+ #employeeSheet.es97-owner.es97-card.es97-detail .es97-openrow>td.es97-field[data-es97-field="attendance54"]{display:none!important}
+ #employeeSheet.es97-owner.es97-card .es97-form-footer{padding:10px;margin:12px 0 18px}
+ #employeeSheet.es97-owner.es97-card .es97-form-footer>h3{font-size:19px!important;margin-bottom:10px}
+ #employeeSheet.es97-owner.es97-card .es97-signature-preview{min-height:120px;font-size:15px}
+}

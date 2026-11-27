@@ -4018,7 +4018,7 @@ async function enableBackgroundPush(){
     throw new Error("Notification permission was not granted.");
   }
 
-  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es18990",{updateViaCache:"none"});
+  const swReg=await navigator.serviceWorker.register("./service-worker-v13849.js?v=13849-es181000",{updateViaCache:"none"});
   await navigator.serviceWorker.ready;
 
   messagingInstance=messagingInstance||getMessaging(firebaseApp);
@@ -10621,7 +10621,7 @@ initMonthlyReportUi();
  * Original calculation engine and original workflows are unchanged.
  * All edits remain drafts until a row is saved to hourlyReports.
  * ================================================================ */
-const ES_BUILD='ES1.8.99';
+const ES_BUILD='ES1.8.100';
 const ES_PERIODS=['AM','2PM_4PM','PM'];
 const ES_MONEY=['totalAM','total24','grand','paid','cardFee','cash','meal'];
 const ES_FIELDS=['shift','role','clockIn','clockOut','clockIn2','clockOut2',...ES_MONEY,'barAM','bar24','barPM','adjustmentDecision'];
@@ -16501,7 +16501,7 @@ function es96LoadRenderer(){
   if(typeof window.html2canvas==='function')return Promise.resolve(window.html2canvas);
   if(es96RendererPromise)return es96RendererPromise;
   es96RendererPromise=new Promise((resolve,reject)=>{
-    const script=document.createElement('script');script.src='./html2canvas-1.4.1.min.js?v=es18990';script.dataset.rawbtRenderer96='';
+    const script=document.createElement('script');script.src='./html2canvas-1.4.1.min.js?v=es181000';script.dataset.rawbtRenderer96='';
     const timer=setTimeout(()=>finish(new Error('Receipt renderer timed out. Close this preview and try again.')),15000);
     function finish(error){clearTimeout(timer);script.onload=script.onerror=null;if(error){script.remove();es96RendererPromise=null;reject(error);}else resolve(window.html2canvas);}
     script.onload=()=>finish(typeof window.html2canvas==='function'?null:new Error('Receipt renderer is unavailable. Update the app and reopen the receipt.'));
@@ -17026,4 +17026,59 @@ function es97Owner(){
     return true;
   }
   window.es97Assignments={open,close,refresh};
+})();
+
+
+/* ES1.8.100 — distinct positions may share a shift. Assignment UI only;
+ * the native validator, merge, transaction, pools and reports stay authoritative. */
+(function sameShiftPositions100(){
+  const api=window.es41Team;if(!api||api.es100Positions)return;api.es100Positions=true;
+  const editNative=api.edit,openNative=window.es97Assignments?.open,refreshNative=window.es97Assignments?.refresh;
+  const repairing=new WeakSet(),attempted=new WeakMap();
+  const person=name=>tt15Key(tt15CanonicalName(name||''));
+  const identity=row=>JSON.stringify([person(row.name),String(row.role||'').trim(),String(row.shift||'').trim()]);
+  const current=s=>!!s&&api.get()===s&&esSession===s.session&&currentUser?.uid===s.uid&&esSession?.uid===s.uid&&esSession?.date===s.date&&esAllowed();
+  const collides=(s,index,row)=>!!row?.name&&!!row.role&&!!row.shift&&s.rows.some((other,i)=>i!==index&&identity(other)===identity(row));
+  function notice(text){const el=$('es38Status');if(el){el.textContent=text;el.style.color='#36576c';}}
+  api.edit=function(index,field,value){
+    const s=api.get(),row=s?.rows?.[index],before=row?{...row}:null;
+    const result=editNative.apply(this,arguments);
+    if(field!=='name'||!before||!current(s)||s.busy||s.rows[index]!==row||row.name!==value||!collides(s,index,row))return result;
+    // Do not guess a second job from the new row's default Server option.
+    // Require a position if the directory default is already assigned.
+    // The Owner modal still restores a position explicitly chosen beforehand.
+    editNative.call(api,index,'role','');
+    if(current(s)&&s.rows[index]===row)notice(tt15Label(row.name)+' already has that position and shift. Select a different Position for this row.');
+    window.es97Refresh?.();return result;
+  };
+  const normalized=rows=>JSON.stringify((Array.isArray(rows)?rows:[]).map(identity).sort());
+  function repairable(s){
+    return (s.conflicts||[]).find(c=>!attempted.get(s)?.has(c.id)&&c.kind==='duplicate'&&c.field==='assignments'&&Array.isArray(c.base)&&Array.isArray(c.remote)&&normalized(c.base)===normalized(c.remote)&&!(s.conflicts||[]).some(other=>other.employeeKey===c.employeeKey&&other.kind!=='duplicate'));
+  }
+  async function recoverLocalDuplicate(){
+    const s=api.get(),modal=$('es97AssignmentsModal');if(!modal||!current(s)||s.busy||esSession?.busy||hc15Session?.busy||repairing.has(s)||!repairable(s))return;
+    repairing.add(s);
+    try{
+      for(let attempt=0;attempt<10&&current(s)&&$('es97AssignmentsModal')===modal;attempt++){
+        const conflict=repairable(s);if(!conflict)break;
+        if(!attempted.has(s))attempted.set(s,new Set());attempted.get(s).add(conflict.id);
+        // The original resolver re-reads the server and rejects changed IDs.
+        // This is a local draft repair, never an Apply or database write.
+        const resolved=await api.resolve(conflict.id,'local');
+        if(!resolved||!current(s)||$('es97AssignmentsModal')!==modal||s.busy||(s.conflicts||[]).some(c=>c.employeeKey===conflict.employeeKey))break;
+        const seen=new Set();let changed=false;
+        for(let i=0;i<s.rows.length;i++){
+          const row=s.rows[i];if(person(row.name)!==conflict.employeeKey||!row.role)continue;
+          const key=identity(row);if(seen.has(key)){editNative.call(api,i,'role','');changed=true;}else seen.add(key);
+        }
+        if(!changed)break;
+        notice('Your duplicate draft is editable again. Select a different Position for the new row, then Apply changes.');
+      }
+    }catch(error){if(current(s)&&$('es97AssignmentsModal')===modal)notice('Draft repair could not finish. Your assignments are kept; review the conflict or reopen Add Row to retry.');}
+    finally{repairing.delete(s);window.es97Refresh?.();}
+  }
+  if(window.es97Assignments){
+    if(openNative)window.es97Assignments.open=function(...args){const result=openNative.apply(this,args);if(result){const s=api.get();if(s&&!repairing.has(s))attempted.delete(s);void recoverLocalDuplicate();}return result;};
+    if(refreshNative)window.es97Assignments.refresh=function(...args){const result=refreshNative.apply(this,args);void recoverLocalDuplicate();return result;};
+  }
 })();
